@@ -7,6 +7,8 @@ Internal Director Command Center Web Application for the Cuyahoga County Office 
 
 **Want to launch the application?** Choose your method:
 
+> 📘 **New User?** See the [**QUICK_START.md**](./QUICK_START.md) guide for detailed step-by-step instructions!
+
 ### Option 1: One-Click Launch (Recommended)
 - **Open:** [`LAUNCH.html`](./LAUNCH.html) in your browser for instant access
 - Click "Launch Application" button to open the Command Center
