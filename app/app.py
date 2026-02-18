@@ -1,0 +1,1063 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+import io
+
+# Page configuration
+st.set_page_config(
+    page_title="OCSS Command Center",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Custom styling
+st.markdown("""
+    <style>
+    .metric-card {
+        background-color: #f0f2f6;
+        padding: 20px;
+        border-radius: 8px;
+        text-align: center;
+        margin: 10px 0;
+    }
+    .header-title {
+        color: #1f77b4;
+        font-size: 2.5em;
+        margin-bottom: 10px;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# Initialize session state
+if 'uploaded_reports' not in st.session_state:
+    st.session_state.uploaded_reports = []
+
+# Initialize uploaded reports by caseload (for Program Officer to upload)
+if 'reports_by_caseload' not in st.session_state:
+    st.session_state.reports_by_caseload = {'181000': [], '181001': [], '181002': []}
+
+# Sidebar - Role Selection
+st.sidebar.title("🎯 OCSS Command Center")
+st.sidebar.markdown("---")
+
+role = st.sidebar.radio(
+    "Select Your Role:",
+    ["Director", "Program Officer", "Supervisor", "Support Officer", "IT Administrator"],
+    help="Choose your role to see relevant features"
+)
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("""
+### Quick Stats
+- **Establishments**: 45
+- **Reports Pending**: 12
+- **Reports Completed**: 389
+- **Last Update**: Today
+""")
+
+# Main content area
+if role == "Director":
+    st.markdown('<div class="header-title">📈 Executive Dashboard</div>', unsafe_allow_html=True)
+    st.markdown("**Strategy & Oversight**")
+    
+    # Tabs for Director
+    dir_tab1, dir_tab2, dir_tab3 = st.tabs(["📊 KPIs & Metrics", "👥 Caseload Management", "📋 Team Performance"])
+    
+    with dir_tab1:
+        # KPI Overview
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Report Completion Rate", "89.3%", "+2.1%")
+        with col2:
+            st.metric("On-Time Submissions", "94%", "+1.5%")
+        with col3:
+            st.metric("Data Quality Score", "96.7%", "+0.3%")
+        with col4:
+            st.metric("CQI Alignments", "34", "+5")
+        
+        # Performance Chart
+        st.subheader("Monthly Report Submissions")
+        months = pd.date_range(start='2025-09-01', periods=6, freq='M').strftime('%b').tolist()
+        submissions = [45, 48, 52, 50, 58, 62]
+        chart_data = pd.DataFrame({
+            'Month': months,
+            'Submissions': submissions
+        })
+        st.bar_chart(chart_data.set_index('Month'))
+        
+        # Strategic Insights
+        col1, col2 = st.columns(2)
+        with col1:
+            st.info("✅ **Strategic Wins**: All establishments now submitting reports on schedule")
+        with col2:
+            st.warning("⚠️ **Action Items**: 3 establishments need compliance support")
+    
+    with dir_tab2:
+        st.subheader("👥 Caseload Management - All Workers")
+        
+        # Worker Caseload Overview
+        workers_data = pd.DataFrame({
+            'Worker Name': ['Sarah Johnson', 'Michael Chen', 'Jessica Brown', 'David Martinez', 'Amanda Wilson'],
+            'Role': ['Support Officer', 'Support Officer', 'Support Officer', 'Support Officer', 'Support Officer'],
+            'Total Assigned': [24, 28, 22, 26, 25],
+            'Completed': [12, 18, 15, 14, 16],
+            'In Progress': [8, 7, 5, 9, 6],
+            'Not Started': [4, 3, 2, 3, 3],
+            'Completion %': ['50%', '64%', '68%', '54%', '64%'],
+            'Avg Time/Report': ['2.1 hrs', '1.8 hrs', '1.6 hrs', '2.0 hrs', '1.9 hrs']
+        })
+        
+        st.dataframe(workers_data, use_container_width=True)
+        
+        # Workload Distribution Chart
+        st.subheader("Workload Distribution by Worker")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.bar_chart(workers_data.set_index('Worker Name')[['Total Assigned', 'Completed']])
+        with col2:
+            st.bar_chart(workers_data.set_index('Worker Name')[['Not Started', 'In Progress', 'Completed']])
+        
+        # Reassign Reports
+        st.subheader("📋 Reassign Reports Between Workers")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            from_worker = st.selectbox("From Worker", workers_data['Worker Name'].tolist())
+        with col2:
+            to_worker = st.selectbox("To Worker", workers_data['Worker Name'].tolist())
+        with col3:
+            num_reports = st.number_input("Number of Reports", min_value=1, max_value=10, value=1)
+        
+        if st.button("🔄 Execute Reassignment", key="director_reassign"):
+            st.success(f"✓ {num_reports} report(s) reassigned from {from_worker} to {to_worker}")
+    
+    with dir_tab3:
+        st.subheader("📊 Team Performance Analytics")
+        
+        # Performance metrics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Team Avg Completion", "60%", "+5%")
+        with col2:
+            st.metric("Team Avg Quality", "96%", "+1%")
+        with col3:
+            st.metric("Team Efficiency", "1.9 hrs/report", "-0.2 hrs")
+        
+        # Worker comparison
+        st.write("**Individual Performance**")
+        for idx, worker in enumerate(workers_data['Worker Name']):
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.write(f"**{worker}**")
+            with col2:
+                st.progress(int(workers_data['Completion %'].iloc[idx].rstrip('%')) / 100)
+            with col3:
+                st.metric("Completed", workers_data['Completed'].iloc[idx])
+            with col4:
+                st.metric("Avg Time", workers_data['Avg Time/Report'].iloc[idx])
+            st.divider()
+
+elif role == "Program Officer":
+    st.markdown('<div class="header-title">📋 Report Intake Portal</div>', unsafe_allow_html=True)
+    st.markdown("**Report Intake & Processing**")
+    
+    # Tabs for Program Officer
+    prog_tab1, prog_tab2 = st.tabs(["📤 Upload & Processing", "👥 Caseload Management"])
+    
+    with prog_tab1:
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.subheader("Upload Establishment Report")
+            
+            # Select caseload for upload
+            caseload_options = {'181000': 'Downtown Elementary', '181001': 'Midtown Middle School', '181002': 'Uptown High School'}
+            selected_caseload = st.selectbox(
+                "Select Caseload for Upload",
+                list(caseload_options.keys()),
+                format_func=lambda x: f"{x} - {caseload_options[x]}"
+            )
+            
+            uploaded_file = st.file_uploader("Choose an Excel file", type=['xls', 'xlsx', 'csv'])
+            
+            if uploaded_file:
+                st.success(f"✅ File uploaded: {uploaded_file.name}")
+                
+                # Read Excel file
+                try:
+                    if uploaded_file.name.endswith('.csv'):
+                        df = pd.read_csv(uploaded_file)
+                    else:
+                        df = pd.read_excel(uploaded_file)
+                    st.info(f"📊 File has {len(df)} rows and {len(df.columns)} columns")
+                except Exception as e:
+                    st.error(f"Error reading file: {str(e)}")
+                    df = None
+                
+                if st.button("Process Report", key="process_report_btn"):
+                    # Store in reports_by_caseload for Support Officer to see
+                    report_entry = {
+                        'filename': uploaded_file.name,
+                        'timestamp': datetime.now(),
+                        'status': 'Ready for Processing',
+                        'report_id': f"RPT-{selected_caseload}-{len(st.session_state.reports_by_caseload[selected_caseload])+1:03d}",
+                        'data': df if df is not None else pd.DataFrame(),
+                        'uploaded_by': 'Program Officer'
+                    }
+                    
+                    # Also add to main uploaded_reports for tracking
+                    st.session_state.uploaded_reports.append({
+                        'filename': uploaded_file.name,
+                        'timestamp': datetime.now(),
+                        'status': 'Completed',
+                        'caseload': selected_caseload
+                    })
+                    
+                    # Add to caseload-specific list for Support Officer access
+                    st.session_state.reports_by_caseload[selected_caseload].append(report_entry)
+                    
+                    st.success(f"✓ Report {report_entry['report_id']} processed and assigned to Support Officer!")
+                    st.balloons()
+        
+        with col2:
+            st.metric("Reports Today", len(st.session_state.uploaded_reports))
+            st.metric("Successfully Processed", sum(1 for r in st.session_state.uploaded_reports if r['status'] == 'Completed'))
+        
+        # Show Uploaded Reports
+        if st.session_state.uploaded_reports:
+            st.subheader("📤 Reports Successfully Processed")
+            
+            # Editable report list with rename functionality
+            for report_idx, report in enumerate(st.session_state.uploaded_reports):
+                col1, col2, col3, col4 = st.columns([2, 2, 1.5, 1.5])
+                with col1:
+                    st.write(f"**Original:** {report['filename']}")
+                with col2:
+                    new_name = st.text_input(
+                        "Rename to",
+                        value=report.get('renamed_to', report['filename']),
+                        key=f"rename_{report_idx}",
+                        placeholder="Edit report name..."
+                    )
+                with col3:
+                    st.caption(f"Processed: {report['timestamp'].strftime('%b %d, %I:%M %p')}")
+                with col4:
+                    if st.button("✏️ Update", key=f"update_name_{report_idx}", use_container_width=True):
+                        st.session_state.uploaded_reports[report_idx]['renamed_to'] = new_name
+                        st.success(f"✓ Renamed to: {new_name}")
+            
+            # Display updated list
+            st.divider()
+            st.write("**Final Report Names:**")
+            for idx, report in enumerate(st.session_state.uploaded_reports):
+                final_name = report.get('renamed_to', report['filename'])
+                st.caption(f"📄 {final_name}")
+            
+            if st.button("🗑️ Clear Processed Reports"):
+                st.session_state.uploaded_reports = []
+                st.rerun()
+        else:
+            st.info("📝 No reports processed yet. Upload an establishment report above to begin.")
+        
+        st.divider()
+        
+        # Pending Reports
+        st.subheader("Pending Review")
+        pending_data = {
+            'Establishment': ['Lincoln Elementary', 'Grant Middle School', 'Jefferson HS', 'Adams Preschool'],
+            'Submitted': ['2 days ago', '5 days ago', '1 week ago', '3 days ago'],
+            'Status': ['Ready', 'In Review', 'Flagged', 'Ready']
+        }
+        st.dataframe(pd.DataFrame(pending_data), use_container_width=True)
+        
+        # Quality Checks
+        st.subheader("Quality Assurance Checklist")
+        st.checkbox("✓ All required fields present")
+        st.checkbox("✓ Data format validation passed")
+        st.checkbox("✓ No duplicate records")
+        st.checkbox("✓ CQI alignment verified")
+    
+    with prog_tab2:
+        st.subheader("👥 Processing Team Caseload")
+        
+        # Officer Caseload Overview
+        officers_data = pd.DataFrame({
+            'Officer Name': ['Sarah Johnson', 'Michael Chen', 'Jessica Brown'],
+            'Total Processed': [145, 152, 138],
+            'Today': [12, 15, 9],
+            'This Week': [62, 71, 58],
+            'Average Quality': ['96%', '97%', '95%'],
+            'Processing Speed': ['12 min/report', '11 min/report', '13 min/report']
+        })
+        
+        st.dataframe(officers_data, use_container_width=True)
+        
+        # Processing metrics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Team Total Processed", "435", "+25")
+        with col2:
+            st.metric("Avg Quality", "96%", "+1%")
+        with col3:
+            st.metric("Avg Processing Time", "12 min/report", "-1 min")
+        
+        # Officer comparison
+        st.subheader("Officer Performance")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.bar_chart(officers_data.set_index('Officer Name')[['Today', 'This Week']])
+        with col2:
+            st.bar_chart(officers_data.set_index('Officer Name')['Average Quality'])
+
+elif role == "Supervisor":
+    st.markdown('<div class="header-title">📊 KPI Monitoring Dashboard</div>', unsafe_allow_html=True)
+    st.markdown("**Real-Time KPI Visibility**")
+    
+    # Tabs for Supervisor
+    sup_tab1, sup_tab2, sup_tab3 = st.tabs(["📊 KPI Metrics", "👥 Team Caseload", "📈 Performance Analytics"])
+    
+    with sup_tab1:
+        # KPI Cards
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Avg Response Time", "2.3 days", "-0.5 days")
+        with col2:
+            st.metric("Quality Score", "94.2%", "+2.1%")
+        with col3:
+            st.metric("Team Compliance", "100%", "✓")
+        
+        # Establishment Performance
+        st.subheader("Establishment Performance")
+        
+        establishments = pd.DataFrame({
+            'Establishment': ['Lincoln Elem', 'Grant Middle', 'Jefferson HS', 'Adams Presch', 'Madison Elem'],
+            'Reports Submitted': [45, 38, 42, 35, 48],
+            'Avg Quality Score': [96, 92, 94, 91, 97],
+            'Last Submission': ['Today', '2 days', 'Today', '5 days', 'Yesterday']
+        })
+        st.dataframe(establishments, use_container_width=True)
+        
+        # Trend Analysis
+        st.subheader("Quality Trend")
+        dates = pd.date_range(start='2025-08-01', periods=60, freq='D')
+        trend_data = pd.DataFrame({
+            'Date': dates,
+            'Quality Score': np.random.uniform(88, 98, 60)
+        })
+        st.line_chart(trend_data.set_index('Date'))
+    
+    with sup_tab2:
+        st.subheader("👥 Team Caseload Management")
+        
+        # Worker Caseload Overview
+        team_workers = pd.DataFrame({
+            'Worker Name': ['Sarah Johnson', 'Michael Chen', 'Jessica Brown', 'David Martinez'],
+            'Total Assigned': [24, 28, 22, 26],
+            'Completed': [12, 18, 15, 14],
+            'In Progress': [8, 7, 5, 9],
+            'Not Started': [4, 3, 2, 3],
+            'Completion %': ['50%', '64%', '68%', '54%'],
+            'Avg Time/Report': ['2.1 hrs', '1.8 hrs', '1.6 hrs', '2.0 hrs']
+        })
+        
+        st.dataframe(team_workers, use_container_width=True)
+        
+        # Workload Distribution
+        st.subheader("Workload Distribution")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.bar_chart(team_workers.set_index('Worker Name')[['Total Assigned', 'Completed']])
+        with col2:
+            st.bar_chart(team_workers.set_index('Worker Name')[['Not Started', 'In Progress', 'Completed']])
+        
+        # Reassign Reports
+        st.subheader("📋 Reassign Reports")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            from_worker = st.selectbox("From Worker", team_workers['Worker Name'].tolist())
+        with col2:
+            to_worker = st.selectbox("To Worker", team_workers['Worker Name'].tolist())
+        with col3:
+            num_reports = st.number_input("Number of Reports", min_value=1, max_value=10, value=1, key="sup_reports")
+        
+        if st.button("🔄 Execute Reassignment", key="supervisor_reassign"):
+            st.success(f"✓ {num_reports} report(s) reassigned from {from_worker} to {to_worker}")
+    
+    with sup_tab3:
+        st.subheader("📈 Team Performance Analytics")
+        
+        # Performance metrics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Team Avg Completion", "58%", "+3%")
+        with col2:
+            st.metric("Avg Quality", "94% ", "+2%")
+        with col3:
+            st.metric("Team Efficiency", "1.96 hrs/report", "-0.1 hrs")
+        
+        # Worker comparison
+        st.write("**Individual Performance**")
+        for idx, worker in enumerate(team_workers['Worker Name']):
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.write(f"**{worker}**")
+            with col2:
+                st.progress(int(team_workers['Completion %'].iloc[idx].rstrip('%')) / 100)
+            with col3:
+                st.metric("Completed", team_workers['Completed'].iloc[idx])
+            with col4:
+                st.metric("Avg Time", team_workers['Avg Time/Report'].iloc[idx])
+            st.divider()
+
+elif role == "Support Officer":
+    st.markdown('<div class="header-title">📋 Support Officer - Caseload Management</div>', unsafe_allow_html=True)
+    st.markdown("**Assigned Reports & Technical Support**")
+    
+    # Caseload Metrics
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Assigned Reports", "24", "-3")
+    with col2:
+        st.metric("Completed Today", "5", "+2")
+    with col3:
+        st.metric("In Progress", "12", "-1")
+    with col4:
+        st.metric("Completion Rate", "87%", "+4%")
+    
+    # Tab Navigation
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Caseload Dashboard", "📝 My Assigned Reports", "🆘 Support Tickets", "📚 Knowledge Base"])
+    
+    # TAB 1: Caseload Report Dashboard
+    with tab1:
+        st.subheader("📊 Process Reports by Caseload")
+        
+        # Caseload data with Excel information
+        caseload_data = {
+            '181000': {
+                'name': 'Downtown Elementary',
+                'reports': [
+                    {'id': 'ENV-181000-001', 'date': '2026-02-18', 'filename': 'ENV_Report_Q1_2026.xlsx', 
+                     'data': {'Total Students': 245, 'Staff': 15, 'Classrooms': 12, 'Completion %': 85, 'Grade Levels': '3-5', 'Assessment Date': '2/15/2026', 'Quality Score': 94}},
+                    {'id': 'ENV-181000-002', 'date': '2026-02-15', 'filename': 'Safety_Audit_Feb.xlsx',
+                     'data': {'Safety Issues': 3, 'Resolved': 2, 'Pending': 1, 'Status': 'In Review', 'Inspector': 'John Smith', 'Review Date': '2/14/2026', 'Next Audit': '3/14/2026'}}
+                ]
+            },
+            '181001': {
+                'name': 'Midtown Middle School',
+                'reports': [
+                    {'id': 'ENV-181001-001', 'date': '2026-02-17', 'filename': 'ENV_Report_Q1_2026.xlsx',
+                     'data': {'Total Students': 520, 'Staff': 35, 'Classrooms': 28, 'Completion %': 92, 'Grade Levels': '6-8', 'Assessment Date': '2/16/2026', 'Quality Score': 96}},
+                    {'id': 'ENV-181001-002', 'date': '2026-02-12', 'filename': 'Compliance_Check.xlsx',
+                     'data': {'Standards Met': 47, 'Outstanding': 2, 'Non-Compliant': 1, 'Score': '94%', 'Reviewer': 'Sarah Johnson', 'Review Date': '2/11/2026', 'Action Items': 2}}
+                ]
+            },
+            '181002': {
+                'name': 'Uptown High School',
+                'reports': [
+                    {'id': 'ENV-181002-001', 'date': '2026-02-19', 'filename': 'ENV_Report_Q1_2026.xlsx',
+                     'data': {'Total Students': 1200, 'Staff': 85, 'Classrooms': 62, 'Completion %': 78, 'Grade Levels': '9-12', 'Assessment Date': '2/17/2026', 'Quality Score': 90}},
+                ]
+            }
+        }
+        
+        # Caseload selection
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            selected_caseload = st.selectbox(
+                "Select Caseload Number",
+                list(caseload_data.keys()),
+                format_func=lambda x: f"{x} - {caseload_data[x]['name']}"
+            )
+        with col2:
+            st.info(f"**Caseload {selected_caseload}**: {caseload_data[selected_caseload]['name']}")
+        
+        st.divider()
+        
+        # Display reports for selected caseload
+        if selected_caseload in caseload_data:
+            caseload_info = caseload_data[selected_caseload]
+            st.subheader(f"📋 Reports for {caseload_info['name']}")
+            st.caption("These reports were uploaded by Program Officer. View details below.")
+            
+            # FIRST: Show uploaded reports from Program Officer session (LIVE DATA)
+            uploaded_reports_list = st.session_state.reports_by_caseload.get(selected_caseload, [])
+            
+            if uploaded_reports_list:
+                st.write("**📤 Recently Uploaded Reports (Live Data):**")
+                for report_idx, report in enumerate(uploaded_reports_list):
+                    with st.expander(f"📄 {report['report_id']} - {report['filename']} ({report['timestamp'].strftime('%m/%d %H:%M')})", expanded=False):
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Report ID", report['report_id'])
+                        with col2:
+                            st.metric("Status", report['status'])
+                        with col3:
+                            st.metric("Uploaded by", report['uploaded_by'])
+                        
+                        if not report['data'].empty:
+                            st.divider()
+                            st.subheader("📊 Data Preview")
+                            st.dataframe(report['data'], use_container_width=True)
+                            
+                            # Export options
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                csv_export = report['data'].to_csv(index=False)
+                                st.download_button(
+                                    label="📥 Download CSV",
+                                    data=csv_export,
+                                    file_name=f"{report['report_id']}.csv",
+                                    mime="text/csv",
+                                    key=f"download_uploaded_{report['report_id']}"
+                                )
+                            with col2:
+                                if st.button("✅ Approve", key=f"approve_upload_{report['report_id']}"):
+                                    st.success(f"✓ {report['report_id']} approved!")
+                            with col3:
+                                if st.button("📤 Submit", key=f"submit_upload_{report['report_id']}"):
+                                    st.success(f"✓ {report['report_id']} submitted for processing!")
+                
+                st.divider()
+            
+            # THEN: Show sample/demo reports (for reference)
+            st.write("**📑 Sample Reports (Demo Data):**")
+            
+            for report_idx, report in enumerate(caseload_info['reports']):
+                with st.expander(f"📄 {report['id']} - {report['filename']} ({report['date']})", expanded=False):
+                    # Report metadata
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Report ID", report['id'])
+                    with col2:
+                        st.metric("Date", report['date'])
+                    with col3:
+                        st.metric("Status", "Ready")
+                    
+                    st.divider()
+                    
+                    # Editable fields section
+                    st.subheader("📝 Report Data - Editable Fields")
+                    
+                    # Initialize session state for edits if not exists
+                    edit_key = f"report_edits_{report['id']}"
+                    if edit_key not in st.session_state:
+                        st.session_state[edit_key] = report['data'].copy()
+                    
+                    # Create form for editable fields
+                    with st.form(key=f"form_{report['id']}"):
+                        edited_data = {}
+                        
+                        # Display fields in columns for better layout
+                        for field_idx, (key, value) in enumerate(report['data'].items()):
+                            # Determine input type based on value
+                            if isinstance(value, int) and '%' not in str(key):
+                                # Number input for numeric values
+                                edited_data[key] = st.number_input(
+                                    label=f"{key}",
+                                    value=int(st.session_state[edit_key].get(key, value)),
+                                    key=f"input_{report['id']}_{field_idx}"
+                                )
+                            elif isinstance(value, float):
+                                edited_data[key] = st.number_input(
+                                    label=f"{key}",
+                                    value=float(st.session_state[edit_key].get(key, value)),
+                                    format="%.2f",
+                                    key=f"input_{report['id']}_{field_idx}"
+                                )
+                            else:
+                                # Text input for string values
+                                edited_data[key] = st.text_input(
+                                    label=f"{key}",
+                                    value=str(st.session_state[edit_key].get(key, value)),
+                                    key=f"input_{report['id']}_{field_idx}"
+                                )
+                        
+                        st.divider()
+                        
+                        # Form submission
+                        col1, col2 = st.columns([3, 1])
+                        with col2:
+                            submitted = st.form_submit_button("💾 Update Report", use_container_width=True)
+                            if submitted:
+                                st.session_state[edit_key] = edited_data
+                                st.success("✓ Report data updated!")
+                    
+                    st.divider()
+                    
+                    # Display current data summary
+                    st.subheader("📊 Current Values")
+                    summary_df = pd.DataFrame(list(st.session_state[edit_key].items()), columns=['Field', 'Value'])
+                    st.dataframe(summary_df, use_container_width=True, hide_index=True)
+                    
+                    st.divider()
+                    
+                    # Action and Export buttons
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        # Generate CSV from report data
+                        report_csv = pd.DataFrame(list(st.session_state[edit_key].items()), columns=['Field', 'Value']).to_csv(index=False)
+                        st.download_button(
+                            label="📥 Download CSV",
+                            data=report_csv,
+                            file_name=f"{report['id']}.csv",
+                            mime="text/csv",
+                            key=f"download_csv_report_{report['id']}"
+                        )
+                    with col2:
+                        if st.button("✅ Approve", key=f"approve_report_{selected_caseload}_{report_idx}", use_container_width=True):
+                            st.success(f"✓ {report['id']} approved!")
+                    with col3:
+                        if st.button("💾 Save", key=f"save_report_{selected_caseload}_{report_idx}", use_container_width=True):
+                            st.success(f"✓ {report['id']} saved!")
+                    with col4:
+                        if st.button("📤 Submit", key=f"submit_report_{selected_caseload}_{report_idx}", use_container_width=True):
+                            st.success(f"✓ {report['id']} submitted for review!")
+        
+        st.divider()
+        
+        # Summary statistics
+        st.subheader("📊 Caseload Summary")
+        total_reports = sum(len(caseload['reports']) for caseload in caseload_data.values())
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Total Caseloads", len(caseload_data))
+        with col2:
+            st.metric("Total Reports Available", total_reports)
+        with col3:
+            st.metric("Reports in Progress", 3)
+        with col4:
+            st.metric("Status", "Ready")
+    
+    # TAB 2: Assigned Reports by Caseload
+    with tab2:
+        st.subheader("My Caseload - Assigned Reports")
+        
+        # Filter options
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            status_filter = st.multiselect("Status", ["Not Started", "In Progress", "Under Review", "Completed"], 
+                                          default=["Not Started", "In Progress"])
+        with col2:
+            priority_filter = st.multiselect("Priority", ["🔴 High", "🟡 Medium", "🟢 Low"],
+                                            default=["🔴 High", "🟡 Medium"])
+        with col3:
+            sort_by = st.selectbox("Sort By", ["Due Date", "Priority", "Establishment", "Date Added"])
+        
+        # Assigned Reports Table
+        assigned_reports = pd.DataFrame({
+            'Report ID': ['REP-2026-0045', 'REP-2026-0046', 'REP-2026-0047', 'REP-2026-0048', 'REP-2026-0049', 'REP-2026-0050'],
+            'Establishment': ['Lincoln Elementary', 'Grant Middle School', 'Jefferson HS', 'Adams Preschool', 'Madison Elementary', 'Monroe Academy'],
+            'Status': ['Not Started', 'In Progress', 'Under Review', 'Not Started', 'In Progress', 'Completed'],
+            'Priority': ['🔴 High', '🟡 Medium', '🔴 High', '🟢 Low', '🟡 Medium', '✓ Completed'],
+            'Due Date': ['Feb 20', 'Feb 19', 'Feb 22', 'Feb 25', 'Feb 21', 'Feb 18'],
+            'Progress': [0, 65, 85, 0, 40, 100],
+            'Assigned': ['Feb 10', 'Feb 12', 'Feb 11', 'Feb 14', 'Feb 13', 'Feb 15']
+        })
+        
+        # Initialize session state for report editing
+        if 'selected_report' not in st.session_state:
+            st.session_state.selected_report = None
+        if 'report_updates' not in st.session_state:
+            st.session_state.report_updates = {}
+        
+        # Display reports with expandable details
+        for idx, row in assigned_reports.iterrows():
+            with st.expander(f"📋 {row['Establishment']} ({row['Report ID']}) - {row['Status']} - Due: {row['Due Date']}", 
+                            expanded=False):
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.progress(row['Progress'] / 100)
+                    st.caption(f"Progress: {row['Progress']}%")
+                with col2:
+                    st.metric("Priority", row['Priority'])
+                with col3:
+                    st.metric("Assigned", row['Assigned'])
+                
+                st.divider()
+                
+                # Report Processing Form Inside Expander
+                st.markdown(f"### Processing {row['Establishment']}")
+                
+                status_update = st.selectbox(
+                    "Update Status",
+                    ["Not Started", "In Progress", "Under Review", "Completed"],
+                    index=["Not Started", "In Progress", "Under Review", "Completed"].index(row['Status']),
+                    key=f"status_update_{idx}"
+                )
+                
+                # Report Review Form
+                col1, col2 = st.columns(2)
+                with col1:
+                    establishment_name = st.text_input("Establishment Name", value=row['Establishment'], key=f"est_name_{idx}")
+                    report_type = st.selectbox("Report Type", ["Annual", "Quarterly", "Monthly"], key=f"type_{idx}")
+                    report_name = st.text_input("Report Name", value=f"{row['Establishment']} - {row['Report ID']}", key=f"report_name_{idx}", help="Edit the report name/title")
+                with col2:
+                    submitted_by = st.text_input("Submitted By", placeholder="Officer Name", key=f"submitted_{idx}")
+                    submission_date = st.date_input("Submission Date", key=f"subdate_{idx}")
+                    reference_number = st.text_input("Reference/ID", value=row['Report ID'], key=f"ref_num_{idx}")
+                
+                # Data validation
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.checkbox("✓ Required Fields", value=True, key=f"req_fields_{idx}")
+                with col2:
+                    st.checkbox("✓ Format Valid", value=True, key=f"format_{idx}")
+                with col3:
+                    st.checkbox("✓ No Duplicates", value=True, key=f"dup_{idx}")
+                with col4:
+                    st.checkbox("✓ CQI Aligned", value=True, key=f"cqi_{idx}")
+                
+                # Notes and comments
+                notes = st.text_area(
+                    "Processing Notes",
+                    placeholder="Record any issues, observations, or special notes...",
+                    height=80,
+                    key=f"notes_{idx}"
+                )
+                
+                # Action buttons
+                st.divider()
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    if st.button("💾 Save Progress", key=f"save_{idx}", use_container_width=True):
+                        st.success(f"✓ Report '{report_name}' progress saved!")
+                        st.session_state.report_updates[row['Report ID']] = {
+                            'status': status_update,
+                            'establishment': establishment_name,
+                            'report_name': report_name,
+                            'reference_number': reference_number,
+                            'submitted_by': submitted_by,
+                            'notes': notes,
+                            'updated_at': datetime.now()
+                        }
+                with col2:
+                    if st.button("✅ Mark Complete", key=f"complete_{idx}", use_container_width=True):
+                        st.success(f"✓ {row['Establishment']} marked complete!")
+                        st.balloons()
+                with col3:
+                    if st.button("📧 Send for Review", key=f"review_{idx}", use_container_width=True):
+                        st.info(f"✓ Report sent to supervisor for review")
+                with col4:
+                    if st.button("❌ Close", key=f"close_{idx}", use_container_width=True):
+                        st.rerun()
+        
+        # Bulk Actions
+        st.divider()
+        st.subheader("Bulk Actions")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("✓ Mark Selected as Complete"):
+                st.success("Selected reports marked as complete")
+        with col2:
+            if st.button("🔄 Reassign Reports"):
+                st.info("Opened reassignment dialog")
+        with col3:
+            if st.button("📊 Export Caseload Report"):
+                st.success("Caseload report downloaded")
+    
+    # TAB 2: Support Tickets
+    with tab2:
+        # Support Metrics
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Open Tickets", "8", "-2")
+        with col2:
+            st.metric("Avg Response Time", "1.2 hrs", "-0.3 hrs")
+        with col3:
+            st.metric("Resolution Rate", "94%", "+3%")
+        with col4:
+            st.metric("User Satisfaction", "4.7/5.0", "+0.2")
+        
+        # Support Tickets
+        st.subheader("Active Support Tickets")
+        tickets = pd.DataFrame({
+            'Ticket ID': ['SUP-2026-001', 'SUP-2026-002', 'SUP-2026-003', 'SUP-2026-004'],
+            'Establishment': ['Lincoln Elementary', 'Grant Middle School', 'Jefferson HS', 'Adams Preschool'],
+            'Issue': [
+                'Excel upload format error',
+                'Login credentials not working',
+                'Report submission timeout',
+                'Data validation failure'
+            ],
+            'Priority': ['🔴 High', '🟡 Medium', '🔴 High', '🟡 Medium'],
+            'Status': ['In Progress', 'Assigned', 'Waiting', 'In Progress']
+        })
+        st.dataframe(tickets, use_container_width=True)
+        
+        # Create new support ticket
+        st.subheader("Open New Support Ticket")
+        col1, col2 = st.columns(2)
+        with col1:
+            establishment = st.selectbox("Select Establishment", 
+                ['Lincoln Elementary', 'Grant Middle School', 'Jefferson HS', 'Adams Preschool', 'Madison Elementary'],
+                key="support_ticket_establishment")
+            priority = st.radio("Priority Level", ["🟢 Low", "🟡 Medium", "🔴 High"], key="support_priority")
+        with col2:
+            issue_type = st.selectbox("Issue Category",
+                ["File Upload", "Authentication", "Data Validation", "Performance", "Technical", "Other"],
+                key="support_issue_type")
+            description = st.text_area("Issue Description", placeholder="Describe the problem...", key="support_description")
+        
+        if st.button("📝 Create Ticket", key="create_support_ticket"):
+            st.success(f"✓ Ticket created for {establishment} - {priority}")
+    
+    # TAB 3: FAQ & Knowledge Base
+    with tab3:
+        st.subheader("📚 Knowledge Base & Troubleshooting")
+        with st.expander("❓ How do I upload a report?"):
+            st.write("""
+            1. Log in with your credentials
+            2. Navigate to the 'Report Intake Portal'
+            3. Click 'Choose an Excel file'
+            4. Select your establishment's report file
+            5. Click 'Process Report'
+            
+            **Accepted formats**: .xls, .xlsx, .csv
+            """)
+        
+        with st.expander("❓ What should I do if my upload fails?"):
+            st.write("""
+            - Check file format (Excel or CSV only)
+            - Verify all required columns are present
+            - Remove any special characters from headers
+            - Check file size (max 10MB)
+            - If issue persists, open a support ticket
+            """)
+        
+        with st.expander("❓ How do I reset my password?"):
+            st.write("""
+            Click 'Forgot Password' on the login screen and follow the email instructions.
+            If you don't receive an email within 5 minutes, contact IT Support.
+            """)
+        
+        with st.expander("❓ What are the system requirements?"):
+            st.write("""
+            - **Browser**: Chrome, Firefox, Safari, Edge (latest version)
+            - **Internet**: Minimum 2 Mbps connection
+            - **File format**: Excel 2010 or later (.xlsx)
+            - **Computer**: Any Windows, Mac, or Linux system
+            """)
+        
+        # Training Resources
+        st.subheader("📖 Training & Resources")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.info("**Quick Start Guide**\nGet up and running in 5 minutes")
+        with col2:
+            st.info("**Video Tutorials**\nStep-by-step walkthroughs")
+        with col3:
+            st.info("**Live Chat**\nConnect with a support specialist")
+        
+        # Common Issues
+        st.subheader("🔧 Common Issues & Solutions")
+        common_issues = pd.DataFrame({
+            'Issue': [
+                'Cannot login',
+                'File format rejected',
+                'Slow performance',
+                'Export not working',
+                'Data not saving'
+            ],
+            'Possible Cause': [
+                'Wrong credentials or account inactive',
+                'Wrong file format or corrupted file',
+                'Network latency or browser cache',
+                'File permissions or server issue',
+                'Internet disconnected or session timeout'
+            ],
+            'Quick Fix': [
+                'Reset password or contact IT',
+                'Use Excel (.xlsx) format',
+                'Clear browser cache',
+                'Try different browser',
+                'Refresh page and retry'
+            ]
+        })
+        st.dataframe(common_issues, use_container_width=True)
+    
+    # Support Tickets (removed duplicate - now in tab2)
+    st.subheader("Active Support Tickets")
+    tickets = pd.DataFrame({
+        'Ticket ID': ['SUP-2026-001', 'SUP-2026-002', 'SUP-2026-003', 'SUP-2026-004'],
+        'Establishment': ['Lincoln Elementary', 'Grant Middle School', 'Jefferson HS', 'Adams Preschool'],
+        'Issue': [
+            'Excel upload format error',
+            'Login credentials not working',
+            'Report submission timeout',
+            'Data validation failure'
+        ],
+        'Priority': ['🔴 High', '🟡 Medium', '🔴 High', '🟡 Medium'],
+        'Status': ['In Progress', 'Assigned', 'Waiting', 'In Progress']
+    })
+    st.dataframe(tickets, use_container_width=True)
+    
+    # Create new support ticket
+    st.subheader("Open New Support Ticket")
+    col1, col2 = st.columns(2)
+    with col1:
+        establishment = st.selectbox("Select Establishment", 
+            ['Lincoln Elementary', 'Grant Middle School', 'Jefferson HS', 'Adams Preschool', 'Madison Elementary'])
+        priority = st.radio("Priority Level", ["🟢 Low", "🟡 Medium", "🔴 High"])
+    with col2:
+        issue_type = st.selectbox("Issue Category",
+            ["File Upload", "Authentication", "Data Validation", "Performance", "Technical", "Other"])
+        description = st.text_area("Issue Description", placeholder="Describe the problem...")
+    
+        if st.button("📝 Create Ticket", key="new_support_ticket"):
+            st.success(f"✓ Ticket created for {establishment} - {priority}")
+    
+    # Training Resources
+    st.subheader("📖 Training & Resources")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.info("**Quick Start Guide**\nGet up and running in 5 minutes")
+    with col2:
+        st.info("**Video Tutorials**\nStep-by-step walkthroughs")
+    with col3:
+        st.info("**Live Chat**\nConnect with a support specialist")
+    
+    # Common Issues
+    st.subheader("🔧 Common Issues & Solutions")
+    common_issues = pd.DataFrame({
+        'Issue': [
+            'Cannot login',
+            'File format rejected',
+            'Slow performance',
+            'Export not working',
+            'Data not saving'
+        ],
+        'Possible Cause': [
+            'Wrong credentials or account inactive',
+            'Wrong file format or corrupted file',
+            'Network latency or browser cache',
+            'File permissions or server issue',
+            'Internet disconnected or session timeout'
+        ],
+        'Quick Fix': [
+            'Reset password or contact IT',
+            'Use Excel (.xlsx) format',
+            'Clear browser cache',
+            'Try different browser',
+            'Refresh page and retry'
+        ]
+    })
+    st.dataframe(common_issues, use_container_width=True)
+
+elif role == "IT Administrator":
+    st.markdown('<div class="header-title">⚙️ System Administration</div>', unsafe_allow_html=True)
+    st.markdown("**Server Configuration & Monitoring**")
+    
+    # Tabs for IT Administrator
+    it_tab1, it_tab2, it_tab3 = st.tabs(["🖥️ System Status", "👥 User & Caseload Management", "🛠️ Maintenance & Logs"])
+    
+    with it_tab1:
+        # Server Status
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Server Status", "🟢 Online", "Up 42 days")
+        with col2:
+            st.metric("Database Health", "✓ Optimal", "99.7% uptime")
+        with col3:
+            st.metric("Active Users", "23", "Peak: 47")
+        
+        # Configuration Paths
+        st.subheader("Server Configuration Paths")
+        config_info = """
+        **Template Directory**: `S:\\OCSS\\CommandCenter\\Template`
+        **Report Library**: `S:\\OCSS\\CommandCenter\\ReportLibrary`
+        **Exports Archive**: `S:\\OCSS\\CommandCenter\\Exports`
+        """
+        st.info(config_info)
+    
+    with it_tab2:
+        st.subheader("👥 User & Caseload Management")
+        
+        # All Workers Across Organization
+        all_workers = pd.DataFrame({
+            'Worker Name': ['Sarah Johnson', 'Michael Chen', 'Jessica Brown', 'David Martinez', 'Amanda Wilson'],
+            'Role': ['Support Officer', 'Support Officer', 'Support Officer', 'Support Officer', 'Support Officer'],
+            'Department': ['OCSS North', 'OCSS South', 'OCSS Central', 'OCSS East', 'OCSS West'],
+            'Total Assigned': [24, 28, 22, 26, 25],
+            'Completed': [12, 18, 15, 14, 16],
+            'In Progress': [8, 7, 5, 9, 6],
+            'Completion %': ['50%', '64%', '68%', '54%', '64%']
+        })
+        
+        st.dataframe(all_workers, use_container_width=True)
+        
+        # Organization Metrics
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Total Users", len(all_workers))
+        with col2:
+            st.metric("Total Assigned Reports", all_workers['Total Assigned'].sum())
+        with col3:
+            st.metric("Total Completed", all_workers['Completed'].sum())
+        with col4:
+            st.metric("Org Completion Rate", "60%")
+        
+        # User Management
+        st.subheader("Add/Remove Users")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            new_user = st.text_input("New User Name")
+        with col2:
+            new_role = st.selectbox("Role", ["Support Officer", "Program Officer", "Supervisor"])
+        with col3:
+            new_dept = st.selectbox("Department", ["OCSS North", "OCSS South", "OCSS Central", "OCSS East", "OCSS West"])
+        
+        if st.button("➕ Add User"):
+            st.success(f"✓ User '{new_user}' added as {new_role} in {new_dept}")
+        
+        # Bulk Caseload Assignment
+        st.divider()
+        st.subheader("📋 Bulk Caseload Assignment")
+        col1, col2 = st.columns(2)
+        with col1:
+            selected_user = st.selectbox("Assign to User", all_workers['Worker Name'].tolist())
+            caseload_size = st.number_input("Number of Reports", min_value=1, max_value=30, value=10)
+        with col2:
+            assignment_type = st.selectbox("Assignment Type", ["Automatic Distribution", "Manual Selection", "By Establishment"])
+            priority = st.selectbox("Priority Level", ["All", "🔴 High Only", "🟡 Medium Only", "🟢 Low Only"])
+        
+        if st.button("📤 Assign Caseload"):
+            st.success(f"✓ {caseload_size} reports assigned to {selected_user}")
+    
+    with it_tab3:
+        # System Log
+        st.subheader("Recent System Activity")
+        logs = pd.DataFrame({
+            'Timestamp': pd.date_range(end=datetime.now(), periods=5, freq='H'),
+            'Event': [
+                '[INFO] Backup completed successfully',
+                '[INFO] 12 reports processed',
+                '[WARNING] High disk usage detected',
+                '[INFO] User session initialized',
+                '[INFO] Database optimization running'
+            ],
+            'Status': ['✓', '✓', '⚠️', '✓', '✓']
+        })
+        st.dataframe(logs, use_container_width=True)
+        
+        # Maintenance
+        st.subheader("Maintenance Tools")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("Run System Diagnostics", key="it_diag"):
+                st.success("✓ Diagnostics completed: All systems nominal")
+        with col2:
+            if st.button("Generate Audit Report", key="it_audit"):
+                st.success("✓ Audit report generated for current period")
+        with col3:
+            if st.button("Backup Database", key="it_backup"):
+                st.success("✓ Database backup completed successfully")
+
+# Footer
+st.markdown("---")
+st.markdown("""
+<div style="text-align: center; color: #888; font-size: 0.9em;">
+    <p>OCSS Establishment Command Center | Version 1.0.0</p>
+    <p>Last Updated: """ + datetime.now().strftime("%B %d, %Y at %I:%M %p") + """</p>
+</div>
+""", unsafe_allow_html=True)
