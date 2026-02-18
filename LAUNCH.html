@@ -136,6 +136,8 @@
     
     <script>
         // Check if the application is running
+        // Note: This may be blocked by CORS when opening file:// directly
+        // For full functionality, serve this HTML through a web server
         fetch('http://localhost:8501')
             .then(response => {
                 if (response.ok) {
@@ -144,6 +146,7 @@
                 }
             })
             .catch(error => {
+                // CORS error or app not running - show warning
                 document.querySelector('.status').textContent = '⚠️ Application Not Running - Click to Start';
                 document.querySelector('.status').style.background = '#ff9800';
             });

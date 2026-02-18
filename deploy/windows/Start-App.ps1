@@ -48,5 +48,5 @@ Write-Host ""
 Write-Host "Press Ctrl+C to stop the application" -ForegroundColor Yellow
 Write-Host ""
 
-# Launch Streamlit
-streamlit run app.py --server.headless=false
+# Launch Streamlit (will automatically open in browser)
+python -m streamlit run app.py
