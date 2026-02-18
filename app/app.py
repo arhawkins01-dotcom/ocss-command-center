@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import io
+import os
+import json
 
 # Page configuration
 st.set_page_config(
@@ -38,6 +40,29 @@ if 'uploaded_reports' not in st.session_state:
 if 'reports_by_caseload' not in st.session_state:
     st.session_state.reports_by_caseload = {'181000': [], '181001': [], '181002': []}
 
+# Organizational units: supervisors, team leads, support officers and caseload assignments
+if 'units' not in st.session_state:
+    st.session_state.units = {
+        'OCSS North': {
+            'supervisor': 'Alex Martinez',
+            'team_leads': ['Sarah Johnson'],
+            'support_officers': ['Michael Chen', 'Jessica Brown'],
+            'assignments': {
+                'Sarah Johnson': ['181000'],
+                'Michael Chen': ['181001'],
+                'Jessica Brown': ['181002']
+            }
+        },
+        'OCSS South': {
+            'supervisor': 'Priya Singh',
+            'team_leads': ['David Martinez'],
+            'support_officers': ['Amanda Wilson'],
+            'assignments': {
+                'David Martinez': ['181001'],
+                'Amanda Wilson': ['181000']
+            }
+        }
+    }
 # Sidebar - Role Selection
 st.sidebar.title("🎯 OCSS Command Center")
 st.sidebar.markdown("---")
@@ -349,40 +374,63 @@ elif role == "Supervisor":
     
     with sup_tab2:
         st.subheader("👥 Team Caseload Management")
-        
-        # Worker Caseload Overview
-        team_workers = pd.DataFrame({
-            'Worker Name': ['Sarah Johnson', 'Michael Chen', 'Jessica Brown', 'David Martinez'],
-            'Total Assigned': [24, 28, 22, 26],
-            'Completed': [12, 18, 15, 14],
-            'In Progress': [8, 7, 5, 9],
-            'Not Started': [4, 3, 2, 3],
-            'Completion %': ['50%', '64%', '68%', '54%'],
-            'Avg Time/Report': ['2.1 hrs', '1.8 hrs', '1.6 hrs', '2.0 hrs']
-        })
-        
-        st.dataframe(team_workers, use_container_width=True)
-        
-        # Workload Distribution
-        st.subheader("Workload Distribution")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.bar_chart(team_workers.set_index('Worker Name')[['Total Assigned', 'Completed']])
-        with col2:
-            st.bar_chart(team_workers.set_index('Worker Name')[['Not Started', 'In Progress', 'Completed']])
-        
-        # Reassign Reports
-        st.subheader("📋 Reassign Reports")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            from_worker = st.selectbox("From Worker", team_workers['Worker Name'].tolist())
-        with col2:
-            to_worker = st.selectbox("To Worker", team_workers['Worker Name'].tolist())
-        with col3:
-            num_reports = st.number_input("Number of Reports", min_value=1, max_value=10, value=1, key="sup_reports")
-        
-        if st.button("🔄 Execute Reassignment", key="supervisor_reassign"):
-            st.success(f"✓ {num_reports} report(s) reassigned from {from_worker} to {to_worker}")
+
+        # Supervisor selector (view by unit)
+        supervisors = []
+        for unit_name, unit in st.session_state.units.items():
+            supervisors.append(unit.get('supervisor'))
+        supervisors = [s for s in supervisors if s]
+
+        selected_supervisor = st.selectbox("Select Supervisor to View", options=['(Select)'] + supervisors)
+
+        if selected_supervisor and selected_supervisor != '(Select)':
+            # Find unit for this supervisor
+            unit_found = None
+            for unit_name, unit in st.session_state.units.items():
+                if unit.get('supervisor') == selected_supervisor:
+                    unit_found = (unit_name, unit)
+                    break
+
+            if unit_found:
+                unit_name, unit = unit_found
+                st.markdown(f"**Unit:** {unit_name}")
+                st.markdown(f"**Team Lead(s):** {', '.join(unit.get('team_leads', []))}")
+                st.markdown(f"**Support Officers:** {', '.join(unit.get('support_officers', []))}")
+
+                # Build team overview
+                team_list = unit.get('support_officers', []) + unit.get('team_leads', [])
+                if team_list:
+                    team_workers = pd.DataFrame({
+                        'Worker Name': team_list,
+                        'Total Assigned': [len(unit.get('assignments', {}).get(w, [])) for w in team_list],
+                        'Assigned Caseloads': [', '.join(unit.get('assignments', {}).get(w, [])) for w in team_list]
+                    })
+                    st.dataframe(team_workers, use_container_width=True)
+
+                    # Reassign Reports (within unit)
+                    st.subheader("📋 Reassign Reports Within Unit")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        from_worker = st.selectbox("From Worker", team_list, key="from_worker_unit")
+                    with col2:
+                        to_worker = st.selectbox("To Worker", team_list, key="to_worker_unit")
+                    with col3:
+                        caseload_choice = st.selectbox("Caseload to move", options=sum([unit.get('assignments', {}).get(w, []) for w in team_list], []), key="caseload_move")
+
+                    if st.button("🔄 Move Caseload", key="move_caseload_unit"):
+                        # perform move
+                        if caseload_choice in st.session_state.units[unit_name]['assignments'].get(from_worker, []):
+                            st.session_state.units[unit_name]['assignments'][from_worker].remove(caseload_choice)
+                            st.session_state.units[unit_name]['assignments'].setdefault(to_worker, []).append(caseload_choice)
+                            st.success(f"✓ Caseload {caseload_choice} moved from {from_worker} to {to_worker}")
+                        else:
+                            st.error("Selected caseload not found for the source worker")
+                else:
+                    st.info("No team members assigned yet for this supervisor")
+            else:
+                st.error("Supervisor not found in any unit")
+        else:
+            st.info("Select a supervisor to view their unit and team caseloads")
     
     with sup_tab3:
         st.subheader("📈 Team Performance Analytics")
@@ -414,17 +462,44 @@ elif role == "Support Officer":
     st.markdown('<div class="header-title">📋 Support Officer - Caseload Management</div>', unsafe_allow_html=True)
     st.markdown("**Assigned Reports & Technical Support**")
     
-    # Caseload Metrics
+    # Choose which Support Officer you are acting as (since no auth yet)
+    all_sos = []
+    for unit in st.session_state.units.values():
+        all_sos.extend(unit.get('support_officers', []))
+        all_sos.extend(unit.get('team_leads', []))
+    all_sos = sorted(list(set(all_sos)))
+
+    acting_so = st.selectbox("Act as Support Officer / Team Lead", options=['(Select)'] + all_sos)
+
+    # Caseload Metrics (for selected person)
     col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Assigned Reports", "24", "-3")
-    with col2:
-        st.metric("Completed Today", "5", "+2")
-    with col3:
-        st.metric("In Progress", "12", "-1")
-    with col4:
-        st.metric("Completion Rate", "87%", "+4%")
-    
+    if acting_so and acting_so != '(Select)':
+        # find caseloads assigned across units
+        assigned_caseloads = []
+        for unit in st.session_state.units.values():
+            for person, caseloads in unit.get('assignments', {}).items():
+                if person == acting_so:
+                    assigned_caseloads.extend(caseloads)
+
+        st.session_state.setdefault('last_acting_so', acting_so)
+        with col1:
+            st.metric("Assigned Caseloads", len(assigned_caseloads))
+        with col2:
+            st.metric("Active Reports", sum(len(st.session_state.reports_by_caseload.get(c, [])) for c in assigned_caseloads))
+        with col3:
+            st.metric("Pending Approval", 0)
+        with col4:
+            st.metric("Status", "Active")
+    else:
+        with col1:
+            st.metric("Assigned Caseloads", "-", "-")
+        with col2:
+            st.metric("Active Reports", "-", "-")
+        with col3:
+            st.metric("Pending Approval", "-", "-")
+        with col4:
+            st.metric("Status", "Select yourself to view")
+
     # Tab Navigation
     tab1, tab2, tab3, tab4 = st.tabs(["📊 Caseload Dashboard", "📝 My Assigned Reports", "🆘 Support Tickets", "📚 Knowledge Base"])
     
@@ -464,9 +539,22 @@ elif role == "Support Officer":
         # Caseload selection
         col1, col2 = st.columns([1, 2])
         with col1:
+            # If acting as a Support Officer, limit caseloads to assigned ones
+            if 'acting_so' in locals() and acting_so and acting_so != '(Select)':
+                options = []
+                for unit in st.session_state.units.values():
+                    for person, caseloads in unit.get('assignments', {}).items():
+                        if person == acting_so:
+                            options.extend(caseloads)
+                # fallback to all if none assigned
+                if not options:
+                    options = list(caseload_data.keys())
+            else:
+                options = list(caseload_data.keys())
+
             selected_caseload = st.selectbox(
                 "Select Caseload Number",
-                list(caseload_data.keys()),
+                options,
                 format_func=lambda x: f"{x} - {caseload_data[x]['name']}"
             )
         with col2:
@@ -972,6 +1060,10 @@ elif role == "IT Administrator":
     
     with it_tab2:
         st.subheader("👥 User & Caseload Management")
+        # Current user for audit purposes
+        current_user = st.text_input("Current User (for audit)", value=st.session_state.get('current_user', ''), help="Enter your name to be recorded in audit entries.")
+        if current_user:
+            st.session_state.current_user = current_user
         
         # All Workers Across Organization
         all_workers = pd.DataFrame({
@@ -1023,6 +1115,161 @@ elif role == "IT Administrator":
         
         if st.button("📤 Assign Caseload"):
             st.success(f"✓ {caseload_size} reports assigned to {selected_user}")
+        
+        st.divider()
+        st.subheader("🏷️ Unit Management")
+        col1, col2 = st.columns(2)
+        with col1:
+            unit_names = list(st.session_state.units.keys())
+            unit_choice = st.selectbox("Select Unit", options=['(New Unit)'] + unit_names)
+            new_unit_name = st.text_input("New Unit Name", value="", placeholder="Enter unit name if creating new")
+            supervisor_name = st.text_input("Supervisor Name", value="")
+        with col2:
+            team_lead = st.text_input("Team Lead Name", value="")
+            support_officer = st.text_input("Support Officer Name", value="")
+            caseload_to_assign = st.selectbox("Caseload to Assign", options=list(st.session_state.reports_by_caseload.keys()))
+
+        if st.button("➕ Create/Update Unit"):
+            # Determine target unit name
+            provided_name = new_unit_name.strip()
+            if unit_choice == '(New Unit)':
+                if not provided_name:
+                    st.error("Please provide a valid unit name when creating a new unit.")
+                    st.stop()
+                # Prevent case-insensitive duplicate unit names
+                existing_lower = {u.lower(): u for u in st.session_state.units.keys()}
+                if provided_name.lower() in existing_lower:
+                    st.error(f"Unit '{provided_name}' already exists (case-insensitive match to '{existing_lower[provided_name.lower()]}'). Pick a different name or select the existing unit to update.")
+                    st.stop()
+                target_unit = provided_name
+            else:
+                target_unit = unit_choice
+
+            # Ensure target unit record exists
+            st.session_state.units.setdefault(target_unit, {'supervisor': '', 'team_leads': [], 'support_officers': [], 'assignments': {}})
+
+            # Normalize and validate person names
+            def norm(name):
+                return name.strip()
+
+            sup = norm(supervisor_name)
+            tl = norm(team_lead)
+            so = norm(support_officer)
+
+            if sup:
+                st.session_state.units[target_unit]['supervisor'] = sup
+
+            # Add team lead if not duplicate (case-insensitive)
+            if tl:
+                existing_tls = [t.lower() for t in st.session_state.units[target_unit]['team_leads']]
+                if tl.lower() not in existing_tls:
+                    st.session_state.units[target_unit]['team_leads'].append(tl)
+
+            # Add support officer if not duplicate (case-insensitive)
+            if so:
+                existing_sos = [s.lower() for s in st.session_state.units[target_unit]['support_officers']]
+                if so.lower() not in existing_sos:
+                    st.session_state.units[target_unit]['support_officers'].append(so)
+
+            # Assign caseload with dedup checks
+            if caseload_to_assign:
+                assignee = so or tl
+                if not assignee:
+                    st.warning('No assignee provided for caseload; please enter a Support Officer or Team Lead name to assign.')
+                else:
+                    # Prevent same caseload assigned to multiple people across all units
+                    already_assigned = None
+                    for uname, u in st.session_state.units.items():
+                        for person, caselist in u.get('assignments', {}).items():
+                            if caseload_to_assign in caselist:
+                                already_assigned = (uname, person)
+                                break
+                        if already_assigned:
+                            break
+
+                    if already_assigned:
+                        # If it's already assigned to same person in same unit, ignore
+                        if already_assigned == (target_unit, assignee):
+                            st.info(f"Caseload {caseload_to_assign} already assigned to {assignee} in unit '{target_unit}'.")
+                        else:
+                            st.error(f"Caseload {caseload_to_assign} is already assigned to {already_assigned[1]} in unit '{already_assigned[0]}'. Remove existing assignment before reassigning.")
+                            st.stop()
+                    else:
+                        # Safe to assign; ensure person's assignment list exists and dedupe
+                        assignments = st.session_state.units[target_unit].setdefault('assignments', {})
+                        person_list = assignments.setdefault(assignee, [])
+                        if caseload_to_assign not in person_list:
+                            person_list.append(caseload_to_assign)
+
+            st.success(f"✓ Unit '{target_unit}' created/updated")
+
+        # Quick view of units
+        st.write("**Current Units:**")
+        for uname, u in st.session_state.units.items():
+            st.markdown(f"- **{uname}** — Supervisor: {u.get('supervisor')} — Team Leads: {', '.join(u.get('team_leads', []))} — Support Officers: {', '.join(u.get('support_officers', []))}")
+
+        st.divider()
+        # Initialize audit log for admin actions in-session
+        if 'audit_log' not in st.session_state:
+            st.session_state.audit_log = []
+
+        st.subheader("🗑️ Remove Caseload Assignment")
+        if st.session_state.units:
+            remove_unit = st.selectbox("Select Unit to modify", options=list(st.session_state.units.keys()), key="remove_unit_select")
+            if remove_unit:
+                assignments = st.session_state.units.get(remove_unit, {}).get('assignments', {})
+                person_options = list(assignments.keys())
+                if person_options:
+                    remove_person = st.selectbox("Select Assignee", options=person_options, key="remove_person_select")
+                    caseload_options = assignments.get(remove_person, [])
+                    if caseload_options:
+                        remove_caseload = st.selectbox("Select Caseload to remove", options=caseload_options, key="remove_caseload_select")
+                        if st.button("🗑️ Remove Assignment"):
+                            # Show a confirmation modal before removing
+                            with st.modal("Confirm Removal"):
+                                st.warning(f"You are about to remove caseload **{remove_caseload}** from **{remove_person}** in unit **{remove_unit}**.")
+                                st.write("This action will delete the assignment from the in-memory configuration. An audit entry will be recorded in the session log.")
+                                col_c1, col_c2 = st.columns([1,1])
+                                with col_c1:
+                                    if st.button("Confirm Remove", key=f"confirm_remove_{remove_unit}_{remove_person}_{remove_caseload}"):
+                                        # Perform removal
+                                        try:
+                                            assignments[remove_person].remove(remove_caseload)
+                                        except ValueError:
+                                            st.error("Selected caseload not found in assignments; it may have been removed already.")
+                                        else:
+                                            # Clean up empty lists
+                                            if not assignments.get(remove_person):
+                                                del assignments[remove_person]
+                                            st.session_state.units[remove_unit]['assignments'] = assignments
+                                            # Append audit log entry
+                                            st.session_state.audit_log.append({
+                                                'timestamp': datetime.now().isoformat(),
+                                                'actor': st.session_state.get('current_user', 'IT Administrator (UI)'),
+                                                'action': 'remove_assignment',
+                                                'unit': remove_unit,
+                                                'assignee': remove_person,
+                                                'caseload': remove_caseload
+                                            })
+                                            # Also persist audit entry to disk (append JSONL)
+                                            try:
+                                                data_dir = os.path.join(os.getcwd(), 'data')
+                                                os.makedirs(data_dir, exist_ok=True)
+                                                audit_file = os.path.join(data_dir, 'audit_log.jsonl')
+                                                with open(audit_file, 'a', encoding='utf-8') as af:
+                                                    af.write(json.dumps(st.session_state.audit_log[-1]) + "\n")
+                                            except Exception as e:
+                                                st.warning(f"Could not persist audit entry to disk: {e}")
+                                            st.success(f"✓ Removed caseload {remove_caseload} from {remove_person} in unit '{remove_unit}'")
+                                with col_c2:
+                                    if st.button("Cancel", key=f"cancel_remove_{remove_unit}_{remove_person}_{remove_caseload}"):
+                                        st.info("Removal cancelled.")
+                    else:
+                        st.info("No caseloads assigned to the selected person.")
+                else:
+                    st.info("No assignments exist for this unit.")
+        else:
+            st.info("No units available to modify.")
     
     with it_tab3:
         # System Log
@@ -1038,7 +1285,23 @@ elif role == "IT Administrator":
             ],
             'Status': ['✓', '✓', '⚠️', '✓', '✓']
         })
-        st.dataframe(logs, use_container_width=True)
+
+        # Include any session-level audit log entries created by IT Admin actions
+        audit_entries = []
+        for a in st.session_state.get('audit_log', []):
+            audit_entries.append({
+                'Timestamp': pd.to_datetime(a.get('timestamp')),
+                'Event': f"[AUDIT] {a.get('actor')}: {a.get('action')} — caseload {a.get('caseload')} -> {a.get('assignee')} (unit: {a.get('unit')})",
+                'Status': 'AUDIT'
+            })
+
+        if audit_entries:
+            audit_df = pd.DataFrame(audit_entries)
+            combined = pd.concat([audit_df, logs], ignore_index=True).sort_values(by='Timestamp', ascending=False)
+        else:
+            combined = logs.sort_values(by='Timestamp', ascending=False)
+
+        st.dataframe(combined, use_container_width=True)
         
         # Maintenance
         st.subheader("Maintenance Tools")
