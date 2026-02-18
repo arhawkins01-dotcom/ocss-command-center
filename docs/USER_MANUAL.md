@@ -39,6 +39,14 @@ The OCSS Command Center is a centralized dashboard for managing establishment re
 - Network access to the OCSS Command Center server
 - Your assigned username/credentials (when authentication is enabled)
 
+### Important Notes
+
+- **Session-Based Storage**: Currently, assignments and uploaded data are stored in session memory. This means:
+  - Data persists only during your browser session
+  - Server restarts will reset assignments and uploads
+  - Always export important data to CSV for backup
+  - Database persistence is planned for Phase 2
+
 ---
 
 ## Getting Started
@@ -85,9 +93,10 @@ The main content area will update to show features relevant to your role.
 - Completion status by region
 
 **📋 Team Performance Tab**
-- Individual worker performance comparison
+- Individual worker performance comparison (if team data is loaded)
 - Team efficiency metrics
 - Quality scores by team
+- Note: If no team is selected in Supervisor view, this will show a message instead
 
 #### Quick Actions
 
@@ -137,6 +146,8 @@ The main content area will update to show features relevant to your role.
 
 **Purpose**: Manage your unit, assign caseloads to team members, and monitor team performance.
 
+**Who Uses This Role**: Both supervisors (to manage their teams) and workers (to claim caseloads via Worker Self-Pull).
+
 #### Dashboard Features
 
 **👥 My Team & Assignments Tab**
@@ -153,11 +164,14 @@ The main content area will update to show features relevant to your role.
 
 **Worker Self-Pull (Claim a Caseload)**:
 
-This feature allows team members to claim unassigned caseloads for themselves.
+This feature allows team members to claim caseloads for themselves. **Workers should use the Supervisor role** to access this feature.
 
 1. **Worker Action**:
+   - Select **Supervisor** role in the sidebar
+   - Choose your supervisor's name from the dropdown
+   - Scroll to the **Worker Self-Pull** section
    - Enter your name in "Simulate Current Worker"
-   - Select yourself in "Pull As" (must match)
+   - Select yourself in "Pull As" (must match exactly)
    - Choose a caseload from "Caseload to Claim"
    - The system shows if the caseload is available or who currently owns it
    - Click **"🧷 Pull Caseload to Self"**
@@ -192,7 +206,11 @@ This feature allows team members to claim unassigned caseloads for themselves.
 
 **Act as Support Officer / Team Lead**
 
-Since authentication is not yet enabled, select your name from the dropdown to view your assignments.
+**Important**: Since authentication is not yet enabled, you must manually select your name from the dropdown to see your work. This simulates the login that will be implemented in Phase 2.
+
+1. Find the "Act as Support Officer / Team Lead" dropdown at the top
+2. Select your name from the list
+3. The dashboard will update to show only caseloads assigned to you
 
 **Caseload Metrics**
 - **Assigned Caseloads**: Number of caseloads you're responsible for
@@ -263,10 +281,13 @@ View and process reports by caseload:
 - Total users, assigned reports, completion rates
 
 **Add/Remove Users**:
+
+**Note**: The UI for adding users is present but not yet functional. User management will be fully implemented in Phase 2 with authentication.
+
 1. Enter new user name
 2. Select role (Support Officer, Program Officer, Supervisor)
 3. Select department
-4. Click **"➕ Add User"** (future feature)
+4. Click **"➕ Add User"** (placeholder - functionality coming soon)
 
 **Bulk Caseload Assignment** (future feature):
 - Assign multiple reports to a user at once
@@ -339,18 +360,24 @@ Create and manage organizational units:
 7. Click **"📤 Upload to Caseload"**
 8. Confirm upload appears in Recent Uploads
 
-### How to Claim a Caseload (Support Officer via Supervisor View)
+### How to Claim a Caseload (Worker Self-Pull)
 
-1. Select **Supervisor** role
-2. Choose your supervisor in the dropdown
+**Note**: Workers use the Supervisor role to claim caseloads for themselves.
+
+1. Select **Supervisor** role in the sidebar
+2. Choose your supervisor's name in the dropdown
 3. Go to **👥 My Team & Assignments** tab
-4. In **Worker Self-Pull** section:
+4. Scroll to the **Worker Self-Pull (Claim a Caseload)** section
+5. In **Worker Self-Pull** section:
    - Enter your name in "Simulate Current Worker"
-   - Select yourself in "Pull As"
-   - Choose available caseload
-   - Check availability hint
-5. Click **"🧷 Pull Caseload to Self"**
-6. System confirms claim
+   - Select yourself in "Pull As" (both fields must match exactly)
+   - Choose a caseload from "Caseload to Claim"
+   - Review the availability hint (if any):
+     - Green info box = already yours
+     - Orange warning = assigned to someone else
+     - No message = available to claim
+6. Click **"🧷 Pull Caseload to Self"**
+7. System confirms claim or shows error if not available
 
 ### How to Process a Report (Support Officer)
 
@@ -429,17 +456,21 @@ Create and manage organizational units:
 - Rename file to remove special characters
 - Try re-uploading
 
-### I can't pull a caseload (Support Officer/Supervisor)
+### I can't pull a caseload (Worker Self-Pull)
 
 **Possible Reasons**:
 - Caseload already assigned to someone else (check availability hint)
-- "Simulate Current Worker" doesn't match "Pull As"
+- "Simulate Current Worker" doesn't match "Pull As" (must be identical, including capitalization)
 - You're not in the worker list for this unit
+- You haven't selected the Supervisor role in the sidebar
+- You haven't selected your supervisor in the dropdown
 
 **Solution**:
-- Check the availability hint (orange warning shows current owner)
-- Ensure both fields have your exact name
-- Ask supervisor to reassign if you need a caseload held by someone else
+1. Verify you're in the **Supervisor** role (check sidebar)
+2. Confirm your supervisor is selected in the dropdown
+3. Check the availability hint (orange warning shows current owner and unit)
+4. Ensure both "Simulate Current Worker" and "Pull As" have your exact name
+5. If caseload is held by someone else, ask your supervisor to reassign it using the "Reassign Reports Within Unit" feature
 
 ### Unit creation says "already exists"
 
@@ -463,10 +494,19 @@ Create and manage organizational units:
 
 ### Report data not saving (Support Officer)
 
+**Possible Causes**:
+- Forgot to click the **"💾 Update Report"** button inside the form
+- Session expired or server restarted
+- Browser was closed before data was saved
+
 **Solution**:
-- Ensure you clicked **"💾 Update Report"** inside the form
-- Check for success message (green checkmark)
-- Note: Session-based storage means data resets if server restarts; export CSV for backup
+1. Ensure you clicked **"💾 Update Report"** inside the form (not just editing fields)
+2. Look for the success message (green checkmark: "✓ Report data updated!")
+3. **Important**: Session-based storage means data resets if:
+   - Server restarts
+   - Browser session ends
+   - You clear browser cache
+4. **Best Practice**: Always **📥 Download CSV** after making important edits to create a backup
 
 ### Page won't load
 
