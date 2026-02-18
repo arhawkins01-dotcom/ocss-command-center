@@ -8,8 +8,14 @@
 
 ## Demo Overview
 
-**Duration**: 20-30 minutes  
-**Objective**: Walk IT staff through all major features, demonstrate role-based workflows, and validate system functionality.
+**Duration**: 25-35 minutes (20-30 minutes for core features + 5 minutes for Q&A)  
+**Objective**: Walk IT staff through all major features, demonstrate role-based workflows, validate system functionality, and clarify session storage limitations.
+
+**Important Context for Attendees**:
+- This is a **proof-of-concept** with session-based storage
+- Data does NOT persist across server restarts
+- Each browser session has independent state
+- Phase 2 will add database persistence and authentication
 
 **Prerequisites**:
 - OCSS Command Center running on server (port 8501)
@@ -58,9 +64,11 @@
 > "Each user selects their role here in the sidebar. The main content area updates automatically to show relevant features. Let's walk through each role."
 
 **Key Points**:
-- Role-based access control (currently UI-based; authentication coming in phase 2)
-- Session-based data storage (in-memory; database integration planned)
+- Role-based access control (currently UI-based; authentication coming in Phase 2)
+- **Session-based data storage** (in-memory; resets on server restart or browser session end)
+- Database integration planned for Phase 2 for persistent storage
 - Streamlit framework (easy to deploy, Python-based)
+- **Important**: All demo actions are session-only; recommend exporting CSV backups of important data
 
 ---
 
@@ -167,38 +175,52 @@
 > "Supervisors can reassign caseloads within their unit. This moves caseload 181000 from Sarah to Michael. The change is immediate."
 
 **Expected Outcome**:
-- ✅ Success message: "Caseload 181000 moved from Sarah Johnson to Michael Chen"
-- ✅ Team dataframe updates (refresh view)
+- ✅ Success message: "✓ Caseload 181000 moved from Sarah Johnson to Michael Chen"
+- ✅ Assignment is updated in session state
+- ℹ️ **Note**: You may need to re-select the supervisor in the dropdown to refresh the team dataframe view
 
 **Demo Action 3: Worker Self-Pull Feature**
 
 **Script**:
-> "Now let's demonstrate the Worker Self-Pull feature. This allows workers to claim unassigned caseloads for themselves—but only for themselves."
+> "Now let's demonstrate the Worker Self-Pull feature. This allows workers to claim caseloads for themselves—but only for themselves. Workers access this through the Supervisor role."
 
-1. **Simulate Current Worker**: Enter `Jessica Brown`
-2. **Pull As**: Select `Jessica Brown` (must match)
-3. **Caseload to Claim**: Choose `181002`
+1. **Scroll down** to the **Worker Self-Pull (Claim a Caseload)** section
+2. **Simulate Current Worker**: Enter `Jessica Brown`
+3. **Pull As**: Select `Jessica Brown` (must match exactly)
+4. **Caseload to Claim**: Choose a caseload (e.g., `181002` if not already assigned to Jessica)
 
-**[Show availability hint]**
+**[Show availability hint below the dropdown]**
 
 **Script**:
-> "The system shows who currently owns the caseload. If it's unassigned, the worker can pull it. If it's already assigned to someone else, the pull is blocked."
+> "Notice the availability hint below the dropdown. The system shows:
+> - Green info box if the caseload is already assigned to you
+> - Orange warning if assigned to someone else, showing who owns it and which unit
+> - No message if the caseload is available for claiming"
 
-4. Click **"🧷 Pull Caseload to Self"**
+5. Click **"🧷 Pull Caseload to Self"**
 
 **Expected Outcome**:
-- ✅ If caseload available: Success message
-- ✅ If already assigned: Error or info message
-- ✅ Worker cannot pull for someone else (enforced by validation)
+- ✅ If caseload is unassigned: Success message "✓ Caseload [ID] claimed by Jessica Brown in unit 'OCSS North'"
+- ✅ If already assigned to this person in this unit: Info message "Caseload [ID] is already assigned to Jessica Brown in unit 'OCSS North'."
+- ✅ If assigned to someone else: Error message "Caseload [ID] is already assigned to [person] in unit '[unit]'. Cannot pull."
+- ℹ️ **Note**: If the caseload was already assigned to Jessica in the sample data, pick a different caseload or demonstrate with a different worker
 
 **Demo Action 4: Show Self-Only Enforcement**
 
-1. **Simulate Current Worker**: Keep as `Jessica Brown`
-2. **Pull As**: Select `Michael Chen` (mismatch)
-3. Click **"🧷 Pull Caseload to Self"**
+**Script**:
+> "Let's demonstrate the self-only enforcement. This prevents workers from claiming caseloads on behalf of others."
+
+1. **Simulate Current Worker**: Keep as `Jessica Brown` (or enter a worker name)
+2. **Pull As**: Select a **different person** (e.g., `Michael Chen`) - intentional mismatch
+3. **Caseload to Claim**: Choose any caseload
+4. Click **"🧷 Pull Caseload to Self"**
 
 **Expected Outcome**:
-- ✅ Error: "You can only pull a caseload for yourself. Make sure 'Pull As' matches the simulated current worker."
+- ✅ Error message: "You can only pull a caseload for yourself. Make sure 'Pull As' matches the simulated current worker."
+- ✅ Assignment is NOT created (validation blocks the action)
+
+**Script**:
+> "The system enforces the self-only rule. If someone tries to pull for someone else, the operation is blocked with a clear error message."
 
 **Tab 2: Team Performance Analytics**
 
@@ -240,7 +262,7 @@
 5. **Download CSV**: Click **"📥 Download CSV"**
 
 **Script**:
-> "Support Officers can review and edit report data directly in the dashboard. Changes are saved in session. They can export data to CSV for offline work or archiving."
+> "Support Officers can review and edit report data directly in the dashboard. Changes are saved in session state—meaning they persist only while the server is running and the browser session is active. Support Officers should export data to CSV for offline work, archiving, or as a backup before the session ends."
 
 **Expected Outcome**:
 - ✅ Report data displays correctly
@@ -316,17 +338,15 @@
 3. **Select Caseload**: Choose `181002`
 4. Click **"🗑️ Remove Assignment"**
 
-**Expected Outcome**:
-- ✅ **Confirmation modal appears** with warning message
-
 **Script**:
-> "Before removing an assignment, the system shows a confirmation modal. This prevents accidental deletions."
-
-5. **In Modal**: Click **"Confirm Remove"** (or **"Cancel"** to demonstrate)
+> "When you click Remove Assignment, the system processes the removal and logs an audit entry."
 
 **Expected Outcome**:
-- ✅ Success message: "Removed caseload 181002 from Alice Johnson in unit 'OCSS Central'"
-- ✅ Audit entry recorded
+- ✅ Success message: "✓ Removed caseload 181002 from Alice Johnson in unit 'OCSS Central'"
+- ✅ Audit entry recorded in session state
+- ✅ Audit entry persisted to `data/audit_log.jsonl`
+- ✅ Assignment removed from unit's assignments list
+- ℹ️ **Note**: In the current implementation, the confirmation happens immediately on button click. A confirmation dialog/modal can be added in Phase 2 for additional safety.
 
 **Tab 3: Maintenance & Logs**
 
@@ -394,7 +414,18 @@ tree app/
 ### 4. Database Integration (Coming)
 
 **Script**:
-> "Currently, data is session-based (in-memory). We're planning a PostgreSQL or SQLite backend to persist units, assignments, and reports across sessions. Authentication via LDAP/AD is also planned."
+> "Currently, data is session-based (in-memory). This means:
+> - All units, assignments, and uploads reset when the server restarts
+> - Each browser session has independent state
+> - No data sharing between different users or browser windows
+> 
+> We're planning a PostgreSQL or SQLite backend to persist units, assignments, and reports across sessions. This will enable:
+> - Multi-user access to shared data
+> - Data persistence across server restarts
+> - Proper audit trails in database tables
+> - Backup and recovery procedures
+> 
+> Authentication via LDAP/AD or OAuth is also planned for Phase 2."
 
 ---
 
@@ -432,11 +463,13 @@ tree app/
 
 ### Data Integrity
 
-- [ ] Uploaded reports persist in session_state
-- [ ] Caseload reassignments update immediately
-- [ ] Worker Self-Pull creates correct assignments
+- [ ] Uploaded reports persist in session_state (for duration of session)
+- [ ] Caseload reassignments update immediately in session_state
+- [ ] Worker Self-Pull creates correct assignments in session_state
 - [ ] Audit entries written to disk (`data/audit_log.jsonl`)
 - [ ] Removal cleans up empty assignment lists
+- [ ] Session state resets cleanly on server restart (no stale data)
+- [ ] Exported CSV files contain accurate data reflecting current session state
 
 ### Performance
 
@@ -452,7 +485,15 @@ tree app/
 **Common Questions & Answers**
 
 **Q: Is data persistent across browser sessions?**  
-A: Currently no. Data is stored in Streamlit's `st.session_state`, which resets when the server restarts or the browser session ends. Database integration is planned for Phase 2.
+A: Currently no. Data is stored in Streamlit's `st.session_state`, which resets when:
+- The server restarts
+- The browser session ends
+- The browser cache is cleared
+- The user navigates away and returns (in some cases)
+
+The **only** persistent data is the audit log in `data/audit_log.jsonl`. Database integration is planned for Phase 2 to enable full data persistence.
+
+**Workaround for Demo/Testing**: Users should export CSV files regularly to preserve important data. IT should backup the `data/` directory.
 
 **Q: How do we add authentication?**  
 A: We recommend LDAP/AD integration or OAuth. This will replace the "Simulate Current Worker" fields with real user authentication.
@@ -464,7 +505,12 @@ A: Yes. The role list is defined in `app/app.py` around line 70. You can add/rem
 A: Refer to `docs/IT_IMPLEMENTATION_GUIDE.md` for Docker, nginx, SSL, and systemd service setup.
 
 **Q: What about backups?**  
-A: Currently, audit log is the only persistent data (`data/audit_log.jsonl`). Once database integration is complete, standard database backup procedures apply.
+A: Currently, the audit log is the only persistent data (`data/audit_log.jsonl`). To back up:
+- Copy the `data/` directory regularly (contains `audit_log.jsonl`)
+- Instruct users to export CSV files of important reports
+- Consider scheduling a cron job to archive `data/audit_log.jsonl` daily
+
+Once database integration is complete, standard database backup procedures apply (pg_dump for PostgreSQL, file backup for SQLite).
 
 **Q: Can we integrate with existing systems?**  
 A: Yes. The app can be extended to connect to SQL databases, REST APIs, or file shares. Contact the dev team for custom integrations.
