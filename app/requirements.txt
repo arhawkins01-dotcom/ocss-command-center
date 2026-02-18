@@ -1,4 +1,19 @@
+# Core Framework
+streamlit>=1.30.0
 
-streamlit
-pandas
-openpyxl
+# Data Processing
+pandas>=2.0.0
+numpy>=1.24.0
+openpyxl>=3.1.0
+
+# Data Validation
+python-dateutil>=2.8.0
+
+# Excel/CSV Processing
+xlrd>=2.0.0
+
+# Logging and Utilities
+python-json-logger>=2.0.0
+
+# Optional Performance Enhancements
+pyarrow>=14.0.0
