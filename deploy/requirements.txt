@@ -1,0 +1,27 @@
+# Server Deployment Requirements
+# These dependencies should be installed on the Windows Server
+
+# Core Framework
+streamlit>=1.30.0
+
+# Data Processing
+pandas>=2.0.0
+numpy>=1.24.0
+openpyxl>=3.1.0
+
+# Data Validation
+python-dateutil>=2.8.0
+
+# Excel/CSV Processing
+xlrd>=2.0.0
+
+# Logging and Utilities
+python-json-logger>=2.0.0
+
+# Optional Performance Enhancements
+pyarrow>=14.0.0
+
+# Python Package Manager
+pip>=23.0.0
+setuptools>=65.0.0
+wheel>=0.40.0
