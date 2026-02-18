@@ -425,6 +425,52 @@ elif role == "Supervisor":
                             st.success(f"✓ Caseload {caseload_choice} moved from {from_worker} to {to_worker}")
                         else:
                             st.error("Selected caseload not found for the source worker")
+
+                    st.divider()
+                    # Worker Self-Pull: allow workers to pull a caseload only to themselves (no claiming for others)
+                    st.subheader("🤝 Worker Self-Pull (Claim a Caseload)")
+                    # Simulate current worker identity (no auth yet)
+                    cur_worker = st.text_input("Simulate Current Worker", value=st.session_state.get('current_worker', ''), help="Enter your worker name to claim caseloads")
+                    if cur_worker:
+                        st.session_state.current_worker = cur_worker.strip()
+
+                    pull_col1, pull_col2 = st.columns(2)
+                    with pull_col1:
+                        pull_worker = st.selectbox("Pull As (must match 'Simulate Current Worker')", options=team_list, key="pull_worker_select")
+                    with pull_col2:
+                        # Available caseloads across unit (flattened)
+                        available = sum([unit.get('assignments', {}).get(w, []) for w in team_list], [])
+                        # Also include any caseloads that exist but are unassigned
+                        unassigned = [c for c in st.session_state.reports_by_caseload.keys() if not any(c in lst for u in st.session_state.units.values() for lst in u.get('assignments', {}).values())]
+                        pull_options = sorted(list(set(available + unassigned)))
+                        pull_caseload = st.selectbox("Caseload to Claim (to self)", options=pull_options, key="pull_caseload_select")
+
+                    if st.button("🧷 Pull Caseload to Self", key="pull_to_self"):
+                        if not st.session_state.get('current_worker'):
+                            st.error("Set 'Simulate Current Worker' to your name before pulling a caseload.")
+                        elif pull_worker != st.session_state.get('current_worker'):
+                            st.error("You can only pull a caseload for yourself. Make sure 'Pull As' matches the simulated current worker.")
+                        else:
+                            # Dedup: ensure caseload not already assigned to someone else
+                            already_assigned = None
+                            for uname, u in st.session_state.units.items():
+                                for person, caselist in u.get('assignments', {}).items():
+                                    if pull_caseload in caselist:
+                                        already_assigned = (uname, person)
+                                        break
+                                if already_assigned:
+                                    break
+
+                            if already_assigned:
+                                # If already assigned to this same person in this unit, inform
+                                if already_assigned[1] == pull_worker and already_assigned[0] == unit_name:
+                                    st.info(f"Caseload {pull_caseload} is already assigned to you in unit '{unit_name}'.")
+                                else:
+                                    st.error(f"Caseload {pull_caseload} is already assigned to {already_assigned[1]} in unit '{already_assigned[0]}'. Cannot pull.")
+                            else:
+                                # Assign to the pull_worker within this unit
+                                st.session_state.units[unit_name].setdefault('assignments', {}).setdefault(pull_worker, []).append(pull_caseload)
+                                st.success(f"✓ Caseload {pull_caseload} claimed by {pull_worker} in unit '{unit_name}'")
                 else:
                     st.info("No team members assigned yet for this supervisor")
             else:
