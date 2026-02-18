@@ -445,6 +445,22 @@ elif role == "Supervisor":
                         pull_options = sorted(list(set(available + unassigned)))
                         pull_caseload = st.selectbox("Caseload to Claim (to self)", options=pull_options, key="pull_caseload_select")
 
+                        # Show availability hint for the selected caseload
+                        assigned_owner = None
+                        for uname, u in st.session_state.units.items():
+                            for person, caselist in u.get('assignments', {}).items():
+                                if pull_caseload in caselist:
+                                    assigned_owner = {'unit': uname, 'person': person}
+                                    break
+                            if assigned_owner:
+                                break
+
+                        if assigned_owner:
+                            if assigned_owner['person'] == pull_worker and assigned_owner['unit'] == unit_name:
+                                st.info(f"Caseload {pull_caseload} is already assigned to {assigned_owner['person']} in this unit.")
+                            else:
+                                st.warning(f"Caseload {pull_caseload} is currently assigned to {assigned_owner['person']} in unit '{assigned_owner['unit']}'.")
+
                     if st.button("🧷 Pull Caseload to Self", key="pull_to_self"):
                         if not st.session_state.get('current_worker'):
                             st.error("Set 'Simulate Current Worker' to your name before pulling a caseload.")
