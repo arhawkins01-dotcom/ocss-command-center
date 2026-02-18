@@ -12,6 +12,20 @@ OCSS Establishment Command Center — a server‑hosted internal web application
 - Provide Director‑level KPI analytics
 - Support CQI and SAVES governance alignment
 
+## 🚀 Quick Start
+
+### Deploy to Streamlit Cloud
+**GitHub URL:** https://github.com/arhawkins01-dotcom/ocss-command-center
+
+👉 **[See Streamlit Cloud Deployment Guide](STREAMLIT_CLOUD_DEPLOYMENT.md)** for step-by-step instructions.
+
+### Local Development
+```bash
+cd app
+pip install -r requirements.txt
+streamlit run app.py
+```
+
 ## Production Hosting
 ⚠️ Production does NOT run from GitHub.
 
@@ -23,6 +37,11 @@ GitHub is used only for:
 - Version control
 - Documentation
 - Update management
+
+### Deployment Options
+
+1. **Streamlit Cloud** (Web-based) - See [STREAMLIT_CLOUD_DEPLOYMENT.md](STREAMLIT_CLOUD_DEPLOYMENT.md)
+2. **Internal Server** (Windows) - See [deploy/DEPLOYMENT_GUIDE.md](deploy/DEPLOYMENT_GUIDE.md)
 
 ## Repository Structure
 /app              → Application source code
