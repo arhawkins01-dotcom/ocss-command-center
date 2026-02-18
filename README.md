@@ -3,6 +3,34 @@
 
 Internal Director Command Center Web Application for the Cuyahoga County Office of Child Support Services.
 
+## 🚀 Quick Access
+
+**Want to launch the application?** Choose your method:
+
+### Option 1: One-Click Launch (Recommended)
+- **Open:** [`LAUNCH.html`](./LAUNCH.html) in your browser for instant access
+- Click "Launch Application" button to open the Command Center
+
+### Option 2: Command Line Launch
+
+**Windows (PowerShell):**
+```powershell
+.\deploy\windows\Start-App.ps1
+```
+
+**Linux/Mac:**
+```bash
+./deploy/start-app.sh
+```
+
+### Option 3: Direct Access
+Once running, access the application at:
+```
+http://localhost:8501
+```
+
+---
+
 ## Purpose
 This repository contains the source code, governance documentation, and deployment materials for the
 OCSS Establishment Command Center — a server‑hosted internal web application designed to:
