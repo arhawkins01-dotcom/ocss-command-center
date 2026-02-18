@@ -65,6 +65,7 @@ if 'units' not in st.session_state:
     }
 # Sidebar - Role Selection
 st.sidebar.title("🎯 OCSS Command Center")
+st.sidebar.success("✅ **System Status: OPEN** - Ready for Operations")
 st.sidebar.markdown("---")
 
 role = st.sidebar.radio(
