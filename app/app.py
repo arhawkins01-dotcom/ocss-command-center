@@ -446,17 +446,25 @@ elif role == "Supervisor":
         
         # Worker comparison
         st.write("**Individual Performance**")
-        for idx, worker in enumerate(team_workers['Worker Name']):
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.write(f"**{worker}**")
-            with col2:
-                st.progress(int(team_workers['Completion %'].iloc[idx].rstrip('%')) / 100)
-            with col3:
-                st.metric("Completed", team_workers['Completed'].iloc[idx])
-            with col4:
-                st.metric("Avg Time", team_workers['Avg Time/Report'].iloc[idx])
-            st.divider()
+        if 'team_workers' in locals() and isinstance(team_workers, pd.DataFrame) and not team_workers.empty:
+            for idx, worker in enumerate(team_workers['Worker Name']):
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.write(f"**{worker}**")
+                with col2:
+                    # Safely handle missing completion % or non-standard values
+                    try:
+                        comp_pct = int(str(team_workers.get('Completion %', pd.Series()).iloc[idx]).rstrip('%'))
+                        st.progress(comp_pct / 100)
+                    except Exception:
+                        st.progress(0)
+                with col3:
+                    st.metric("Completed", team_workers.get('Completed', pd.Series()).iloc[idx] if 'Completed' in team_workers.columns else "-")
+                with col4:
+                    st.metric("Avg Time", team_workers.get('Avg Time/Report', pd.Series()).iloc[idx] if 'Avg Time/Report' in team_workers.columns else "-")
+                st.divider()
+        else:
+            st.info("No team data available — select a supervisor and load the unit first.")
 
 elif role == "Support Officer":
     st.markdown('<div class="header-title">📋 Support Officer - Caseload Management</div>', unsafe_allow_html=True)
