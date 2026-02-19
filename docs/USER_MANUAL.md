@@ -68,6 +68,10 @@ On the left sidebar, use the **"Select Your Role"** radio buttons to choose your
 
 The main content area will update to show features relevant to your role.
 
+### Requesting Coding Updates
+
+Use the **"🧑‍💻 Coding Assistant Requests"** box in the sidebar to submit Streamlit update requests. Enter a short description of the change you want and click **"➕ Submit Request"**. Your most recent requests appear below the form for quick reference during the session.
+
 ---
 
 ## Role-Specific Guides

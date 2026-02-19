@@ -40,6 +40,10 @@ if 'uploaded_reports' not in st.session_state:
 if 'reports_by_caseload' not in st.session_state:
     st.session_state.reports_by_caseload = {'181000': [], '181001': [], '181002': []}
 
+# Initialize coding update requests for sidebar intake
+if 'coding_update_requests' not in st.session_state:
+    st.session_state.coding_update_requests = []
+
 # Organizational units: supervisors, team leads, support officers and caseload assignments
 if 'units' not in st.session_state:
     st.session_state.units = {
@@ -81,6 +85,29 @@ st.sidebar.markdown("""
 - **Reports Completed**: 389
 - **Last Update**: Today
 """)
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("🧑‍💻 Coding Assistant Requests")
+coding_request = st.sidebar.text_area(
+    "Request a coding update",
+    key="coding_request_text",
+    placeholder="Describe the Streamlit update you'd like applied..."
+)
+if st.sidebar.button("➕ Submit Request", key="submit_coding_request"):
+    if coding_request.strip():
+        st.session_state.coding_update_requests.append({
+            'request': coding_request.strip(),
+            'timestamp': datetime.now()
+        })
+        st.session_state.coding_request_text = ""
+        st.sidebar.success("✓ Request saved for review.")
+    else:
+        st.sidebar.warning("Please enter a request before submitting.")
+
+if st.session_state.coding_update_requests:
+    st.sidebar.caption("Recent requests:")
+    for request in reversed(st.session_state.coding_update_requests[-3:]):
+        st.sidebar.caption(f"• {request['timestamp'].strftime('%m/%d %I:%M %p')}: {request['request']}")
 
 # Main content area
 if role == "Director":
@@ -821,7 +848,16 @@ elif role == "Support Officer":
         
         # Display reports with expandable details
         for idx, row in assigned_reports.iterrows():
-            with st.expander(f"📋 {row['Establishment']} ({row['Report ID']}) - {row['Status']} - Due: {row['Due Date']}", 
+            update_data = st.session_state.report_updates.get(row['Report ID'], {})
+            effective_status = update_data.get('status', row['Status'])
+            effective_establishment = update_data.get('establishment', row['Establishment'])
+            effective_report_name = update_data.get('report_name', f"{effective_establishment} - {row['Report ID']}")
+            effective_reference = update_data.get('reference_number', row['Report ID'])
+            effective_submitted_by = update_data.get('submitted_by', '')
+            effective_notes = update_data.get('notes', '')
+            status_options = ["Not Started", "In Progress", "Under Review", "Completed"]
+            status_index = status_options.index(effective_status) if effective_status in status_options else status_options.index(row['Status'])
+            with st.expander(f"📋 {effective_establishment} ({row['Report ID']}) - {effective_status} - Due: {row['Due Date']}",
                             expanded=False):
                 col1, col2, col3 = st.columns(3)
                 with col1:
@@ -839,21 +875,21 @@ elif role == "Support Officer":
                 
                 status_update = st.selectbox(
                     "Update Status",
-                    ["Not Started", "In Progress", "Under Review", "Completed"],
-                    index=["Not Started", "In Progress", "Under Review", "Completed"].index(row['Status']),
+                    status_options,
+                    index=status_index,
                     key=f"status_update_{idx}"
                 )
                 
                 # Report Review Form
                 col1, col2 = st.columns(2)
                 with col1:
-                    establishment_name = st.text_input("Establishment Name", value=row['Establishment'], key=f"est_name_{idx}")
+                    establishment_name = st.text_input("Establishment Name", value=effective_establishment, key=f"est_name_{idx}")
                     report_type = st.selectbox("Report Type", ["Annual", "Quarterly", "Monthly"], key=f"type_{idx}")
-                    report_name = st.text_input("Report Name", value=f"{row['Establishment']} - {row['Report ID']}", key=f"report_name_{idx}", help="Edit the report name/title")
+                    report_name = st.text_input("Report Name", value=effective_report_name, key=f"report_name_{idx}", help="Edit the report name/title")
                 with col2:
-                    submitted_by = st.text_input("Submitted By", placeholder="Officer Name", key=f"submitted_{idx}")
+                    submitted_by = st.text_input("Submitted By", value=effective_submitted_by, placeholder="Officer Name", key=f"submitted_{idx}")
                     submission_date = st.date_input("Submission Date", key=f"subdate_{idx}")
-                    reference_number = st.text_input("Reference/ID", value=row['Report ID'], key=f"ref_num_{idx}")
+                    reference_number = st.text_input("Reference/ID", value=effective_reference, key=f"ref_num_{idx}")
                 
                 # Data validation
                 col1, col2, col3, col4 = st.columns(4)
@@ -869,6 +905,7 @@ elif role == "Support Officer":
                 # Notes and comments
                 notes = st.text_area(
                     "Processing Notes",
+                    value=effective_notes,
                     placeholder="Record any issues, observations, or special notes...",
                     height=80,
                     key=f"notes_{idx}"
