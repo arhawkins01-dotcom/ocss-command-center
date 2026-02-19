@@ -913,7 +913,7 @@ elif role == "Support Officer":
                     st.divider()
                     
                     # Action and Export buttons
-                    col1, col2, col3, col4 = st.columns(4)
+                    col1, col2, col3, col4, col5 = st.columns(5)
                     with col1:
                         # Generate CSV from report data
                         report_csv = pd.DataFrame(list(st.session_state[edit_key].items()), columns=['Field', 'Value']).to_csv(index=False)
@@ -941,6 +941,9 @@ elif role == "Support Officer":
                         if st.button("✅ Approve", key=f"approve_report_{selected_caseload}_{report_idx}", use_container_width=True):
                             st.success(f"✓ {report['id']} approved!")
                     with col4:
+                        if st.button("💾 Save", key=f"save_report_{selected_caseload}_{report_idx}", use_container_width=True):
+                            st.success(f"✓ {report['id']} saved!")
+                    with col5:
                         if st.button("💾 Save", key=f"save_report_{selected_caseload}_{report_idx}", use_container_width=True):
                             st.success(f"✓ {report['id']} saved!")
                     with col4:

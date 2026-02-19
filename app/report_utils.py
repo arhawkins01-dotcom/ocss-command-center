@@ -312,6 +312,10 @@ def validate_caseload_id(caseload_id: str) -> bool:
         
     Returns:
         bool: True if valid, False otherwise
+        
+    Note:
+        Expected format: 6-digit number starting with '181'
+        Examples: '181000', '181001', '181002'
     """
     # Expecting format like '181000', '181001', etc.
     if not caseload_id:
