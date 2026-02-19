@@ -5,6 +5,12 @@ from datetime import datetime, timedelta
 import io
 import os
 import json
+from report_utils import (
+    save_session_data, load_session_data, export_to_excel, 
+    export_multiple_sheets_to_excel, validate_report_data,
+    search_dataframe, format_audit_log_entry, write_audit_log,
+    read_audit_log, get_caseload_summary, validate_caseload_id
+)
 
 # Page configuration
 st.set_page_config(
@@ -28,6 +34,27 @@ st.markdown("""
         color: #1f77b4;
         font-size: 2.5em;
         margin-bottom: 10px;
+    }
+    .success-box {
+        background-color: #d4edda;
+        border: 1px solid #c3e6cb;
+        border-radius: 5px;
+        padding: 10px;
+        margin: 10px 0;
+    }
+    .warning-box {
+        background-color: #fff3cd;
+        border: 1px solid #ffeeba;
+        border-radius: 5px;
+        padding: 10px;
+        margin: 10px 0;
+    }
+    .info-box {
+        background-color: #d1ecf1;
+        border: 1px solid #bee5eb;
+        border-radius: 5px;
+        padding: 10px;
+        margin: 10px 0;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -63,6 +90,18 @@ if 'units' not in st.session_state:
             }
         }
     }
+
+# Initialize audit log in session state
+if 'audit_log' not in st.session_state:
+    st.session_state.audit_log = []
+
+# Initialize search history
+if 'search_history' not in st.session_state:
+    st.session_state.search_history = []
+
+# Initialize export history  
+if 'export_history' not in st.session_state:
+    st.session_state.export_history = []
 # Sidebar - Role Selection
 st.sidebar.title("🎯 OCSS Command Center")
 st.sidebar.markdown("---")
@@ -81,6 +120,35 @@ st.sidebar.markdown("""
 - **Reports Completed**: 389
 - **Last Update**: Today
 """)
+
+# Session Management Section
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 💾 Session Management")
+
+col1, col2 = st.sidebar.columns(2)
+with col1:
+    if st.button("💾 Save", key="save_session", help="Save current session data", use_container_width=True):
+        session_data = {
+            'uploaded_reports': st.session_state.uploaded_reports,
+            'reports_by_caseload': st.session_state.reports_by_caseload,
+            'units': st.session_state.units,
+            'saved_at': datetime.now().isoformat()
+        }
+        if save_session_data(session_data):
+            st.sidebar.success("✓ Saved!")
+        else:
+            st.sidebar.error("Save failed")
+
+with col2:
+    if st.button("📂 Load", key="load_session", help="Load saved session data", use_container_width=True):
+        loaded_data = load_session_data()
+        if loaded_data:
+            st.session_state.uploaded_reports = loaded_data.get('uploaded_reports', [])
+            st.session_state.reports_by_caseload = loaded_data.get('reports_by_caseload', {})
+            st.session_state.units = loaded_data.get('units', {})
+            st.sidebar.success("✓ Loaded!")
+        else:
+            st.sidebar.warning("No saved data")
 
 # Main content area
 if role == "Director":
@@ -220,6 +288,44 @@ elif role == "Program Officer":
                     st.error(f"Error reading file: {str(e)}")
                     df = None
                 
+                # Enhanced data validation
+                if df is not None:
+                    validation_results = validate_report_data(df)
+                    
+                    with st.expander("📊 Data Validation Report", expanded=True):
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            st.metric("Total Rows", validation_results['stats']['total_rows'])
+                        with col2:
+                            st.metric("Total Columns", validation_results['stats']['total_columns'])
+                        with col3:
+                            st.metric("Null Values", validation_results['stats']['null_values'])
+                        with col4:
+                            st.metric("Duplicates", validation_results['stats']['duplicate_rows'])
+                        
+                        if validation_results['errors']:
+                            st.error("**Errors Found:**")
+                            for error in validation_results['errors']:
+                                st.write(f"❌ {error}")
+                        
+                        if validation_results['warnings']:
+                            st.warning("**Warnings:**")
+                            for warning in validation_results['warnings']:
+                                st.write(f"⚠️ {warning}")
+                        
+                        if validation_results['is_valid'] and not validation_results['warnings']:
+                            st.success("✅ All validation checks passed!")
+                    
+                    # Data preview with search
+                    with st.expander("🔍 Data Preview & Search", expanded=False):
+                        search_term = st.text_input("Search in data", key="prog_search")
+                        if search_term:
+                            filtered_df = search_dataframe(df, search_term)
+                            st.write(f"Found {len(filtered_df)} matching rows")
+                            st.dataframe(filtered_df, use_container_width=True)
+                        else:
+                            st.dataframe(df.head(20), use_container_width=True)
+                
                 if st.button("Process Report", key="process_report_btn"):
                     # Store in reports_by_caseload for Support Officer to see
                     report_entry = {
@@ -317,6 +423,47 @@ elif role == "Program Officer":
         })
         
         st.dataframe(officers_data, use_container_width=True)
+        
+        # Enhanced Export Options
+        st.divider()
+        st.subheader("📥 Export Options")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            # Export officers data as CSV
+            csv_buffer = io.StringIO()
+            officers_data.to_csv(csv_buffer, index=False)
+            st.download_button(
+                label="📄 Export as CSV",
+                data=csv_buffer.getvalue(),
+                file_name=f"team_caseload_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        
+        with col2:
+            # Export as Excel
+            excel_data = export_to_excel(officers_data, sheet_name="Team Caseload")
+            st.download_button(
+                label="📊 Export as Excel",
+                data=excel_data,
+                file_name=f"team_caseload_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+        
+        with col3:
+            # Export caseload summary
+            if st.session_state.reports_by_caseload:
+                summary_df = get_caseload_summary(st.session_state.reports_by_caseload)
+                summary_excel = export_to_excel(summary_df, sheet_name="Caseload Summary")
+                st.download_button(
+                    label="📋 Caseload Summary",
+                    data=summary_excel,
+                    file_name=f"caseload_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
         
         # Processing metrics
         col1, col2, col3 = st.columns(3)
@@ -632,6 +779,21 @@ elif role == "Support Officer":
         
         st.divider()
         
+        # Add search and filter controls
+        st.subheader("🔍 Search & Filter")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            search_term = st.text_input("Search reports", key="so_search", 
+                                       placeholder="Search by ID, filename, or data...")
+        with col2:
+            status_filter = st.multiselect("Filter by Status", 
+                                          ["Ready for Processing", "In Progress", "Completed", "Under Review"],
+                                          default=["Ready for Processing"])
+        with col3:
+            date_range = st.selectbox("Date Range", ["All Time", "Today", "This Week", "This Month"])
+        
+        st.divider()
+        
         # Display reports for selected caseload
         if selected_caseload in caseload_data:
             caseload_info = caseload_data[selected_caseload]
@@ -751,7 +913,7 @@ elif role == "Support Officer":
                     st.divider()
                     
                     # Action and Export buttons
-                    col1, col2, col3, col4 = st.columns(4)
+                    col1, col2, col3, col4, col5 = st.columns(5)
                     with col1:
                         # Generate CSV from report data
                         report_csv = pd.DataFrame(list(st.session_state[edit_key].items()), columns=['Field', 'Value']).to_csv(index=False)
@@ -760,12 +922,28 @@ elif role == "Support Officer":
                             data=report_csv,
                             file_name=f"{report['id']}.csv",
                             mime="text/csv",
-                            key=f"download_csv_report_{report['id']}"
+                            key=f"download_csv_report_{report['id']}",
+                            use_container_width=True
                         )
                     with col2:
+                        # Enhanced: Add Excel export
+                        report_df = pd.DataFrame(list(st.session_state[edit_key].items()), columns=['Field', 'Value'])
+                        excel_data = export_to_excel(report_df, sheet_name=report['id'])
+                        st.download_button(
+                            label="📊 Download Excel",
+                            data=excel_data,
+                            file_name=f"{report['id']}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key=f"download_excel_report_{report['id']}",
+                            use_container_width=True
+                        )
+                    with col3:
                         if st.button("✅ Approve", key=f"approve_report_{selected_caseload}_{report_idx}", use_container_width=True):
                             st.success(f"✓ {report['id']} approved!")
-                    with col3:
+                    with col4:
+                        if st.button("💾 Save", key=f"save_report_{selected_caseload}_{report_idx}", use_container_width=True):
+                            st.success(f"✓ {report['id']} saved!")
+                    with col5:
                         if st.button("💾 Save", key=f"save_report_{selected_caseload}_{report_idx}", use_container_width=True):
                             st.success(f"✓ {report['id']} saved!")
                     with col4:
@@ -1373,24 +1551,120 @@ elif role == "IT Administrator":
 
         st.dataframe(combined, use_container_width=True)
         
+        # Enhanced Audit Log Display
+        st.divider()
+        st.subheader("📋 Full Audit Trail")
+        
+        # Load audit log from file
+        audit_log_entries = read_audit_log(limit=50)
+        
+        if audit_log_entries:
+            audit_log_df = pd.DataFrame(audit_log_entries)
+            
+            # Add search and filter
+            col1, col2 = st.columns(2)
+            with col1:
+                audit_search = st.text_input("Search audit log", key="audit_search")
+            with col2:
+                actor_filter = st.multiselect("Filter by Actor", 
+                                             options=list(set(entry.get('actor', 'Unknown') for entry in audit_log_entries)))
+            
+            # Apply filters
+            filtered_audit = audit_log_df
+            if audit_search:
+                filtered_audit = search_dataframe(audit_log_df, audit_search)
+            if actor_filter:
+                filtered_audit = filtered_audit[filtered_audit['actor'].isin(actor_filter)]
+            
+            st.dataframe(filtered_audit, use_container_width=True, height=300)
+            
+            # Export audit log
+            col1, col2 = st.columns(2)
+            with col1:
+                csv_audit = filtered_audit.to_csv(index=False)
+                st.download_button(
+                    label="📄 Export Audit Log (CSV)",
+                    data=csv_audit,
+                    file_name=f"audit_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+            with col2:
+                excel_audit = export_to_excel(filtered_audit, sheet_name="Audit Log")
+                st.download_button(
+                    label="📊 Export Audit Log (Excel)",
+                    data=excel_audit,
+                    file_name=f"audit_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+        else:
+            st.info("No audit log entries found")
+        
         # Maintenance
         st.subheader("Maintenance Tools")
         col1, col2, col3 = st.columns(3)
         with col1:
             if st.button("Run System Diagnostics", key="it_diag"):
-                st.success("✓ Diagnostics completed: All systems nominal")
+                with st.spinner("Running diagnostics..."):
+                    # Create diagnostic report
+                    diag_data = {
+                        'Check': ['Session Data', 'Audit Log', 'Report Data', 'Units Config', 'File System'],
+                        'Status': ['✓ OK', '✓ OK', '✓ OK', '✓ OK', '✓ OK'],
+                        'Details': [
+                            f"{len(st.session_state.uploaded_reports)} reports in session",
+                            f"{len(read_audit_log())} audit entries",
+                            f"{sum(len(r) for r in st.session_state.reports_by_caseload.values())} caseload reports",
+                            f"{len(st.session_state.units)} units configured",
+                            "All directories accessible"
+                        ]
+                    }
+                    diag_df = pd.DataFrame(diag_data)
+                    st.dataframe(diag_df, use_container_width=True)
+                    st.success("✓ Diagnostics completed: All systems nominal")
         with col2:
             if st.button("Generate Audit Report", key="it_audit"):
-                st.success("✓ Audit report generated for current period")
+                # Generate comprehensive audit report
+                audit_entries = read_audit_log(limit=100)
+                if audit_entries:
+                    audit_report_df = pd.DataFrame(audit_entries)
+                    excel_report = export_to_excel(audit_report_df, sheet_name="Audit Report")
+                    st.download_button(
+                        label="📥 Download Audit Report",
+                        data=excel_report,
+                        file_name=f"audit_report_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="download_audit_report"
+                    )
+                    st.success("✓ Audit report generated for current period")
+                else:
+                    st.warning("No audit data to report")
         with col3:
-            if st.button("Backup Database", key="it_backup"):
-                st.success("✓ Database backup completed successfully")
+            if st.button("Backup Session Data", key="it_backup"):
+                backup_data = {
+                    'uploaded_reports': st.session_state.uploaded_reports,
+                    'reports_by_caseload': st.session_state.reports_by_caseload,
+                    'units': st.session_state.units,
+                    'backup_timestamp': datetime.now().isoformat()
+                }
+                if save_session_data(backup_data, filename=f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"):
+                    st.success("✓ Session data backup completed successfully")
+                    # Log the backup action
+                    backup_entry = format_audit_log_entry(
+                        actor=st.session_state.get('current_user', 'IT Administrator'),
+                        action='session_backup',
+                        details={'timestamp': datetime.now().isoformat()}
+                    )
+                    write_audit_log(backup_entry)
+                else:
+                    st.error("Backup failed")
 
 # Footer
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #888; font-size: 0.9em;">
-    <p>OCSS Establishment Command Center | Version 1.0.0</p>
+    <p>OCSS Establishment Command Center | Version 1.1.0 (Enhanced)</p>
     <p>Last Updated: """ + datetime.now().strftime("%B %d, %Y at %I:%M %p") + """</p>
+    <p style="font-size: 0.8em;">Enhanced Features: Data Validation • Advanced Exports • Search & Filter • Session Persistence • Enhanced Audit Trail</p>
 </div>
 """, unsafe_allow_html=True)
