@@ -46,7 +46,8 @@ This application is hosted internally on a secure Windows server to:
 /docs/director    → Executive governance materials
 /docs/it          → Technical deployment guidance
 
-📘 **[Deployment Options Guide](docs/DEPLOYMENT_OPTIONS.md)** - Detailed information about deployment
+📘 **[Deployment Options Guide](docs/DEPLOYMENT_OPTIONS.md)** - Detailed information about deployment  
+❓ **[FAQ](docs/FAQ.md)** - Frequently Asked Questions
 
 ## Quick Start
 ```bash
