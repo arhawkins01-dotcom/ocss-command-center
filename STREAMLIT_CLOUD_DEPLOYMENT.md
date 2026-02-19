@@ -11,10 +11,13 @@ This guide explains how to deploy the OCSS Establishment Command Center to Strea
 https://github.com/arhawkins01-dotcom/ocss-command-center
 ```
 
-**Main Application File:**
+**⭐ Main Application File (IMPORTANT!):**
 ```
 app/app.py
 ```
+> **Note:** The path is `app/app.py` (not just `app.py`). Include the `app/` directory prefix!
+> 
+> See [MAIN_FILE_PATH.md](MAIN_FILE_PATH.md) for detailed visual guide.
 
 **Requirements File:**
 ```
@@ -45,7 +48,17 @@ Fill in the deployment form with these values:
 |-------|-------|
 | **Repository** | `arhawkins01-dotcom/ocss-command-center` |
 | **Branch** | `copilot/build-streamlit-application` (or `main`) |
-| **Main file path** | `app/app.py` |
+| **Main file path** | `app/app.py` ⭐ |
+
+> 🚨 **IMPORTANT:** The "Main file path" must be exactly `app/app.py` (with the `app/` prefix).
+> 
+> Common mistakes:
+> - ❌ `app.py` (missing directory)
+> - ❌ `./app/app.py` (don't use `./`)
+> - ❌ `/app/app.py` (don't use leading `/`)
+> - ✅ `app/app.py` (CORRECT!)
+
+For a visual guide, see [MAIN_FILE_PATH.md](MAIN_FILE_PATH.md)
 
 ### Step 3: Advanced Settings (Optional)
 

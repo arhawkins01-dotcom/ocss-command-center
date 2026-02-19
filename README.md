@@ -16,8 +16,11 @@ OCSS Establishment Command Center — a server‑hosted internal web application
 
 ### Deploy to Streamlit Cloud
 **GitHub URL:** https://github.com/arhawkins01-dotcom/ocss-command-center
+**Main file path:** `app/app.py` ⭐
 
 👉 **[See Streamlit Cloud Deployment Guide](STREAMLIT_CLOUD_DEPLOYMENT.md)** for step-by-step instructions.
+
+📂 **[Main File Path Visual Guide](MAIN_FILE_PATH.md)** - Clear explanation of the correct path
 
 ### Local Development
 ```bash
