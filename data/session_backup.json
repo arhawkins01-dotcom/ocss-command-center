@@ -1,0 +1,49 @@
+{
+  "uploaded_reports": [],
+  "reports_by_caseload": {
+    "181000": [],
+    "181001": [],
+    "181002": []
+  },
+  "units": {
+    "OCSS North": {
+      "supervisor": "Alex Martinez",
+      "team_leads": [
+        "Sarah Johnson"
+      ],
+      "support_officers": [
+        "Michael Chen",
+        "Jessica Brown"
+      ],
+      "assignments": {
+        "Sarah Johnson": [
+          "181000"
+        ],
+        "Michael Chen": [
+          "181001"
+        ],
+        "Jessica Brown": [
+          "181002"
+        ]
+      }
+    },
+    "OCSS South": {
+      "supervisor": "Priya Singh",
+      "team_leads": [
+        "David Martinez"
+      ],
+      "support_officers": [
+        "Amanda Wilson"
+      ],
+      "assignments": {
+        "David Martinez": [
+          "181001"
+        ],
+        "Amanda Wilson": [
+          "181000"
+        ]
+      }
+    }
+  },
+  "saved_at": "2026-02-19T03:03:12.334207"
+}
