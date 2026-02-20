@@ -55,8 +55,12 @@ Select any role from the sidebar to test:
 
 1. Select **Program Officer** from sidebar
 2. Click **Tab 1: Upload & Processing**
-3. [Note: File upload is disabled in demo - this shows the interface]
-4. View processing metrics
+3. Upload a sample file and set metadata:
+   - Report Type (expanded list includes Financial, Compliance, QA, Policy, and Training types)
+   - Frequency and reporting period
+   - Owning Department
+4. Click **Process Report** and verify ingestion confirmation ID (`ING-...`)
+5. Confirm duplicate-period scanning behavior
 
 ### Scenario 3: Director Dashboard (3 minutes)
 
@@ -77,9 +81,11 @@ Select any role from the sidebar to test:
 
 ### Data Flow
 1. Reports organized by **Caseload Number** (181000, 181001, 181002)
-2. Support Officers view reports by caseload
-3. Edit fields directly in the UI (forms auto-detect field types)
-4. Export as CSV with one-click download
+2. Ingestion captures metadata (report type, frequency, period, owning department)
+3. Duplicate-period and hash checks run before ingest
+4. Support Officers process assigned report rows one case-line at a time
+5. KPI tracking reflects reports worked and case-lines worked/completed
+6. Export as CSV with one-click download
 
 ### Current Limitations (v1.0)
 - ⚠️ No user authentication (role selector is open)

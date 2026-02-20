@@ -66,3 +66,8 @@ Thumbs.db
 *.zip
 *.tar.gz
 *.rar
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3

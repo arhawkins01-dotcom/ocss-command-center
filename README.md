@@ -30,9 +30,8 @@ All enhancements from previous sessions are already built into the application. 
 
 ### Local Development
 ```bash
-cd app
-pip install -r requirements.txt
-streamlit run app.py
+pip install -r app/requirements.txt
+./scripts/start_app.sh
 ```
 
 ## Production Hosting

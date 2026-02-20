@@ -80,8 +80,15 @@ The OCSS Command Center is a role-based web application designed to streamline e
 
 The application supports **5 distinct user roles** with specialized interfaces:
 
+The role selector in the sidebar presents only these five roles:
+- Director
+- Program Officer
+- Supervisor
+- Support Officer
+- IT Administrator
+
 #### 1. **Director** 
-- **Dashboard Tabs:** KPIs, Caseload Management, Team Performance
+- **Dashboard Tabs:** KPIs, Caseload Management, Team Performance, Report Intake, Ticket KPIs, Manage Users
 - **Capabilities:** 
   - View organization-wide KPIs and metrics
   - Manage worker caseload assignments
@@ -89,7 +96,7 @@ The application supports **5 distinct user roles** with specialized interfaces:
   - Reassign workloads across teams
 
 #### 2. **Program Officer**
-- **Dashboard Tabs:** Upload & Processing, Caseload Management
+- **Dashboard Tabs:** Upload & Processing, Caseload Management, Ticket KPIs, Manage Users
 - **Capabilities:**
   - Upload Excel/CSV reports
   - Rename and organize uploaded reports
@@ -97,7 +104,7 @@ The application supports **5 distinct user roles** with specialized interfaces:
   - Track team metrics for assigned reports
 
 #### 3. **Supervisor**
-- **Dashboard Tabs:** KPI Metrics, Team Caseload, Performance Analytics
+- **Dashboard Tabs:** KPI Metrics, Team Caseload, Performance Analytics, Report Intake, Ticket KPIs, Manage Users
 - **Capabilities:**
   - View team member workloads
   - Monitor individual worker performance
@@ -107,18 +114,20 @@ The application supports **5 distinct user roles** with specialized interfaces:
 #### 4. **Support Officer** ⭐ *Primary Report Processor*
 - **Dashboard Tabs:** 
   - 📊 **Caseload Dashboard** - View reports by caseload number (181000, 181001, 181002)
-  - 📝 **Assigned Reports** - Process and update report fields
+  - 📝 **Assigned Reports** - Process and update report rows one case-line at a time
   - 🎫 **Support Tickets** - Manage support requests
   - 📚 **Knowledge Base** - Access FAQs and training materials
 - **Capabilities:**
-  - View Excel reports uploaded by Program Officer
-  - Edit all report fields with real-time validation
-  - Update report status (Approve, Save, Submit)
+  - View Excel reports uploaded by Program Officer and routed by caseload assignment
+  - Edit one case row at a time with row-level workflow status
+  - **Save Progress:** Persist edits to session state without submitting
+  - **Safe Submission:** Validation prevents submitting reports with incomplete ("Pending") rows
+  - Track workload through reports-worked and case-lines-worked KPIs
   - Export processed reports as CSV
   - Download reports for offline processing
 
 #### 5. **IT Administrator**
-- **Dashboard Tabs:** System Status, User & Caseload Management, Maintenance & Logs
+- **Dashboard Tabs:** System Status, User & Caseload Management, Maintenance & Logs, Ticket KPIs
 - **Capabilities:**
   - Monitor system health and performance
   - Manage user and caseload assignments
@@ -154,6 +163,22 @@ Support Officers can export reports in multiple formats:
 - **CSV Download:** One-click CSV export from any report
 - **Format:** Field-Value pairs for easy spreadsheet import
 - **Batch Operations:** Download multiple reports as individual files
+
+### 2.5 Interactive Workflow Enhancements
+
+Recent updates (Feb 2026) have introduced significant usability and data integrity improvements:
+
+#### 2.5.1 Enhanced User Experience
+- **Collapsible Warnings:** File upload validation warnings are now grouped in a collapsible expander (``st.expander``) to prevent UI clutter while maintaining visibility of issues.
+- **Robust Exception Handling:** Fixed charting errors in Program Officer dashboards by standardizing on Streamlit native charts (``st.bar_chart``) instead of unsupported backends.
+
+#### 2.5.2 Real-Time Data Aggregation
+- **Director & Program Officer Dashboards:** Now aggregate live data from all organizational units rather than displaying static placeholders. Caseload counts, completion rates, and worker assignments reflect the actual state of the application.
+- **Supervisor Analytics:** Performance metrics are dynamically calculated based on the specific casework assigned to the selected unit's team members.
+
+#### 2.5.3 Logic & Validation
+- **Caseload Reassignment:** Directors and Supervisors can now functionally move caseloads between workers. This updates the underlying session state immediately, reflecting changes across all dashboards.
+- **Submission Safety:** Support Officers cannot submit a caseload as "Complete" if any row remains in "Pending" or "In Progress" status. A warning is displayed, ensuring data completeness before supervisory review.
 
 ---
 
@@ -212,8 +237,9 @@ numpy>=1.24.0
 ```
 ┌──────────────────┐
 │ Program Officer  │
-│  Upload Report   │
-│   (Excel/CSV)    │
+│  Ingest Report   │
+│ (Excel/CSV +     │
+│  period metadata)│
 └────────┬─────────┘
          │
          ▼
@@ -221,6 +247,8 @@ numpy>=1.24.0
 │ Streamlit File Uploader          │
 │ - Reads Excel/CSV               │
 │ - Validates file format          │
+│ - Computes ingestion metadata     │
+│ - Scans duplicate period records  │
 │ - Stores in session state        │
 └────────┬─────────────────────────┘
          │
@@ -228,43 +256,43 @@ numpy>=1.24.0
 ┌──────────────────────────────────┐
 │ Pandas DataFrame Creation        │
 │ - Parses file contents           │
-│ - Extracts field names & values  │
-│ - Prepares for display           │
+│ - Normalizes support report schema│
+│ - Routes rows by caseload/worker │
+│ - Prepares row-level work queue  │
 └────────┬─────────────────────────┘
          │
          ▼
 ┌──────────────────────────────────┐
-│  Support Officer Dashboard       │
-│ - Select Caseload (181000)       │
-│ - View Available Reports         │
-│ - Open Report Card (Expander)    │
+│  Support Officer Assigned Reports │
+│ - Select queued report            │
+│ - Filter rows (Pending/All/Done)  │
+│ - Work one case row at a time     │
 └────────┬─────────────────────────┘
          │
          ▼
 ┌──────────────────────────────────┐
-│ Report Editing Form              │
-│ - Edit fields (auto type detect) │
-│ - Number inputs for numeric      │
-│ - Text inputs for string data    │
-│ - Real-time validation           │
+│ Row-Level Editing                │
+│ - Edit selected case row fields  │
+│ - Update Worker Status + notes   │
+│ - Save per-row updates           │
+│ - Mark report ready for review   │
 └────────┬─────────────────────────┘
          │
          ▼
 ┌──────────────────────────────────┐
 │ Session State Update             │
-│ - Store updated values           │
+│ - Store row updates and timestamps│
+│ - Maintain KPI aggregates        │
 │ - Persist during user session    │
-│ - Available for export           │
 └────────┬─────────────────────────┘
          │
     ┌────┴────┐
     │          │
     ▼          ▼
-┌────────┐ ┌──────────────┐
-│ Approve│ │ CSV Export & │
-│ Save   │ │ Download     │
-│Submit  │ └──────────────┘
-└────────┘
+  ┌──────────────┐ ┌──────────────┐
+  │ Submit to    │ │ CSV Export & │
+  │ Supervisor   │ │ Download     │
+  └──────────────┘ └──────────────┘
 ```
 
 ### 4.2 Session State Management
@@ -309,10 +337,10 @@ st.session_state:
 - **Risk:** Credentials/data exposed over network
 - **Recommendation:** Deploy with HTTPS/TLS certificate
 
-⚠️ **No Audit Trail**
-- **Current:** Changes not logged
-- **Risk:** Cannot track who modified reports
-- **Recommendation:** Implement audit logging to database
+⚠️ **Audit Persistence Gap**
+- **Current:** Upload routing and ticket actions are logged in session memory only
+- **Risk:** Audit history resets with session/server restart
+- **Recommendation:** Persist logs to database or append-only store
 
 ⚠️ **No Data Encryption**
 - **Current:** Files stored in memory unencrypted

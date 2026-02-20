@@ -1,7 +1,7 @@
 # OCSS Command Center - User Manual
 
 **Version 1.0.0**  
-**Last Updated: February 18, 2026**
+**Last Updated: February 19, 2026**
 
 ---
 
@@ -30,8 +30,10 @@ The OCSS Command Center is a centralized dashboard for managing establishment re
 - **Role-Based Access**: Each user sees relevant features for their role
 - **Caseload Management**: Track and assign work by caseload (181000 series)
 - **Report Processing**: Upload, review, edit, and export establishment reports
+- **Ingestion Controls**: Ingestion confirmation ID, period metadata, and duplicate-period scanning
 - **Team Coordination**: Supervisors manage units and assign work to team members
-- **Audit Trail**: All assignment changes are logged for accountability
+- **Audit Trail**: Upload routing, assignment changes, and ticket actions are logged in-session
+- **Help Ticket Center**: All roles can submit; leadership and IT roles can analyze ticket KPIs
 
 ### System Requirements
 
@@ -93,10 +95,14 @@ The main content area will update to show features relevant to your role.
 - Completion status by region
 
 **📋 Team Performance Tab**
-- Individual worker performance comparison (if team data is loaded)
-- Team efficiency metrics
-- Quality scores by team
-- Note: If no team is selected in Supervisor view, this will show a message instead
+- Individual worker performance comparison (dynamically updated)
+- Real-time team efficiency metrics and quality scores
+- **Note**: This tab now aggregates data directly from Support Officer work queues.
+
+**🆘 Ticket KPIs Tab**
+- Organization-level ticket analytics
+- Filter support by scope, priority, category, establishment, and date window
+- Custom date range with automatic start/end correction
 
 #### Quick Actions
 
@@ -112,7 +118,7 @@ The main content area will update to show features relevant to your role.
 
 #### Dashboard Features
 
-**📤 Upload Reports Tab**
+**📤 Upload & Processing Tab**
 
 1. **Select Caseload**: Choose the target caseload (181000, 181001, 181002, etc.)
 2. **Upload File**: Click "Browse files" and select an Excel (.xlsx) or CSV file
@@ -120,8 +126,20 @@ The main content area will update to show features relevant to your role.
    - File name and size
    - Number of rows and columns
    - Data preview (first 5 rows)
-4. **Confirm Upload**: Click "📤 Upload to Caseload"
-5. **View Status**: Uploaded reports appear in Recent Uploads list
+4. **Set Ingestion Metadata**:
+   - Report Type (for example: P-S Report)
+   - Frequency (Monthly / Quarterly / Bi-Annual)
+   - Period Year and Period Value
+5. **Process Report**: Click **"Process Report"**
+6. **Review Confirmation**:
+   - Ingestion ID (`ING-...`) is displayed on success
+   - Duplicate-period scanning runs automatically before ingest
+   - **Note**: Any non-critical processing warnings are now grouped in a collapsible "⚠️ Warnings" section to keep your view clean. Click to expand and review them.
+
+7. **(Optional) Rename processed report display names**:
+   - Update the **"Rename to"** field for one or more processed items
+   - Click **"✏️ Update"** to apply a single rename
+   - Or click **"✏️ Update All Names"** to apply all edits in one step
 
 **📊 Caseload Overview Tab**
 - View all active caseloads
@@ -132,6 +150,9 @@ The main content area will update to show features relevant to your role.
 - Track reports in progress
 - View completion status
 - Export summary data
+
+**🆘 Ticket KPIs Tab**
+- Program Officer ticket KPI analytics with the same filters used by leadership roles
 
 #### Best Practices
 
@@ -188,6 +209,9 @@ This feature allows team members to claim caseloads for themselves. **Workers sh
 - Individual worker performance comparison
 - Progress tracking
 
+**🆘 Ticket KPIs Tab**
+- Supervisor-accessible ticket KPI analytics and trend filters
+
 #### Supervisor Best Practices
 
 - **Balance Workload**: Distribute caseloads evenly across team members
@@ -214,9 +238,9 @@ This feature allows team members to claim caseloads for themselves. **Workers sh
 
 **Caseload Metrics**
 - **Assigned Caseloads**: Number of caseloads you're responsible for
-- **Active Reports**: Total reports available for processing
-- **Pending Approval**: Reports awaiting review
-- **Status**: Your current work status
+- **Reports Worked**: Assigned reports with active row-level work
+- **Case Lines Worked**: Row-level cases worked for assigned reports
+- **Case Lines Completed**: Row-level cases completed for assigned reports
 
 **📊 Caseload Dashboard Tab**
 
@@ -238,10 +262,11 @@ View and process reports by caseload:
    - **📤 Submit**: Submit for review
 
 **📝 My Assigned Reports Tab**
-- View all reports assigned to you
-- Filter by status, priority, due date
-- Sort reports
-- Track progress
+- View report queue for your assigned caseloads
+- Process one case line at a time (row-level workflow)
+- **Save Progress**: Click **"💾 Save Progress"** periodically to securely persist your edits to your session
+- **Conditional Submit**: The **"✅ Submit Caseload"** button checks your work. It will only allow submission if *all* your assigned rows are marked `Completed`. If rows are `Pending` or `In Progress`, you'll see a warning.
+- View KPI Tracker and Throughput (7-day / 30-day) summaries
 
 **🆘 Support Tickets Tab**
 - View and manage support requests related to your caseloads
@@ -253,9 +278,10 @@ View and process reports by caseload:
 #### Support Officer Best Practices
 
 - **Select Yourself**: Always choose your name in the dropdown to see your work
-- **Review Data Carefully**: Check all fields before approving reports
+- **Process Row-by-Row**: Treat each report line as a separate case item
+- **Review Data Carefully**: Update row status and review fields before moving on
 - **Use CSV Export**: Download data for offline analysis or archiving
-- **Update Status**: Mark reports as approved/submitted to keep workflow moving
+- **Update Status**: Use `Worker Status` (`Not Started`, `In Progress`, `Completed`) per case line
 - **Ask for Help**: Use Support Tickets if you encounter data issues
 
 ---
@@ -335,6 +361,10 @@ Create and manage organizational units:
 - Generate audit reports
 - Backup database
 
+**🆘 Ticket KPIs Tab**
+- IT ticket KPI analytics with shared filters
+- Ticket log maintenance entries and IT verification tracking
+
 #### IT Administrator Best Practices
 
 - **Set Current User**: Always enter your name for audit accountability
@@ -352,13 +382,14 @@ Create and manage organizational units:
 ### How to Upload a Report (Program Officer)
 
 1. Select **Program Officer** role
-2. Go to **📤 Upload Reports** tab
+2. Go to **📤 Upload & Processing** tab
 3. Select target caseload (e.g., 181000)
 4. Click **"Browse files"**
 5. Select Excel or CSV file
 6. Review preview
-7. Click **"📤 Upload to Caseload"**
-8. Confirm upload appears in Recent Uploads
+7. Select report metadata (type, frequency, period year/value)
+8. Click **"Process Report"**
+9. Confirm ingestion success and capture the displayed ingestion ID
 
 ### How to Claim a Caseload (Worker Self-Pull)
 
@@ -383,15 +414,14 @@ Create and manage organizational units:
 
 1. Select **Support Officer** role
 2. Choose your name in "Act as Support Officer / Team Lead"
-3. Go to **📊 Caseload Dashboard** tab
-4. Select your assigned caseload
-5. Expand a report card
-6. Edit fields in the form
-7. Click **"💾 Update Report"**
-8. Use action buttons:
-   - **📥 Download CSV** for offline work
-   - **✅ Approve** when complete
-   - **📤 Submit** for review
+3. Go to **📝 My Assigned Reports** tab
+4. Select a report from your queue
+5. Choose a case-row filter and select one case row
+6. Update editable row fields (including `Worker Status`)
+7. Edits are applied immediately to the session
+8. Click **"💾 Save Progress"** to checkpoint your work
+9. Repeat until all assigned rows are marked `Completed`
+10. Click **"✅ Submit Caseload as Complete"** to finalize and send to supervisor
 
 ### How to Reassign Work (Supervisor)
 
@@ -456,6 +486,15 @@ Create and manage organizational units:
 - Rename file to remove special characters
 - Try re-uploading
 
+### Duplicate-period ingestion was blocked
+
+**Reason**: A report with matching type/frequency/period/caseload (or matching content hash) already exists in the session registry.
+
+**Solution**:
+1. Verify report metadata is correct
+2. Confirm whether this upload is intentional
+3. If intentional, enable **"Allow ingestion even if duplicate period report is detected"** before processing
+
 ### I can't pull a caseload (Worker Self-Pull)
 
 **Possible Reasons**:
@@ -507,6 +546,15 @@ Create and manage organizational units:
    - Browser session ends
    - You clear browser cache
 4. **Best Practice**: Always **📥 Download CSV** after making important edits to create a backup
+
+### I cannot submit report to supervisor
+
+**Reason**: At least one row assigned to you is not `Completed`.
+
+**Solution**:
+1. In **My Assigned Reports**, filter to **Pending / In Progress**
+2. Complete and save each remaining row
+3. Submit once all assigned rows are completed
 
 ### Page won't load
 

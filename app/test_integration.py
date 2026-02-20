@@ -5,6 +5,7 @@ Tests configuration, utilities, and data processing
 
 import sys
 import os
+import ast
 from pathlib import Path
 
 # Add app directory to path
@@ -87,6 +88,229 @@ try:
     
 except Exception as e:
     print(f"  ✗ Report processor test failed: {e}")
+    sys.exit(1)
+
+# Test 4b: Support Report Ingestion Routing
+print("\nTest 4b: Testing support report ingestion routing...")
+try:
+    ingestion_service = report_utils.SupportReportIngestionService()
+
+    raw_df = pd.DataFrame({
+        'CaseID': ['CASE-1', 'CASE-2'],
+        'CaseloadNumber': ['181000', '181001'],
+        'CaseType': ['A', 'B'],
+        'CaseMode': ['Auto', 'Manual']
+    })
+
+    analysis = ingestion_service.analyze_dataframe(raw_df, '181000')
+    normalized_df = analysis['normalized_df']
+    assert 'Worker Status' in normalized_df.columns
+    assert 'Assigned Worker' in normalized_df.columns
+
+    existing_reports = {'181000': [], '181001': []}
+
+    def _resolver(caseload):
+        if caseload == '181000':
+            return 'OCSS North', 'Michael Chen'
+        if caseload == '181001':
+            return 'OCSS South', 'Amanda Wilson'
+        return None, None
+
+    ingest_result = ingestion_service.build_ingestion_records(
+        source_filename='sample_upload.xlsx',
+        uploader_role='Program Officer',
+        normalized_df=normalized_df,
+        resolved_caseload='181000',
+        assigned_worker_choice='(Auto Assign by Caseload)',
+        recognized_headers=analysis['recognized_headers'],
+        missing_headers=analysis['missing_headers'],
+        existing_reports_by_caseload=existing_reports,
+        caseload_owner_resolver=_resolver
+    )
+
+    assert ingest_result['success'] == True
+    assert len(ingest_result['created_reports']) == 2
+    for report_entry in ingest_result['created_reports']:
+        assert report_entry['report_id'].startswith('RPT-')
+        assert report_entry['status'] == 'Ready for Processing'
+        assert isinstance(report_entry['data'], pd.DataFrame)
+        assert 'Worker Status' in report_entry['data'].columns
+
+    assigned_workers = {entry['assigned_worker'] for entry in ingest_result['created_reports']}
+    assert 'Michael Chen' in assigned_workers
+    assert 'Amanda Wilson' in assigned_workers
+    print("  ✓ Ingestion routing and payload generation working")
+
+except Exception as e:
+    print(f"  ✗ Ingestion routing test failed: {e}")
+    sys.exit(1)
+
+# Test 4c: Duplicate Period Detection Primitives
+print("\nTest 4c: Testing duplicate period detection helpers...")
+try:
+    ingestion_service = report_utils.SupportReportIngestionService()
+    period_key = ingestion_service.build_period_key('Monthly', 2026, '02')
+    assert period_key == '2026-M-02'
+
+    sample_df = pd.DataFrame({
+        'Case Number': ['A1', 'A2'],
+        'Caseload': ['181000', '181000']
+    })
+    df_hash = ingestion_service.compute_dataframe_hash(sample_df)
+    assert len(df_hash) > 0
+
+    registry = [{
+        'report_id': 'RPT-181000-001',
+        'report_type': 'P-S Report',
+        'report_frequency': 'Monthly',
+        'period_key': '2026-M-02',
+        'caseload': '181000',
+        'dataframe_hash': df_hash
+    }]
+    dups = ingestion_service.find_duplicate_candidates(
+        registry_rows=registry,
+        report_type='P-S Report',
+        owning_department='Program Operations',
+        report_frequency='Monthly',
+        period_key='2026-M-02',
+        caseloads=['181000'],
+        dataframe_hash=df_hash
+    )
+    assert len(dups) == 1
+    print("  ✓ Duplicate detection helpers working")
+
+except Exception as e:
+    print(f"  ✗ Duplicate detection helper test failed: {e}")
+    sys.exit(1)
+
+# Test 4d: Duplicate Detection by Owning Department
+print("\nTest 4d: Testing duplicate detection department scoping...")
+try:
+    ingestion_service = report_utils.SupportReportIngestionService()
+    scoped_registry = [
+        {
+            'report_id': 'RPT-181000-001',
+            'report_type': 'P-S Report',
+            'owning_department': 'Program Operations',
+            'report_frequency': 'Monthly',
+            'period_key': '2026-M-02',
+            'caseload': '181000',
+            'dataframe_hash': 'hash-a'
+        },
+        {
+            'report_id': 'RPT-181000-002',
+            'report_type': 'P-S Report',
+            'owning_department': 'Finance',
+            'report_frequency': 'Monthly',
+            'period_key': '2026-M-02',
+            'caseload': '181000',
+            'dataframe_hash': 'hash-b'
+        }
+    ]
+
+    scoped_dups = ingestion_service.find_duplicate_candidates(
+        registry_rows=scoped_registry,
+        report_type='P-S Report',
+        owning_department='Program Operations',
+        report_frequency='Monthly',
+        period_key='2026-M-02',
+        caseloads=['181000'],
+        dataframe_hash=''
+    )
+    assert len(scoped_dups) == 1
+    assert scoped_dups[0]['owning_department'] == 'Program Operations'
+    print("  ✓ Department-scoped duplicate detection working")
+
+except Exception as e:
+    print(f"  ✗ Duplicate department scoping test failed: {e}")
+    sys.exit(1)
+
+# Test 4e: Ingestion Metadata Propagation
+print("\nTest 4e: Testing ingestion metadata propagation...")
+try:
+    ingestion_service = report_utils.SupportReportIngestionService()
+
+    base_df = pd.DataFrame({
+        'CaseID': ['CASE-10'],
+        'CaseloadNumber': ['181000']
+    })
+    analysis = ingestion_service.analyze_dataframe(base_df, '181000')
+    normalized_df = analysis['normalized_df']
+
+    result = ingestion_service.build_ingestion_records(
+        source_filename='meta_test.xlsx',
+        uploader_role='Program Officer',
+        normalized_df=normalized_df,
+        resolved_caseload='181000',
+        assigned_worker_choice='(Unassigned)',
+        recognized_headers=analysis['recognized_headers'],
+        missing_headers=analysis['missing_headers'],
+        existing_reports_by_caseload={'181000': []},
+        caseload_owner_resolver=lambda _: ('OCSS North', 'Michael Chen'),
+        report_type='P-S Report',
+        owning_department='Program Operations',
+        report_frequency='Monthly',
+        period_label='2026-02',
+        period_key='2026-M-02',
+        ingestion_id='ING-TEST-0001',
+        duplicate_detected=True,
+        duplicate_count=2
+    )
+
+    assert result['success'] == True
+    assert len(result['created_reports']) == 1
+    created = result['created_reports'][0]
+    uploaded = result['uploaded_rows'][0]
+    audit = result['audit_rows'][0]
+
+    assert created['ingestion_id'] == 'ING-TEST-0001'
+    assert created['owning_department'] == 'Program Operations'
+    assert created['period_key'] == '2026-M-02'
+    assert created['duplicate_detected'] == True
+    assert uploaded['ingestion_id'] == 'ING-TEST-0001'
+    assert uploaded['owning_department'] == 'Program Operations'
+    assert uploaded['period_key'] == '2026-M-02'
+    assert audit['ingestion_id'] == 'ING-TEST-0001'
+    assert audit['owning_department'] == 'Program Operations'
+    assert audit['period_key'] == '2026-M-02'
+    print("  ✓ Ingestion metadata propagation working")
+
+except Exception as e:
+    print(f"  ✗ Ingestion metadata propagation test failed: {e}")
+    sys.exit(1)
+
+# Test 4f: Supported Roles and Submit Guard Presence
+print("\nTest 4f: Testing supported roles and submit guard coverage...")
+try:
+    app_source = (app_dir / 'app.py').read_text(encoding='utf-8')
+    app_tree = ast.parse(app_source)
+
+    core_roles = None
+    supported_roles_ref = None
+    for node in app_tree.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == 'CORE_APP_ROLES':
+                    core_roles = ast.literal_eval(node.value)
+                if isinstance(target, ast.Name) and target.id == 'SUPPORTED_USER_ROLES':
+                    if isinstance(node.value, ast.Name):
+                        supported_roles_ref = node.value.id
+                    else:
+                        supported_roles_ref = ast.literal_eval(node.value)
+
+    assert isinstance(core_roles, list)
+    assert core_roles == ["Director", "Program Officer", "Supervisor", "Support Officer", "IT Administrator"]
+    assert supported_roles_ref == 'CORE_APP_ROLES' or supported_roles_ref == core_roles
+
+    # Submit-guard coverage: block submit until all assigned rows are Completed
+    assert "pending_rows" in app_source
+    assert "worker_rows['Worker Status'] != 'Completed'" in app_source
+    assert "if not pending_rows.empty:" in app_source
+    assert "Cannot submit yet." in app_source
+    print("  ✓ Supported roles restricted and row-level submit guard coverage present")
+
+except Exception as e:
+    print(f"  ✗ Supported roles / submit guard coverage test failed: {e}")
     sys.exit(1)
 
 # Test 5: Data Validator
@@ -177,7 +401,7 @@ except Exception as e:
 # Test 8: Sample Data Files
 print("\nTest 8: Testing sample data files...")
 try:
-    sample_dir = Path('sample_data')
+    sample_dir = app_dir / 'sample_data'
     if sample_dir.exists():
         # Test reading sample Excel file
         sample_file = sample_dir / 'sample_establishment_report.xlsx'
@@ -203,7 +427,7 @@ except Exception as e:
 print("\nTest 9: Checking app.py syntax...")
 try:
     import py_compile
-    py_compile.compile('app.py', doraise=True)
+    py_compile.compile(str(app_dir / 'app.py'), doraise=True)
     print("  ✓ app.py syntax valid")
 except Exception as e:
     print(f"  ✗ app.py syntax check failed: {e}")
@@ -214,7 +438,7 @@ print("\nTest 10: Checking directory structure...")
 try:
     required_dirs = ['config', 'sample_data']
     for dir_name in required_dirs:
-        dir_path = Path(dir_name)
+        dir_path = app_dir / dir_name
         if dir_path.exists():
             print(f"  ✓ {dir_name}/ exists")
         else:
@@ -222,7 +446,7 @@ try:
     
     required_files = ['app.py', 'report_utils.py', 'requirements.txt']
     for file_name in required_files:
-        file_path = Path(file_name)
+        file_path = app_dir / file_name
         if file_path.exists():
             print(f"  ✓ {file_name} exists")
         else:
