@@ -571,6 +571,147 @@ def _remove_user_from_units(user_name: str) -> int:
     return removed_assignments
 
 
+def _find_assignment_owner(caseload: str) -> tuple[str, str] | tuple[None, None]:
+    """Return (unit_name, person) for the current caseload owner, if any."""
+    caseload = str(caseload or '').strip()
+    if not caseload:
+        return (None, None)
+    for unit_name, unit in st.session_state.get('units', {}).items():
+        for person, caselist in (unit.get('assignments', {}) or {}).items():
+            if caseload in (caselist or []):
+                return (unit_name, person)
+    return (None, None)
+
+
+def _find_unit_for_person(person: str) -> str | None:
+    person = str(person or '').strip()
+    if not person:
+        return None
+    for unit_name, unit in st.session_state.get('units', {}).items():
+        if unit.get('supervisor') == person:
+            return unit_name
+        if person in (unit.get('team_leads', []) or []):
+            return unit_name
+        if person in (unit.get('support_officers', []) or []):
+            return unit_name
+    return None
+
+
+def _remove_caseload_from_all_units(caseload: str) -> int:
+    """Remove caseload from all assignments across all units.
+
+    Returns number of removals performed.
+    """
+    caseload = str(caseload or '').strip()
+    if not caseload:
+        return 0
+    removed = 0
+    for unit in st.session_state.get('units', {}).values():
+        assignments = unit.get('assignments', {}) or {}
+        for person, caselist in list(assignments.items()):
+            if caseload in (caselist or []):
+                assignments[person] = [c for c in caselist if c != caseload]
+                removed += 1
+    return removed
+
+
+def _classify_report_work_bucket(report_status: str) -> str:
+    status = str(report_status or '').strip().lower()
+
+    completed_statuses = {
+        'completed',
+        'closed',
+        'approved',
+    }
+    finished_statuses = {
+        'submitted for review',
+        'under review',
+        'ready for review',
+    }
+    pending_statuses = {
+        'pending',
+        'in progress',
+        'open',
+        'ready for processing',
+        'ready',
+    }
+
+    if status in completed_statuses:
+        return 'Completed'
+    if status in finished_statuses:
+        return 'Finished'
+    if status in pending_statuses:
+        return 'Pending'
+    return 'Pending'
+
+
+def _build_caseload_work_status_df(scope_unit: str | None = None) -> pd.DataFrame:
+    """Return a real-time rollup of caseload assignment + work status.
+
+    Work Status is derived from report-level statuses in st.session_state.reports_by_caseload.
+    Overall Status is one of: Pending / Finished / Completed / Unassigned.
+    """
+    reports_by_caseload = st.session_state.get('reports_by_caseload', {}) or {}
+    if not reports_by_caseload:
+        return pd.DataFrame()
+
+    all_assignments = st.session_state.get('units', {}) or {}
+
+    rows = []
+    for caseload in sorted([str(c) for c in reports_by_caseload.keys()]):
+        unit_name, owner = _find_assignment_owner(caseload)
+        is_unassigned = not owner
+
+        if scope_unit is not None:
+            # For unit-level views, include caseloads currently assigned to the unit,
+            # plus globally-unassigned caseloads.
+            if (unit_name != scope_unit) and (not is_unassigned):
+                continue
+
+        reports = reports_by_caseload.get(caseload, []) or []
+        pending = finished = completed = 0
+        for report in reports:
+            bucket = _classify_report_work_bucket(report.get('status') or report.get('Status'))
+            if bucket == 'Completed':
+                completed += 1
+            elif bucket == 'Finished':
+                finished += 1
+            else:
+                pending += 1
+
+        total = len(reports)
+        if total == 0:
+            work_status = 'Pending'
+        elif completed == total:
+            work_status = 'Completed'
+        elif pending > 0:
+            work_status = 'Pending'
+        else:
+            work_status = 'Finished'
+
+        overall_status = 'Unassigned' if is_unassigned else work_status
+
+        rows.append({
+            'Caseload': caseload,
+            'Unit': unit_name or '',
+            'Assigned To': owner or '',
+            'Overall Status': overall_status,
+            'Pending Reports': pending,
+            'Finished Reports': finished,
+            'Completed Reports': completed,
+            'Total Reports': total,
+        })
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+
+    status_order = {'Unassigned': 0, 'Pending': 1, 'Finished': 2, 'Completed': 3}
+    df['_sort'] = df['Overall Status'].map(status_order).fillna(99)
+    df = df.sort_values(by=['_sort', 'Caseload'], ascending=[True, True]).drop(columns=['_sort'])
+    return df
+
+
 def normalize_caseload_number(raw_value: str) -> str:
     digits = ''.join(ch for ch in str(raw_value) if ch.isdigit())
     if not digits:
@@ -2360,6 +2501,13 @@ if role == "Director":
     
     with dir_tab2:
         st.subheader("👥 Caseload Management - All Workers")
+
+        st.subheader("📍 Caseload Work Status (Real-Time)")
+        caseload_status_df = _build_caseload_work_status_df(scope_unit=None)
+        if caseload_status_df.empty:
+            st.info("No caseload work status available yet.")
+        else:
+            st.dataframe(caseload_status_df, use_container_width=True, hide_index=True)
         
         # calculate real assignment metrics from session state
         worker_metrics = []
@@ -2585,6 +2733,13 @@ The report type you select at ingestion determines which fields Support Officers
     
     with prog_tab3:
         st.subheader("👥 Processing Team Caseload - Program View")
+
+        st.subheader("📍 Caseload Work Status (Real-Time)")
+        caseload_status_df = _build_caseload_work_status_df(scope_unit=None)
+        if caseload_status_df.empty:
+            st.info("No caseload work status available yet.")
+        else:
+            st.dataframe(caseload_status_df, use_container_width=True, hide_index=True)
         
         # Aggregate stats from all units for Program Officer
         po_team_rows_data = [] # Rename to avoid conflict if any
@@ -2790,9 +2945,33 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                 st.markdown(f"**Team Lead(s):** {', '.join(unit.get('team_leads', []))}")
                 st.markdown(f"**Support Officers:** {', '.join(unit.get('support_officers', []))}")
 
+                # Default behavior for demos: any caseload that exists in the system but is not
+                # assigned to anyone is treated as owned by the supervisor.
+                all_known_caseloads = sorted([str(c) for c in st.session_state.get('reports_by_caseload', {}).keys()])
+                globally_assigned = {
+                    str(c)
+                    for u in st.session_state.units.values()
+                    for lst in (u.get('assignments', {}) or {}).values()
+                    for c in (lst or [])
+                }
+                globally_unassigned = [c for c in all_known_caseloads if c not in globally_assigned]
+                if globally_unassigned:
+                    unit.setdefault('assignments', {}).setdefault(selected_supervisor, [])
+                    for c in globally_unassigned:
+                        if c not in unit['assignments'][selected_supervisor]:
+                            unit['assignments'][selected_supervisor].append(c)
+
+                    st.info(
+                        f"Unclaimed caseloads defaulted to supervisor '{selected_supervisor}': "
+                        + ", ".join(globally_unassigned)
+                    )
+
                 # Build team overview
-                team_list = unit.get('support_officers', []) + unit.get('team_leads', [])
-                if team_list:
+                unit_workers = unit.get('team_leads', []) + unit.get('support_officers', [])
+                team_list = [selected_supervisor] + unit_workers
+                team_list = [t for i, t in enumerate(team_list) if t and t not in team_list[:i]]
+
+                if unit_workers:
                     team_workers = pd.DataFrame({
                         'Worker Name': team_list,
                         'Total Assigned': [len(unit.get('assignments', {}).get(w, [])) for w in team_list],
@@ -2820,23 +2999,117 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                             st.error("Selected caseload not found for the source worker")
 
                     st.divider()
+
+                    # Agency-level reassignment for supervisors (can move caseload across units).
+                    st.subheader("🏢 Reassign Caseload Across Agency")
+                    with st.expander("Move a caseload to any Team Lead / Support Officer", expanded=False):
+                        # Destination choices (team leads + support officers across all units)
+                        agency_people = []
+                        for uname, u in st.session_state.units.items():
+                            agency_people.extend(u.get('team_leads', []) or [])
+                            agency_people.extend(u.get('support_officers', []) or [])
+                        agency_people = [p for i, p in enumerate(agency_people) if p and p not in agency_people[:i]]
+
+                        caseloads_for_picker = sorted(list(st.session_state.get('reports_by_caseload', {}).keys()))
+                        move_caseload = st.selectbox("Caseload", options=caseloads_for_picker, key="agency_move_caseload")
+                        cur_unit, cur_owner = _find_assignment_owner(move_caseload)
+                        if cur_owner:
+                            st.caption(f"Current owner: {cur_owner} (unit: {cur_unit})")
+                        else:
+                            st.caption("Current owner: (unclaimed)")
+
+                        dest_person = st.selectbox("Assign To", options=agency_people, key="agency_move_to")
+                        dest_unit = _find_unit_for_person(dest_person)
+
+                        if st.button("🔁 Reassign", key="agency_move_btn"):
+                            if not dest_unit:
+                                st.error("Destination person is not mapped to a unit.")
+                            else:
+                                # Ensure caseload is not assigned in multiple places
+                                _remove_caseload_from_all_units(move_caseload)
+                                st.session_state.units[dest_unit].setdefault('assignments', {}).setdefault(dest_person, [])
+                                if move_caseload not in st.session_state.units[dest_unit]['assignments'][dest_person]:
+                                    st.session_state.units[dest_unit]['assignments'][dest_person].append(move_caseload)
+                                st.success(f"✓ Caseload {move_caseload} reassigned to {dest_person} (unit: {dest_unit})")
+
+                    st.divider()
                     # Worker Self-Pull: allow workers to pull a caseload only to themselves (no claiming for others)
                     st.subheader("🤝 Worker Self-Pull (Claim a Caseload)")
-                    # Simulate current worker identity (no auth yet)
-                    cur_worker = st.text_input("Simulate Current Worker", value=st.session_state.get('current_worker', ''), help="Enter your worker name to claim caseloads")
-                    if cur_worker:
-                        st.session_state.current_worker = cur_worker.strip()
 
-                    pull_col1, pull_col2 = st.columns(2)
-                    with pull_col1:
-                        pull_worker = st.selectbox("Pull As (must match 'Simulate Current Worker')", options=team_list, key="pull_worker_select")
-                    with pull_col2:
-                        # Available caseloads across unit (flattened)
-                        available = sum([unit.get('assignments', {}).get(w, []) for w in team_list], [])
-                        # Also include any caseloads that exist but are unassigned
-                        unassigned = [c for c in st.session_state.reports_by_caseload.keys() if not any(c in lst for u in st.session_state.units.values() for lst in u.get('assignments', {}).values())]
-                        pull_options = sorted(list(set(available + unassigned)))
-                        pull_caseload = st.selectbox("Caseload to Claim (to self)", options=pull_options, key="pull_caseload_select")
+                    # Real-time view of caseload work status for leadership/supervisors
+                    if selected_role in {"Supervisor", "Director", "Program Officer"}:
+                        status_df = _build_caseload_work_status_df(scope_unit=unit_name)
+                        if not status_df.empty:
+                            st.caption("Caseload work status updates as reports/assignments change.")
+                            st.dataframe(status_df, use_container_width=True, hide_index=True)
+                            st.divider()
+                    # Access control: only senior leadership/executives and unit Team Leads
+                    exec_roles = {"Director", "Program Officer"}
+                    is_exec = selected_role in exec_roles
+                    unit_team_leads = unit.get('team_leads', []) or []
+
+                    if auth_result.authenticated:
+                        cur_worker = (auth_result.display_name or auth_result.username or "").strip()
+                        if cur_worker:
+                            st.session_state.current_worker = cur_worker
+                            st.caption(f"Signed-in worker: {cur_worker}")
+                    else:
+                        # Simulate current worker identity (no auth yet)
+                        cur_worker = st.text_input(
+                            "Simulate Current Worker",
+                            value=st.session_state.get('current_worker', ''),
+                            help="Enter your worker name to claim caseloads"
+                        )
+                        if cur_worker:
+                            st.session_state.current_worker = cur_worker.strip()
+
+                    cur_worker_name = (st.session_state.get('current_worker') or "").strip()
+                    is_unit_team_lead = bool(cur_worker_name) and (cur_worker_name in unit_team_leads)
+                    can_self_pull = is_exec or is_unit_team_lead
+
+                    if not can_self_pull:
+                        st.info("Worker Self-Pull is restricted to senior leadership (Director/Program Officer) and the unit's Team Leads.")
+                        if unit_team_leads:
+                            st.caption("Unit Team Leads: " + ", ".join(unit_team_leads))
+                        st.caption("To proceed in demo mode, set 'Simulate Current Worker' to a Team Lead name.")
+                    else:
+                        if is_exec:
+                            st.caption("Access granted: Executive role")
+                        else:
+                            st.caption("Access granted: Unit Team Lead")
+
+                        pull_col1, pull_col2 = st.columns(2)
+                        with pull_col1:
+                            # Exec can simulate/pull as any worker in the unit; Team Leads can only pull as themselves.
+                            if is_exec:
+                                pull_worker_options = unit_workers
+                            else:
+                                pull_worker_options = [cur_worker_name] if cur_worker_name else unit_team_leads
+
+                            pull_worker = st.selectbox(
+                                "Pull As (must match 'Simulate Current Worker')",
+                                options=pull_worker_options,
+                                key="pull_worker_select"
+                            )
+                        with pull_col2:
+                            # Available caseloads across unit (flattened)
+                            available = sum([unit.get('assignments', {}).get(w, []) for w in team_list], [])
+                            # Also include any caseloads that exist but are unassigned
+                            unassigned = [
+                                c
+                                for c in st.session_state.reports_by_caseload.keys()
+                                if not any(
+                                    c in lst
+                                    for u in st.session_state.units.values()
+                                    for lst in u.get('assignments', {}).values()
+                                )
+                            ]
+                            pull_options = sorted(list(set(available + unassigned)))
+                            pull_caseload = st.selectbox(
+                                "Caseload to Claim (to self)",
+                                options=pull_options,
+                                key="pull_caseload_select"
+                            )
 
                         # Show availability hint for the selected caseload
                         assigned_owner = None
@@ -2854,32 +3127,34 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                             else:
                                 st.warning(f"Caseload {pull_caseload} is currently assigned to {assigned_owner['person']} in unit '{assigned_owner['unit']}'.")
 
-                    if st.button("🧷 Pull Caseload to Self", key="pull_to_self"):
-                        if not st.session_state.get('current_worker'):
-                            st.error("Set 'Simulate Current Worker' to your name before pulling a caseload.")
-                        elif pull_worker != st.session_state.get('current_worker'):
-                            st.error("You can only pull a caseload for yourself. Make sure 'Pull As' matches the simulated current worker.")
-                        else:
-                            # Dedup: ensure caseload not already assigned to someone else
-                            already_assigned = None
-                            for uname, u in st.session_state.units.items():
-                                for person, caselist in u.get('assignments', {}).items():
-                                    if pull_caseload in caselist:
-                                        already_assigned = (uname, person)
-                                        break
-                                if already_assigned:
-                                    break
-
-                            if already_assigned:
-                                # If already assigned to this same person in this unit, inform
-                                if already_assigned[1] == pull_worker and already_assigned[0] == unit_name:
-                                    st.info(f"Caseload {pull_caseload} is already assigned to you in unit '{unit_name}'.")
-                                else:
-                                    st.error(f"Caseload {pull_caseload} is already assigned to {already_assigned[1]} in unit '{already_assigned[0]}'. Cannot pull.")
+                        if st.button("🧷 Pull Caseload to Self", key="pull_to_self"):
+                            if not can_self_pull:
+                                st.error("You do not have permission to self-pull a caseload.")
+                            elif not st.session_state.get('current_worker'):
+                                st.error("Set 'Simulate Current Worker' to your name before pulling a caseload.")
+                            elif pull_worker != st.session_state.get('current_worker'):
+                                st.error("You can only pull a caseload for yourself. Make sure 'Pull As' matches the simulated current worker.")
                             else:
-                                # Assign to the pull_worker within this unit
-                                st.session_state.units[unit_name].setdefault('assignments', {}).setdefault(pull_worker, []).append(pull_caseload)
-                                st.success(f"✓ Caseload {pull_caseload} claimed by {pull_worker} in unit '{unit_name}'")
+                                # Dedup: ensure caseload not already assigned to someone else
+                                already_assigned = None
+                                for uname, u in st.session_state.units.items():
+                                    for person, caselist in u.get('assignments', {}).items():
+                                        if pull_caseload in caselist:
+                                            already_assigned = (uname, person)
+                                            break
+                                    if already_assigned:
+                                        break
+
+                                if already_assigned:
+                                    # If already assigned to this same person in this unit, inform
+                                    if already_assigned[1] == pull_worker and already_assigned[0] == unit_name:
+                                        st.info(f"Caseload {pull_caseload} is already assigned to you in unit '{unit_name}'.")
+                                    else:
+                                        st.error(f"Caseload {pull_caseload} is already assigned to {already_assigned[1]} in unit '{already_assigned[0]}'. Cannot pull.")
+                                else:
+                                    # Assign to the pull_worker within this unit
+                                    st.session_state.units[unit_name].setdefault('assignments', {}).setdefault(pull_worker, []).append(pull_caseload)
+                                    st.success(f"✓ Caseload {pull_caseload} claimed by {pull_worker} in unit '{unit_name}'")
                 else:
                     st.info("No team members assigned yet for this supervisor")
             else:
