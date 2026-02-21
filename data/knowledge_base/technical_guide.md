@@ -186,6 +186,7 @@ Support Officers can export reports in multiple formats:
 
 Senior leadership (Director / Program Officer / Supervisor) can also export executive briefing packets from live application state:
 - **Excel (.xlsx):** Multi-sheet export (caseload status, alerts, assignments, ingestion/audit snapshots)
+- **All Ingested Reports (sheet):** Consolidated view of all reports ingested via upload/import (built from the ingestion registry and upload audit log, with caseload ownership context)
 - **Word (.docx):** Executive packet with summary sections and embedded tables
 
 ### 2.5 Interactive Workflow Enhancements

@@ -105,6 +105,7 @@ The main content area will update to show features relevant to your role.
 - Regional distribution metrics
 - Completion status by region
 - **Leadership Exports (Excel/Word)**: Download an executive packet from live application data (caseload status, alerts, assignments, audit)
+   - Includes **All Ingested Reports**: a consolidated report of everything ingested by import/upload
 
 **Leadership Titles (Unit Role)**
 The sidebar role remains **Director**, but leadership titles are captured under **Unit Role** in User Management:
@@ -511,6 +512,9 @@ Escalation ladder (time since upload):
 4. Open **Leadership Exports (Excel / Word)** and download:
    - Excel packet with multiple sheets
    - Word packet suitable for briefings
+
+Export note:
+- The Excel packet includes an **All Ingested Reports** sheet that consolidates ingestion activity (upload/import) from the Ingestion Registry + Upload Audit.
 
 ### How to Process a Report (Support Officer)
 
