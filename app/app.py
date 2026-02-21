@@ -7,11 +7,27 @@ import os
 import json
 import re
 import inspect
+from pathlib import Path
+import shutil
 from report_utils import SupportReportIngestionService
 import database
+import auth
+
+try:
+    from config import ensure_directories, get_data_path
+except Exception:  # pragma: no cover
+    ensure_directories = None
+    get_data_path = None
 
 # Initialize Database
 database.init_db()
+
+# Ensure local data/log/export directories exist (dev + internal server deployments).
+try:
+    if ensure_directories:
+        ensure_directories()
+except Exception:
+    pass
 
 CORE_APP_ROLES = ["Director", "Program Officer", "Supervisor", "Support Officer", "IT Administrator"]
 
@@ -95,6 +111,232 @@ if 'help_tickets' not in st.session_state:
 
 if 'help_ticket_log' not in st.session_state:
     st.session_state.help_ticket_log = []
+
+
+def _get_repo_root_dir() -> Path:
+    return Path(__file__).resolve().parent.parent
+
+
+def _get_kb_dir() -> Path:
+    if get_data_path:
+        try:
+            base = Path(get_data_path())
+        except Exception:
+            base = _get_repo_root_dir() / "data"
+    else:
+        base = _get_repo_root_dir() / "data"
+
+    kb_dir = base / "knowledge_base"
+    kb_dir.mkdir(parents=True, exist_ok=True)
+    return kb_dir
+
+
+def _kb_seed_docs() -> dict:
+    """Defines KB documents that are stored as markdown files in the data directory."""
+    repo_root = _get_repo_root_dir()
+    return {
+        "User Guide": {
+            "filename": "user_guide.md",
+            "seed_source": repo_root / "docs" / "USER_MANUAL.md",
+        },
+        "Technical Guide": {
+            "filename": "technical_guide.md",
+            "seed_source": repo_root / "docs" / "TECHNICAL_GUIDE.md",
+        },
+    }
+
+
+def _ensure_kb_seeded() -> None:
+    kb_dir = _get_kb_dir()
+    for meta in _kb_seed_docs().values():
+        target = kb_dir / meta["filename"]
+        if target.exists():
+            continue
+
+        source = meta.get("seed_source")
+        try:
+            if isinstance(source, Path) and source.exists():
+                shutil.copyfile(source, target)
+            else:
+                target.write_text("# Document\n\n(Seed file missing.)\n", encoding="utf-8")
+        except Exception:
+            # Best-effort; KB should still render FAQ even if docs fail.
+            pass
+
+
+def _read_text_file(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except Exception:
+        try:
+            return path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            return ""
+
+
+def render_knowledge_base(current_role: str, key_prefix: str) -> None:
+    """Knowledge base UI shared across roles.
+
+    Editing is restricted to Program Officer + IT Administrator.
+    """
+    _ensure_kb_seeded()
+
+    can_edit = current_role in {"Program Officer", "IT Administrator"}
+    kb_dir = _get_kb_dir()
+
+    st.subheader("📚 Knowledge Base")
+    st.caption("User Guide and Technical Guide are loaded from the Knowledge Base folder.")
+
+    doc_options = ["FAQ & Troubleshooting", "User Guide", "Technical Guide"]
+    selected = st.selectbox(
+        "Select a resource",
+        options=doc_options,
+        key=f"{key_prefix}_kb_selected_doc",
+    )
+
+    if selected == "FAQ & Troubleshooting":
+        st.subheader("❓ FAQ & Troubleshooting")
+
+        with st.expander("❓ How do I upload a report?"):
+            st.write(
+                """
+1. Select your role (Director / Program Officer / Supervisor / Support Officer)
+2. Navigate to the **Report Intake** tab
+3. Click **Choose an Excel file**
+4. Select the report file
+5. Click **Process Report**
+
+**Accepted formats**: .xls, .xlsx, .csv
+"""
+            )
+
+        with st.expander("❓ What should I do if my upload fails?"):
+            st.write(
+                """
+- Confirm the file is Excel or CSV
+- Verify required columns are present
+- Remove unusual characters from column headers
+- Check file size limits
+- If the issue persists, open a support ticket
+"""
+            )
+
+        with st.expander("❓ How do I reset my password?"):
+            st.write(
+                """
+If your deployment uses authentication, use the **Forgot Password** flow.
+If you don't receive an email within a few minutes, contact IT Support.
+"""
+            )
+
+        with st.expander("❓ What are the system requirements?"):
+            st.write(
+                """
+- **Browser**: Chrome, Firefox, Safari, Edge (latest)
+- **Internet**: Stable connection recommended
+- **File format**: Excel 2010+ (.xlsx) or CSV
+- **Computer**: Windows, Mac, or Linux
+"""
+            )
+
+        st.subheader("🔧 Common Issues & Solutions")
+        common_issues = pd.DataFrame(
+            {
+                "Issue": [
+                    "Cannot login",
+                    "File format rejected",
+                    "Slow performance",
+                    "Export not working",
+                    "Data not saving",
+                ],
+                "Possible Cause": [
+                    "Wrong credentials or account inactive",
+                    "Wrong file format or corrupted file",
+                    "Network latency or browser cache",
+                    "File permissions or server issue",
+                    "Internet disconnected or session timeout",
+                ],
+                "Quick Fix": [
+                    "Reset password or contact IT",
+                    "Use Excel (.xlsx) format",
+                    "Clear browser cache",
+                    "Try different browser",
+                    "Refresh page and retry",
+                ],
+            }
+        )
+        st.dataframe(common_issues, use_container_width=True)
+
+        return
+
+    seed_meta = _kb_seed_docs().get(selected)
+    if not seed_meta:
+        st.error("Selected Knowledge Base document is not configured.")
+        return
+
+    doc_path = kb_dir / seed_meta["filename"]
+    content = _read_text_file(doc_path)
+
+    if not content.strip():
+        st.warning("This Knowledge Base document is empty.")
+    else:
+        st.markdown(content)
+
+    st.download_button(
+        label=f"📥 Download {selected} (Markdown)",
+        data=content.encode("utf-8"),
+        file_name=seed_meta["filename"],
+        mime="text/markdown",
+        key=f"{key_prefix}_kb_download_{seed_meta['filename']}",
+    )
+
+    if not can_edit:
+        return
+
+    with st.expander("✏️ Knowledge Base Admin (Program Officer / IT)"):
+        st.caption(
+            "Edits are saved to the app's Knowledge Base folder on disk. "
+            "For Streamlit Cloud, persistence depends on the hosting environment."
+        )
+
+        edit_target = st.selectbox(
+            "Document to edit",
+            options=["User Guide", "Technical Guide"],
+            key=f"{key_prefix}_kb_admin_doc",
+        )
+        edit_meta = _kb_seed_docs()[edit_target]
+        edit_path = kb_dir / edit_meta["filename"]
+        current_text = _read_text_file(edit_path)
+
+        uploaded = st.file_uploader(
+            "Upload replacement Markdown (.md)",
+            type=["md", "txt"],
+            key=f"{key_prefix}_kb_upload_{edit_meta['filename']}",
+        )
+        if uploaded is not None:
+            try:
+                new_text = uploaded.getvalue().decode("utf-8", errors="replace")
+                edit_path.write_text(new_text, encoding="utf-8")
+                st.success(f"✓ Updated {edit_target} from uploaded file.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Could not save uploaded file: {exc}")
+
+        with st.form(key=f"{key_prefix}_kb_edit_form_{edit_meta['filename']}"):
+            edited = st.text_area(
+                f"Edit {edit_target} (Markdown)",
+                value=current_text,
+                height=400,
+                key=f"{key_prefix}_kb_textarea_{edit_meta['filename']}",
+            )
+            saved = st.form_submit_button("💾 Save changes")
+            if saved:
+                try:
+                    edit_path.write_text(str(edited), encoding="utf-8")
+                    st.success(f"✓ Saved {edit_target}.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Could not save edits: {exc}")
 
 
 def resolve_display_filename(row: dict) -> str:
@@ -2036,15 +2278,31 @@ def render_help_ticket_kpi_tab(current_role: str, key_prefix: str):
 st.sidebar.title("🎯 OCSS Command Center")
 st.sidebar.markdown("---")
 
-selected_role = st.sidebar.radio(
-    "Select Your Role:",
-    SUPPORTED_USER_ROLES,
-    help="Choose your role to see relevant features"
-)
+auth_mode = auth.get_auth_mode()
+supported_roles_tuple = tuple(SUPPORTED_USER_ROLES)
 
-role = ROLE_VIEW_MAP.get(selected_role, selected_role)
-if role != selected_role:
-    st.sidebar.caption(f"Using {selected_role} workspace mapped to {role} capabilities.")
+# If auth is enabled and succeeds, lock role to the authenticated identity.
+# For demos, use OCSS_AUTH_MODE=demo (non-production) to show a login screen.
+auth_result = auth.require_auth(supported_roles_tuple) if auth_mode != "none" else auth.AuthResult(authenticated=False)
+
+if auth_result.authenticated and auth_result.role:
+    selected_role = str(auth_result.role)
+    role = ROLE_VIEW_MAP.get(selected_role, selected_role)
+    st.sidebar.success(f"Signed in: {auth_result.display_name or auth_result.username}")
+    st.sidebar.caption(f"Role: {selected_role}")
+    if st.sidebar.button("Sign out"):
+        auth.logout()
+        st.rerun()
+else:
+    selected_role = st.sidebar.radio(
+        "Select Your Role:",
+        SUPPORTED_USER_ROLES,
+        help="Choose your role to see relevant features"
+    )
+
+    role = ROLE_VIEW_MAP.get(selected_role, selected_role)
+    if role != selected_role:
+        st.sidebar.caption(f"Using {selected_role} workspace mapped to {role} capabilities.")
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("""
@@ -2061,7 +2319,15 @@ if role == "Director":
     st.markdown("**Strategy & Oversight**")
     
     # Tabs for Director
-    dir_tab1, dir_tab2, dir_tab3, dir_tab4, dir_tab5, dir_tab6 = st.tabs(["📊 KPIs & Metrics", "👥 Caseload Management", "📋 Team Performance", "📤 Report Intake", "🆘 Ticket KPIs", "👤 Manage Users"])
+    dir_tab1, dir_tab2, dir_tab3, dir_tab4, dir_tab5, dir_tab6, dir_tab7 = st.tabs([
+        "📊 KPIs & Metrics",
+        "👥 Caseload Management",
+        "📋 Team Performance",
+        "📤 Report Intake",
+        "🆘 Ticket KPIs",
+        "👤 Manage Users",
+        "📚 Knowledge Base",
+    ])
     
     with dir_tab1:
         # KPI Overview
@@ -2240,12 +2506,23 @@ if role == "Director":
     with dir_tab6:
         render_user_management_panel("director")
 
+    with dir_tab7:
+        render_knowledge_base("Director", "director")
+
 elif role == "Program Officer":
     st.markdown('<div class="header-title">📋 Report Intake Portal</div>', unsafe_allow_html=True)
     st.markdown("**Report Intake & Processing**")
     
     # Tabs for Program Officer
-    prog_tab1, prog_tab2, prog_tab3, prog_tab4, prog_tab5, prog_tab6 = st.tabs(["📊 Executive KPIs", "📤 Upload & Processing", "👥 Caseload Management", "📈 Performance Analytics", "🆘 Ticket KPIs", "👤 Manage Users"])
+    prog_tab1, prog_tab2, prog_tab3, prog_tab4, prog_tab5, prog_tab6, prog_tab7 = st.tabs([
+        "📊 Executive KPIs",
+        "📤 Upload & Processing",
+        "👥 Caseload Management",
+        "📈 Performance Analytics",
+        "🆘 Ticket KPIs",
+        "👤 Manage Users",
+        "📚 Knowledge Base",
+    ])
     
     with prog_tab1:
         # Re-use Director-style KPI Dashboard logic
@@ -2278,6 +2555,17 @@ elif role == "Program Officer":
 
     with prog_tab2:
         render_report_intake_portal("program_officer_intake", "Program Officer")
+
+        with st.expander("Support Officer completion requirements (quick reference)", expanded=False):
+            st.markdown(
+                """
+The report type you select at ingestion determines which fields Support Officers must complete before they can submit a caseload.
+
+- **P-S**: `Action Taken/Status`, `Case Narrated` (Yes), and `Comment` (required if `Action Taken/Status = OTHER`)
+- **56RA**: `Date Report was Processed` (stored as `Date Action Taken`), `Action Taken/Status`, `Case Narrated` (Yes), and `Comment` (required if `Action Taken/Status = OTHER`)
+- **Locate**: `Date Case Reviewed`, `Results of Review`, `Case Narrated` (Yes), and `Comment` (required for certain outcomes and closures)
+                """
+            )
 
         st.divider()
 
@@ -2420,12 +2708,23 @@ elif role == "Program Officer":
     with prog_tab6:
         render_user_management_panel("program_officer")
 
+    with prog_tab7:
+        render_knowledge_base("Program Officer", "program_officer")
+
 elif role == "Supervisor":
     st.markdown('<div class="header-title">📊 KPI Monitoring Dashboard</div>', unsafe_allow_html=True)
     st.markdown("**Real-Time KPI Visibility**")
     
     # Tabs for Supervisor
-    sup_tab1, sup_tab2, sup_tab3, sup_tab4, sup_tab5, sup_tab6 = st.tabs(["📊 KPI Metrics", "👥 Team Caseload", "📈 Performance Analytics", "📤 Report Intake", "🆘 Ticket KPIs", "👤 Manage Users"])
+    sup_tab1, sup_tab2, sup_tab3, sup_tab4, sup_tab5, sup_tab6, sup_tab7 = st.tabs([
+        "📊 KPI Metrics",
+        "👥 Team Caseload",
+        "📈 Performance Analytics",
+        "📤 Report Intake",
+        "🆘 Ticket KPIs",
+        "👤 Manage Users",
+        "📚 Knowledge Base",
+    ])
     
     with sup_tab1:
         # KPI Cards
@@ -2459,6 +2758,15 @@ elif role == "Supervisor":
     
     with sup_tab2:
         st.subheader("👥 Team Caseload Management")
+
+        with st.expander("Support Officer completion requirements (quick reference)", expanded=False):
+            st.markdown(
+                """
+Support Officers can only submit a caseload when **all rows assigned to them** are marked **Completed** and the report-type required fields are filled in.
+
+If a caseload appears "stuck", have the worker check the **My Assigned Reports** checklist and ensure required fields are completed (especially narration and report-type fields).
+                """
+            )
 
         # Supervisor selector (view by unit)
         supervisors = []
@@ -2675,6 +2983,9 @@ elif role == "Supervisor":
 
     with sup_tab6:
         render_user_management_panel("supervisor")
+
+    with sup_tab7:
+        render_knowledge_base("Supervisor", "supervisor")
 
 elif role == "Support Officer":
     st.markdown('<div class="header-title">📋 Support Officer - Caseload Management</div>', unsafe_allow_html=True)
@@ -3104,6 +3415,67 @@ elif role == "Support Officer":
                             selected_report['data'] = working_df
                         else:
                             st.markdown("**Work Report Rows (one case line at a time)**")
+
+                            # Determine report source early so the completion checklist can reflect
+                            # the exact required fields enforced at submit-time.
+                            report_source_value = ''
+                            canonical_df = selected_report.get('canonical_data')
+                            if isinstance(canonical_df, pd.DataFrame) and not canonical_df.empty and 'report_source' in canonical_df.columns:
+                                try:
+                                    report_source_value = str(canonical_df['report_source'].dropna().astype(str).iloc[0]).strip()
+                                except Exception:
+                                    report_source_value = ''
+                            if not report_source_value and 'Report Source' in working_df.columns:
+                                try:
+                                    non_blank = working_df['Report Source'].astype(str).replace('nan', '').str.strip()
+                                    report_source_value = str(non_blank[non_blank != ''].iloc[0]).strip() if any(non_blank != '') else ''
+                                except Exception:
+                                    report_source_value = ''
+                            report_source_value = (report_source_value or 'LOCATE').upper()
+
+                            with st.expander("How to complete this report (checklist)", expanded=False):
+                                required_fields_text = ""
+                                if report_source_value == 'PS':
+                                    required_fields_text = (
+                                        "- **P-S** required when marking a row **Completed**: **Action Taken/Status**, **Case Narrated = Yes**, and **Comment** if Action Taken/Status = OTHER\n"
+                                    )
+                                elif report_source_value == '56':
+                                    required_fields_text = (
+                                        "- **56RA** required when marking a row **Completed**: **Date Report was Processed**, **Action Taken/Status**, **Case Narrated = Yes**, and **Comment** if Action Taken/Status = OTHER\n"
+                                    )
+                                else:
+                                    required_fields_text = (
+                                        "- **Locate** required when marking a row **Completed**: **Date Case Reviewed**, **Results of Review**, **Case Narrated = Yes**, and **Comment** for certain outcomes/closures\n"
+                                    )
+
+                                st.markdown(
+                                    f"""
+1. Set **Case Row Filter** to **Pending / In Progress**
+2. Open and update each row assigned to you
+3. Use **Worker Status** consistently:
+   - **Not Started**: you have not begun
+   - **In Progress**: you are actively working the row
+   - **Completed**: row is fully reviewed and ready for supervisor
+4. When marking a row **Completed**, fill the report-type required fields:
+{required_fields_text}
+5. Click **💾 Save Progress** regularly
+6. Submit only when **all** your assigned rows are **Completed**
+
+The app will block submission if any of your assigned rows are not marked **Completed**.
+
+---
+
+**Sample narration templates (copy/paste):**
+
+- **56RA Report:** Case pending GTU. Action taken: Scheduled GT. Next steps: follow up after appointment date.
+- **56RA Report:** PCR pending at court. Next hearing: __/__/____. Next steps: monitor docket and follow up.
+- **56RA Report:** COBO. Sent COBO letter(s) to all parties. Deadline: __/__/____.
+- **Locate Report:** Cleared BMV/SVES/dockets/ODRC/Work Number; no info. Contacted CP; no new address. Case in locate 2+ years with SSN; closed UNL.
+- **Locate Report:** Cleared databases; no info. No response from CP. Case in locate 6+ months without SSN; closed NAS.
+- **P-S Report:** Contacted client via phone/web portal. Action taken: CONTACT LETTER. Next steps: follow up by __/__/____.
+                                    """
+                                )
+
                             row_filter = st.selectbox(
                                 "Case Row Filter",
                                 ["Pending / In Progress", "All Assigned Rows", "Completed Rows"],
@@ -3121,21 +3493,19 @@ elif role == "Support Officer":
                                 st.info("No case rows match the selected filter.")
                                 selected_report['data'] = working_df
                             else:
-                                # Determine report source to control editable columns.
-                                report_source_value = ''
-                                canonical_df = selected_report.get('canonical_data')
-                                if isinstance(canonical_df, pd.DataFrame) and not canonical_df.empty and 'report_source' in canonical_df.columns:
-                                    try:
-                                        report_source_value = str(canonical_df['report_source'].dropna().astype(str).iloc[0]).strip()
-                                    except Exception:
-                                        report_source_value = ''
-                                if not report_source_value and 'Report Source' in working_df.columns:
-                                    try:
-                                        non_blank = working_df['Report Source'].astype(str).replace('nan', '').str.strip()
-                                        report_source_value = str(non_blank[non_blank != ''].iloc[0]).strip() if any(non_blank != '') else ''
-                                    except Exception:
-                                        report_source_value = ''
-                                report_source_value = (report_source_value or 'LOCATE').upper()
+                                # Ensure workflow/content columns exist so the sheet editor can enforce
+                                # consistent processing across report types.
+                                for required_col in [
+                                    'Action Taken/Status',
+                                    'Date Action Taken',
+                                    'Date Case Reviewed',
+                                    'Results of Review',
+                                    'Case Closure Code',
+                                    'Case Narrated',
+                                    'Comment',
+                                ]:
+                                    if required_col not in working_df.columns:
+                                        working_df[required_col] = ''
 
                                 # Editable fields by report source (per user guidance).
                                 # LOCATE: Date Case Reviewed, Results of Review, Case Closure Code, Case Narrated, Comment
@@ -3162,6 +3532,70 @@ elif role == "Support Officer":
                                         options=['', 'Yes', 'No']
                                     ),
                                 }
+
+                                # Action Taken/Status dropdown options are report-specific.
+                                ps_action_options = [
+                                    '',
+                                    'GT',
+                                    'ADS',
+                                    'COURT REFERRAL',
+                                    'CONTACT LETTER',
+                                    'POSTAL',
+                                    'CLOSED CASE',
+                                    'PHYSICAL CUSTODY',
+                                    'NCP UNLOCATABLE',
+                                    'PENDING-GTU',
+                                    'PENDING-AHU',
+                                    'PENDING-COURT',
+                                    'OTHER',
+                                ]
+                                ra56_action_options = [
+                                    '',
+                                    'Scheduled GT',
+                                    'Pending GTU',
+                                    'Prepped ADS',
+                                    'Pending AHU',
+                                    'Referred to Court',
+                                    'Pending Court',
+                                    'Sent Contact Letter',
+                                    'Sent COBO Letter(s)',
+                                    'Sent Postal Verification',
+                                    'Closed Case',
+                                    'NCP Unlocatable',
+                                    'Order Already Established',
+                                    'Case Already Closed',
+                                    'OTHER',
+                                ]
+
+                                if report_source_value in {'PS', '56'} and 'Action Taken/Status' in sheet_df.columns:
+                                    column_config['Action Taken/Status'] = st.column_config.SelectboxColumn(
+                                        'Action Taken/Status',
+                                        options=ps_action_options if report_source_value == 'PS' else ra56_action_options,
+                                    )
+
+                                # LOCATE-specific dropdowns
+                                if report_source_value not in {'PS', '56'}:
+                                    if 'Results of Review' in sheet_df.columns:
+                                        column_config['Results of Review'] = st.column_config.SelectboxColumn(
+                                            'Results of Review',
+                                            options=[
+                                                '',
+                                                'Cleared NCP in databases',
+                                                'Cleared ILSU / Data received blank',
+                                                'Attempted CP/CTR contact',
+                                                'Potential out-of-state (CLEAR requested)',
+                                                'Located NCP (process next action within 5 business days)',
+                                                'Closed UNL (2+ years w/ SSN)',
+                                                'Closed NAS (6+ months no SSN)',
+                                                'OTHER',
+                                            ],
+                                        )
+                                    if 'Case Closure Code' in sheet_df.columns:
+                                        column_config['Case Closure Code'] = st.column_config.SelectboxColumn(
+                                            'Case Closure Code',
+                                            options=['', 'UNL', 'NAS', 'OTHER'],
+                                        )
+
                                 if 'Date Case Reviewed' in sheet_df.columns:
                                     column_config['Date Case Reviewed'] = st.column_config.DateColumn('Date Case Reviewed')
                                 if 'Date Action Taken' in sheet_df.columns:
@@ -3220,7 +3654,12 @@ elif role == "Support Officer":
 
                                 with action_col1:
                                     if st.button("💾 Save Progress", key=f"so_save_{selected_queue_key}"):
+                                        st.session_state[f"so_last_saved_{selected_queue_key}"] = datetime.now().strftime("%Y-%m-%d %I:%M %p")
                                         st.success("✓ Progress saved to session.")
+
+                                    last_saved = st.session_state.get(f"so_last_saved_{selected_queue_key}")
+                                    if last_saved:
+                                        st.caption(f"Last saved: {last_saved}")
 
                                 with action_col2:
                                     if st.button("✅ Submit Caseload as Complete", key=f"so_submit_{selected_queue_key}"):
@@ -3229,6 +3668,77 @@ elif role == "Support Officer":
                                                 f"Cannot submit yet. {len(pending_rows)} case row(s) are not marked Completed for your assignment."
                                             )
                                         else:
+                                            # Additional submit-time validations aligned to 56RA / P-S guidance.
+                                            validation_rows = working_df[working_df['Assigned Worker'].str.strip() == acting_so].copy()
+                                            completed_mask = validation_rows['Worker Status'].astype(str).str.strip() == 'Completed'
+                                            completed_rows = validation_rows[completed_mask].copy()
+
+                                            issues = []
+                                            if not completed_rows.empty:
+                                                # PS/56: completed rows should include an Action Taken/Status.
+                                                if report_source_value in {'PS', '56'} and 'Action Taken/Status' in completed_rows.columns:
+                                                    ats = completed_rows['Action Taken/Status'].astype(str).str.strip()
+                                                    missing_ats = ats == ''
+                                                    if missing_ats.any():
+                                                        issues.append(f"{int(missing_ats.sum())} completed row(s) missing Action Taken/Status")
+
+                                                # Completed rows should be narrated.
+                                                if 'Case Narrated' in completed_rows.columns:
+                                                    narrated_ok = completed_rows['Case Narrated'].astype(str).str.strip().str.lower() == 'yes'
+                                                    missing_narr = completed_rows[~narrated_ok]
+                                                    if not missing_narr.empty:
+                                                        issues.append(f"{len(missing_narr)} completed row(s) missing Case Narrated = Yes")
+
+                                                # OTHER requires Comment.
+                                                if 'Action Taken/Status' in completed_rows.columns and 'Comment' in completed_rows.columns:
+                                                    other_mask = completed_rows['Action Taken/Status'].astype(str).str.strip().str.upper() == 'OTHER'
+                                                    if other_mask.any():
+                                                        comments = completed_rows.loc[other_mask, 'Comment'].astype(str).str.strip()
+                                                        missing_comments = comments[comments == '']
+                                                        if len(missing_comments) > 0:
+                                                            issues.append(f"{len(missing_comments)} completed row(s) with Action Taken/Status = OTHER missing Comment")
+
+                                                # 56RA: completed rows should include Date Action Taken.
+                                                if report_source_value == '56' and 'Date Action Taken' in completed_rows.columns:
+                                                    dt = completed_rows['Date Action Taken']
+                                                    missing_dt = dt.isna() | (dt.astype(str).str.strip() == '')
+                                                    if missing_dt.any():
+                                                        issues.append(f"{int(missing_dt.sum())} completed row(s) missing Date Report was Processed")
+
+                                                # LOCATE: completed rows should include Date Case Reviewed + Results of Review.
+                                                if report_source_value not in {'PS', '56'}:
+                                                    if 'Date Case Reviewed' in completed_rows.columns:
+                                                        dcr = completed_rows['Date Case Reviewed']
+                                                        missing_dcr = dcr.isna() | (dcr.astype(str).str.strip() == '')
+                                                        if missing_dcr.any():
+                                                            issues.append(f"{int(missing_dcr.sum())} completed row(s) missing Date Case Reviewed")
+
+                                                    if 'Results of Review' in completed_rows.columns:
+                                                        ror = completed_rows['Results of Review'].astype(str).str.strip()
+                                                        missing_ror = ror == ''
+                                                        if missing_ror.any():
+                                                            issues.append(f"{int(missing_ror.sum())} completed row(s) missing Results of Review")
+
+                                                        other_ror = ror.str.upper() == 'OTHER'
+                                                        if other_ror.any() and 'Comment' in completed_rows.columns:
+                                                            comments = completed_rows.loc[other_ror, 'Comment'].astype(str).str.strip()
+                                                            missing_comments = comments == ''
+                                                            if missing_comments.any():
+                                                                issues.append(f"{int(missing_comments.sum())} completed row(s) with Results of Review = OTHER missing Comment")
+
+                                                    if 'Case Closure Code' in completed_rows.columns and 'Comment' in completed_rows.columns:
+                                                        closure = completed_rows['Case Closure Code'].astype(str).str.strip().str.upper()
+                                                        closure_needs_comment = closure.isin(['UNL', 'NAS'])
+                                                        if closure_needs_comment.any():
+                                                            closure_comments = completed_rows.loc[closure_needs_comment, 'Comment'].astype(str).str.strip()
+                                                            missing_closure_comments = closure_comments == ''
+                                                            if missing_closure_comments.any():
+                                                                issues.append(f"{int(missing_closure_comments.sum())} completed row(s) closed UNL/NAS missing Comment")
+
+                                            if issues:
+                                                st.warning("Cannot submit yet. Please fix the following before submitting:\n- " + "\n- ".join(issues))
+                                                st.stop()
+
                                             selected_report['status'] = 'Submitted for Review'
                                             st.success(f"✓ Submitted {selected_report.get('report_id', 'report')} for supervisor review.")
                                             st.rerun()
@@ -3279,86 +3789,22 @@ elif role == "Support Officer":
         if st.button("📝 Create Ticket", key="create_support_ticket"):
             st.success(f"✓ Ticket created for {establishment} - {priority}")
     
-    # TAB 4: FAQ & Knowledge Base
+    # TAB 4: Knowledge Base
     with tab4:
-        st.subheader("📚 Knowledge Base & Troubleshooting")
-        with st.expander("❓ How do I upload a report?"):
-            st.write("""
-            1. Log in with your credentials
-            2. Navigate to the 'Report Intake Portal'
-            3. Click 'Choose an Excel file'
-            4. Select your establishment's report file
-            5. Click 'Process Report'
-            
-            **Accepted formats**: .xls, .xlsx, .csv
-            """)
-        
-        with st.expander("❓ What should I do if my upload fails?"):
-            st.write("""
-            - Check file format (Excel or CSV only)
-            - Verify all required columns are present
-            - Remove any special characters from headers
-            - Check file size (max 10MB)
-            - If issue persists, open a support ticket
-            """)
-        
-        with st.expander("❓ How do I reset my password?"):
-            st.write("""
-            Click 'Forgot Password' on the login screen and follow the email instructions.
-            If you don't receive an email within 5 minutes, contact IT Support.
-            """)
-        
-        with st.expander("❓ What are the system requirements?"):
-            st.write("""
-            - **Browser**: Chrome, Firefox, Safari, Edge (latest version)
-            - **Internet**: Minimum 2 Mbps connection
-            - **File format**: Excel 2010 or later (.xlsx)
-            - **Computer**: Any Windows, Mac, or Linux system
-            """)
-        
-        # Training Resources
-        st.subheader("📖 Training & Resources")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.info("**Quick Start Guide**\nGet up and running in 5 minutes")
-        with col2:
-            st.info("**Video Tutorials**\nStep-by-step walkthroughs")
-        with col3:
-            st.info("**Live Chat**\nConnect with a support specialist")
-        
-        # Common Issues
-        st.subheader("🔧 Common Issues & Solutions")
-        common_issues = pd.DataFrame({
-            'Issue': [
-                'Cannot login',
-                'File format rejected',
-                'Slow performance',
-                'Export not working',
-                'Data not saving'
-            ],
-            'Possible Cause': [
-                'Wrong credentials or account inactive',
-                'Wrong file format or corrupted file',
-                'Network latency or browser cache',
-                'File permissions or server issue',
-                'Internet disconnected or session timeout'
-            ],
-            'Quick Fix': [
-                'Reset password or contact IT',
-                'Use Excel (.xlsx) format',
-                'Clear browser cache',
-                'Try different browser',
-                'Refresh page and retry'
-            ]
-        })
-        st.dataframe(common_issues, use_container_width=True)
+        render_knowledge_base("Support Officer", "support_officer")
     
 elif role == "IT Administrator":
     st.markdown('<div class="header-title">⚙️ System Administration</div>', unsafe_allow_html=True)
     st.markdown("**Server Configuration & Monitoring**")
     
     # Tabs for IT Administrator
-    it_tab1, it_tab2, it_tab3, it_tab4 = st.tabs(["🖥️ System Status", "👥 User & Caseload Management", "🛠️ Maintenance & Logs", "🆘 Ticket KPIs"])
+    it_tab1, it_tab2, it_tab3, it_tab4, it_tab5 = st.tabs([
+        "🖥️ System Status",
+        "👥 User & Caseload Management",
+        "🛠️ Maintenance & Logs",
+        "🆘 Ticket KPIs",
+        "📚 Knowledge Base",
+    ])
     
     with it_tab1:
         st.subheader("Custom Report Fields for Support Officer Workflow")
@@ -3660,6 +4106,9 @@ elif role == "IT Administrator":
 
     with it_tab4:
         render_help_ticket_kpi_tab("IT Administrator", "it_admin")
+
+    with it_tab5:
+        render_knowledge_base("IT Administrator", "it_admin")
 
 render_help_ticket_center(selected_role)
 

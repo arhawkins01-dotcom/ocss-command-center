@@ -239,7 +239,7 @@ This feature allows team members to claim caseloads for themselves. **Workers sh
 
 **Act as Support Officer / Team Lead**
 
-**Important**: If authentication is enabled, your role is locked after sign-in. If you are *not* signed in, you must manually select your name from the dropdown to see your work (this simulates login).
+**Important**: If authentication is enabled, your role is locked after sign-in. If you are *not* signed in, you must manually select your name from the dropdown to see your assigned work (this simulates login).
 
 1. Find the "Act as Support Officer / Team Lead" dropdown at the top
 2. Select your name from the list
