@@ -1068,6 +1068,107 @@ def _build_unit_assignments_df() -> pd.DataFrame:
     return df.sort_values(by=['Unit', 'Assigned To', 'Caseload'])
 
 
+def _build_all_ingested_reports_df(scope_unit: str | None = None) -> pd.DataFrame:
+    """Build a consolidated ingestion report for all upload/import events.
+
+    This is a report-level view (one row per report_id when possible) sourced from
+    the ingestion registry and upload audit log.
+    """
+    registry_df = _safe_df(st.session_state.get('report_ingestion_registry', []))
+    audit_df = _safe_df(st.session_state.get('upload_audit_log', []))
+
+    frames: list[pd.DataFrame] = []
+    if not registry_df.empty:
+        frames.append(registry_df.copy())
+    if not audit_df.empty:
+        # Audit log is typically row-per-uploaded-caseload; normalize to registry-like columns.
+        audit_subset = audit_df.copy()
+        if 'uploaded_by' not in audit_subset.columns and 'uploader_role' in audit_subset.columns:
+            audit_subset = audit_subset.rename(columns={'uploader_role': 'uploaded_by'})
+        frames.append(audit_subset)
+
+    if not frames:
+        return pd.DataFrame(
+            columns=[
+                'ingestion_id', 'report_id', 'caseload', 'unit', 'assigned_to',
+                'filename', 'uploaded_by', 'timestamp',
+                'report_type', 'owning_department', 'report_frequency',
+                'period_key', 'period_label', 'period_month',
+                'report_source', 'uploaded_at', 'due_at', 'due_days',
+                'duplicate_detected',
+            ]
+        )
+
+    df = pd.concat(frames, ignore_index=True, sort=False)
+
+    # Normalize expected column names.
+    col_map = {
+        'Ingestion ID': 'ingestion_id',
+        'Report ID': 'report_id',
+        'Caseload': 'caseload',
+        'Filename': 'filename',
+        'Uploaded By': 'uploaded_by',
+        'Timestamp': 'timestamp',
+        'Report Type': 'report_type',
+        'Owning Department': 'owning_department',
+        'Frequency': 'report_frequency',
+        'Period Key': 'period_key',
+        'Period Label': 'period_label',
+        'Period Month': 'period_month',
+        'Report Source': 'report_source',
+        'Uploaded At': 'uploaded_at',
+        'Due At': 'due_at',
+        'Due Days': 'due_days',
+        'Duplicate Detected': 'duplicate_detected',
+    }
+    for old, new in col_map.items():
+        if old in df.columns and new not in df.columns:
+            df = df.rename(columns={old: new})
+
+    # Ensure caseload is consistently formatted.
+    if 'caseload' in df.columns:
+        df['caseload'] = df['caseload'].apply(lambda v: normalize_caseload_number(v))
+
+    # Add ownership context.
+    units: list[str] = []
+    owners: list[str] = []
+    for caseload in df.get('caseload', pd.Series([], dtype=str)).astype(str).tolist():
+        unit_name, owner = _find_assignment_owner(caseload)
+        units.append(str(unit_name or ''))
+        owners.append(str(owner or ''))
+    df['unit'] = units
+    df['assigned_to'] = owners
+
+    if scope_unit is not None:
+        df = df[(df['unit'].astype(str) == str(scope_unit)) | (df['unit'].astype(str).str.strip() == '')].copy()
+
+    # Prefer one row per report when report_id exists.
+    if 'report_id' in df.columns:
+        df['report_id'] = df['report_id'].fillna('').astype(str)
+        df['ingestion_id'] = df.get('ingestion_id', '').fillna('').astype(str)
+        df['_rid_present'] = df['report_id'].str.strip().ne('')
+        df = df.sort_values(by=['_rid_present', 'timestamp'], ascending=[False, False]) if 'timestamp' in df.columns else df
+        df = df.drop_duplicates(subset=['report_id', 'caseload', 'ingestion_id'], keep='first')
+        df = df.drop(columns=['_rid_present'], errors='ignore')
+
+    # Final presentation order.
+    ordered_cols = [
+        'ingestion_id', 'report_id', 'caseload', 'unit', 'assigned_to',
+        'filename', 'uploaded_by', 'timestamp',
+        'report_type', 'owning_department', 'report_frequency',
+        'period_key', 'period_label', 'period_month',
+        'report_source', 'uploaded_at', 'due_at', 'due_days',
+        'duplicate_detected',
+    ]
+    existing = [c for c in ordered_cols if c in df.columns]
+    out = df[existing].copy()
+
+    # Sort: most recent first when possible.
+    if 'timestamp' in out.columns:
+        out = out.sort_values(by=['timestamp', 'ingestion_id', 'caseload'], ascending=[False, False, True])
+    return out
+
+
 def _df_to_excel_bytes(sheets: dict[str, pd.DataFrame]) -> bytes:
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -1130,6 +1231,7 @@ def _build_leadership_export_sheets(
 
     registry_df = _safe_df(st.session_state.get('report_ingestion_registry', []))
     audit_df = _safe_df(st.session_state.get('upload_audit_log', []))
+    all_ingested_df = _build_all_ingested_reports_df(scope_unit=unit)
     users_df = get_users_dataframe()
     assignments_df = _build_unit_assignments_df()
 
@@ -1147,6 +1249,7 @@ def _build_leadership_export_sheets(
         'All Alerts (Raw)': all_alerts,
         'Assignments': assignments_df,
         'Users': users_df,
+        'All Ingested Reports': all_ingested_df,
         'Ingestion Registry': registry_df,
         'Upload Audit': audit_df,
     }
