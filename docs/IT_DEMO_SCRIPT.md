@@ -182,7 +182,7 @@
 **Demo Action 3: Worker Self-Pull Feature**
 
 **Script**:
-> "Now let's demonstrate the Worker Self-Pull feature. This allows workers to claim caseloads for themselves—but only for themselves. Workers access this through the Supervisor role."
+> "Now let's demonstrate the Worker Self-Pull feature. This allows eligible users to claim caseloads for themselves—but only for themselves. Access is restricted to senior leadership (Director/Program Officer) and Support Officer Team Leads, and it’s accessed through the Supervisor role."
 
 1. **Scroll down** to the **Worker Self-Pull (Claim a Caseload)** section
 2. **Simulate Current Worker**: Enter `Jessica Brown`

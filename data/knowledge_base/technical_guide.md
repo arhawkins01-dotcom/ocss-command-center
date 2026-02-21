@@ -88,6 +88,13 @@ The role selector in the sidebar presents only these five roles:
 - Support Officer
 - IT Administrator
 
+**Note on Leadership Titles (Director role):**
+The app keeps the sidebar role list to these five roles, but User Management supports leadership titles under the Director role via a **Unit Role** field:
+- Director (only one allowed)
+- Deputy Director
+- Department Manager
+- Senior Administrative Officer
+
 #### 1. **Director** 
 - **Dashboard Tabs:** KPIs, Caseload Management, Team Performance, Report Intake, Ticket KPIs, Manage Users
 - **Capabilities:** 
@@ -111,6 +118,9 @@ The role selector in the sidebar presents only these five roles:
   - Monitor individual worker performance
   - Track caseload metrics by team member
   - Review performance trends
+
+**Worker Self-Pull (permissions):**
+Worker Self-Pull is intentionally restricted to **Director / Program Officer** and the unit's **Support Officer Team Leads**.
 
 #### 4. **Support Officer** ⭐ *Primary Report Processor*
 - **Dashboard Tabs:** 
@@ -177,9 +187,17 @@ Recent updates (Feb 2026) have introduced significant usability and data integri
 - **Director & Program Officer Dashboards:** Now aggregate live data from all organizational units rather than displaying static placeholders. Caseload counts, completion rates, and worker assignments reflect the actual state of the application.
 - **Supervisor Analytics:** Performance metrics are dynamically calculated based on the specific casework assigned to the selected unit's team members.
 
+**Caseload Work Status (Real-Time):**
+Director/Program Officer views include a caseload rollup table that combines assignment ownership with report-level workflow into one overall status: **Pending / Finished / Completed / Unassigned**.
+
 #### 2.5.3 Logic & Validation
 - **Caseload Reassignment:** Directors and Supervisors can now functionally move caseloads between workers. This updates the underlying session state immediately, reflecting changes across all dashboards.
 - **Submission Safety:** Support Officers cannot submit a caseload as "Complete" if any row remains in "Pending" or "In Progress" status. A warning is displayed, ensuring data completeness before supervisory review.
+
+**User Management (Unit Role column):**
+User Management displays a derived **Unit Role** column:
+- Support Officers: **Team Lead** vs **Support Officer** based on unit configuration
+- Director role users: leadership title from the stored Unit Role (Director / Deputy Director / Department Manager / Senior Administrative Officer)
 
 ---
 

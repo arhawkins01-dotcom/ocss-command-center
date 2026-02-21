@@ -420,7 +420,7 @@ if 'units' not in st.session_state:
 if 'users' not in st.session_state:
     st.session_state.users = []
 
-    def _seed_user(name, role_name, department):
+    def _seed_user(name, role_name, department, unit_role: str = ''):
         if not name:
             return
         existing = {u['name'].strip().lower() for u in st.session_state.users}
@@ -428,10 +428,11 @@ if 'users' not in st.session_state:
             st.session_state.users.append({
                 'name': name.strip(),
                 'role': role_name,
-                'department': department
+                'department': department,
+                'unit_role': unit_role.strip() if unit_role else ''
             })
 
-    _seed_user('Director User', 'Director', 'Executive')
+    _seed_user('Director User', 'Director', 'Executive', 'Director')
     _seed_user('Program Officer User', 'Program Officer', 'Program Operations')
     _seed_user('IT Administrator User', 'IT Administrator', 'IT')
 
@@ -463,12 +464,22 @@ def get_users_dataframe() -> pd.DataFrame:
         'department': 'Department'
     })
 
+    # Default: show unit_role if present (primarily for Director sub-roles).
     users_df['Unit Role'] = ''
+    if 'unit_role' in users_df.columns:
+        users_df['Unit Role'] = users_df['unit_role'].fillna('').astype(str).str.strip()
+
+    # Support Officer unit roles are derived from unit team lead membership.
     support_mask = users_df['Role'] == 'Support Officer'
     if support_mask.any():
         users_df.loc[support_mask, 'Unit Role'] = users_df.loc[support_mask, 'Name'].apply(
             lambda name: 'Team Lead' if _is_unit_team_lead(name) else 'Support Officer'
         )
+
+    # Director sub-roles: default to "Director" when not specified.
+    director_mask = users_df['Role'] == 'Director'
+    if director_mask.any():
+        users_df.loc[director_mask, 'Unit Role'] = users_df.loc[director_mask, 'Unit Role'].replace('', 'Director')
 
     return users_df
 
@@ -1630,6 +1641,28 @@ def render_user_management_panel(key_prefix: str):
     users_df = get_users_dataframe()
     st.dataframe(users_df, use_container_width=True)
 
+    # Agency leadership structure expectations (visibility + guardrails)
+    leadership_df = users_df[users_df['Role'] == 'Director'] if not users_df.empty else pd.DataFrame()
+    director_subroles = leadership_df.get('Unit Role', pd.Series(dtype=str)).fillna('').astype(str).str.strip().tolist() if not leadership_df.empty else []
+    director_count = sum(1 for r in director_subroles if r == 'Director')
+    deputy_count = sum(1 for r in director_subroles if r == 'Deputy Director')
+    manager_count = sum(1 for r in director_subroles if r == 'Department Manager')
+    sao_count = sum(1 for r in director_subroles if r == 'Senior Administrative Officer')
+    st.caption(
+        f"Leadership structure (Director role): Director={director_count} | Deputy Directors={deputy_count} | "
+        f"Department Managers={manager_count} | Senior Administrative Officers={sao_count}"
+    )
+
+    # Soft guidance (do not block work) for expected agency leadership structure.
+    if director_count != 1:
+        st.warning("Expected leadership structure: exactly 1 Director (Unit Role='Director').")
+    if deputy_count < 2:
+        st.warning("Expected leadership structure: at least 2 Deputy Directors (Unit Role='Deputy Director').")
+    if manager_count < 4:
+        st.warning("Expected leadership structure: at least 4 Department Managers (Unit Role='Department Manager').")
+    if sao_count < 1:
+        st.warning("Expected leadership structure: at least 1 Senior Administrative Officer (Unit Role='Senior Administrative Officer').")
+
     st.divider()
     st.write("**Assign Caseload to Worker**")
     worker_options = get_worker_user_names()
@@ -1792,6 +1825,20 @@ def render_user_management_panel(key_prefix: str):
 
     new_user_department = custom_department.strip() if selected_department == "(Other / Custom)" else selected_department
 
+    leadership_unit_role = ''
+    leadership_role_options = [
+        'Director',
+        'Deputy Director',
+        'Department Manager',
+        'Senior Administrative Officer',
+    ]
+    if new_user_role == 'Director':
+        leadership_unit_role = st.selectbox(
+            "Unit Role (Director role)",
+            options=leadership_role_options,
+            key=f"{key_prefix}_new_user_unit_role"
+        )
+
     if st.button("➕ Add User", key=f"{key_prefix}_add_user"):
         cleaned_name = new_user_name.strip()
         if not cleaned_name:
@@ -1801,10 +1848,20 @@ def render_user_management_panel(key_prefix: str):
             if cleaned_name.lower() in existing:
                 st.error(f"User '{cleaned_name}' already exists.")
             else:
+                if new_user_role == 'Director':
+                    existing_director = any(
+                        u.get('role') == 'Director' and str(u.get('unit_role', '')).strip() == 'Director'
+                        for u in st.session_state.users
+                    )
+                    if leadership_unit_role == 'Director' and existing_director:
+                        st.error("Only one 'Director' (Unit Role) is allowed. Use Deputy Director / Department Manager / Senior Administrative Officer for additional leadership users.")
+                        st.stop()
+
                 new_user = {
                     'name': cleaned_name,
                     'role': new_user_role,
-                    'department': new_user_department
+                    'department': new_user_department,
+                    'unit_role': leadership_unit_role.strip() if new_user_role == 'Director' else ''
                 }
                 st.session_state.users.append(new_user)
                 _sync_user_to_units({}, new_user)
@@ -1857,6 +1914,18 @@ def render_user_management_panel(key_prefix: str):
 
             edited_department = edited_department_custom.strip() if edited_department_choice == "(Other / Custom)" else edited_department_choice
 
+            edited_unit_role = str(selected_user.get('unit_role', '')).strip()
+            if edited_role == 'Director':
+                default_unit_role = edited_unit_role if edited_unit_role in leadership_role_options else 'Director'
+                edited_unit_role = st.selectbox(
+                    "Unit Role (Director role)",
+                    options=leadership_role_options,
+                    index=leadership_role_options.index(default_unit_role),
+                    key=f"{key_prefix}_edited_unit_role"
+                )
+            else:
+                edited_unit_role = ''
+
             if st.button("💾 Save User Changes", key=f"{key_prefix}_save_user"):
                 cleaned_edited_name = edited_name.strip()
                 if not cleaned_edited_name:
@@ -1869,11 +1938,24 @@ def render_user_management_panel(key_prefix: str):
                     if duplicate_name:
                         st.error(f"Another user already uses the name '{cleaned_edited_name}'.")
                     else:
+                        if edited_role == 'Director' and str(edited_unit_role).strip() == 'Director':
+                            # Only allow one primary Director.
+                            existing_director = any(
+                                idx != selected_index
+                                and user.get('role') == 'Director'
+                                and str(user.get('unit_role', '')).strip() == 'Director'
+                                for idx, user in enumerate(st.session_state.users)
+                            )
+                            if existing_director:
+                                st.error("Only one 'Director' (Unit Role) is allowed. Use Deputy Director / Department Manager / Senior Administrative Officer for additional leadership users.")
+                                st.stop()
+
                         old_user = dict(st.session_state.users[selected_index])
                         updated_user = {
                             'name': cleaned_edited_name,
                             'role': edited_role,
-                            'department': edited_department
+                            'department': edited_department,
+                            'unit_role': str(edited_unit_role).strip() if edited_role == 'Director' else ''
                         }
                         st.session_state.users[selected_index] = updated_user
                         _sync_user_to_units(old_user, updated_user)

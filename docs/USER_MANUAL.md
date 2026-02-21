@@ -176,7 +176,7 @@ The main content area will update to show features relevant to your role.
 
 **Purpose**: Manage your unit, assign caseloads to team members, and monitor team performance.
 
-**Who Uses This Role**: Both supervisors (to manage their teams) and workers (to claim caseloads via Worker Self-Pull).
+**Who Uses This Role**: Supervisors use this role to manage their unit. Worker Self-Pull is available only to senior leadership (Director/Program Officer) and Support Officer **Team Leads**.
 
 #### Dashboard Features
 
@@ -194,7 +194,11 @@ The main content area will update to show features relevant to your role.
 
 **Worker Self-Pull (Claim a Caseload)**:
 
-This feature allows team members to claim caseloads for themselves. **Workers should use the Supervisor role** to access this feature.
+This feature allows eligible users to claim caseloads for themselves.
+
+**Access**:
+- **Allowed**: Director, Program Officer, and Support Officer **Team Leads**
+- **Not allowed**: Regular Support Officers (non-Team Leads)
 
 1. **Worker Action**:
    - Select **Supervisor** role in the sidebar
@@ -226,7 +230,7 @@ This feature allows team members to claim caseloads for themselves. **Workers sh
 - **Balance Workload**: Distribute caseloads evenly across team members
 - **Monitor Progress**: Check team performance metrics weekly
 - **Support Struggling Workers**: Reassign if someone is overloaded
-- **Encourage Self-Pull**: Let workers claim new work when they have capacity
+- **Encourage Self-Pull (when applicable)**: Team Leads can claim new work when they have capacity
 - **Audit Trail**: All assignments are logged; you can review changes in IT Admin view
 
 ---
@@ -319,12 +323,21 @@ View and process reports by caseload:
 
 **Add/Remove Users**:
 
-**Note**: The UI for adding users is present but not yet functional. User management will be fully implemented in Phase 2 with authentication.
+User management is session-based but **functional** for demos and internal workflows.
 
 1. Enter new user name
-2. Select role (Support Officer, Program Officer, Supervisor)
-3. Select department
-4. Click **"➕ Add User"** (placeholder - functionality coming soon)
+2. Select role (Director, Program Officer, Supervisor, Support Officer, IT Administrator)
+3. Select department (or custom)
+4. If adding a **Director** role user, choose a **Unit Role**:
+   - **Director** (only one allowed)
+   - **Deputy Director**
+   - **Department Manager**
+   - **Senior Administrative Officer**
+5. Click **"➕ Add User"**
+
+**Unit Role column**:
+- For **Support Officers**, Unit Role identifies **Team Lead** vs regular Support Officer
+- For **Director** role users, Unit Role identifies leadership level (Director/Deputy Director/Department Manager/Senior Administrative Officer)
 
 **Bulk Caseload Assignment** (future feature):
 - Assign multiple reports to a user at once
@@ -404,7 +417,7 @@ Create and manage organizational units:
 
 ### How to Claim a Caseload (Worker Self-Pull)
 
-**Note**: Workers use the Supervisor role to claim caseloads for themselves.
+**Note**: Worker Self-Pull is restricted to **Director / Program Officer** and **Support Officer Team Leads**. It is accessed through the **Supervisor** role.
 
 1. Select **Supervisor** role in the sidebar
 2. Choose your supervisor's name in the dropdown
@@ -420,6 +433,13 @@ Create and manage organizational units:
      - No message = available to claim
 6. Click **"🧷 Pull Caseload to Self"**
 7. System confirms claim or shows error if not available
+
+### How to View Caseload Work Status (Real-Time) (Leadership)
+
+1. Select **Director** or **Program Officer** role
+2. Go to **👥 Caseload Management**
+3. Review the **Caseload Work Status (Real-Time)** table
+4. Use it to see assigned vs unassigned caseloads and overall status: **Pending / Finished / Completed / Unassigned**
 
 ### How to Process a Report (Support Officer)
 
@@ -647,6 +667,7 @@ The Locate report identifies cases where OCSS can still meet locate-effort requi
 ### I can't pull a caseload (Worker Self-Pull)
 
 **Possible Reasons**:
+- You do not have permission (only Director/Program Officer and Support Officer Team Leads can self-pull)
 - Caseload already assigned to someone else (check availability hint)
 - "Simulate Current Worker" doesn't match "Pull As" (must be identical, including capitalization)
 - You're not in the worker list for this unit
@@ -656,9 +677,10 @@ The Locate report identifies cases where OCSS can still meet locate-effort requi
 **Solution**:
 1. Verify you're in the **Supervisor** role (check sidebar)
 2. Confirm your supervisor is selected in the dropdown
-3. Check the availability hint (orange warning shows current owner and unit)
-4. Ensure both "Simulate Current Worker" and "Pull As" have your exact name
-5. If caseload is held by someone else, ask your supervisor to reassign it using the "Reassign Reports Within Unit" feature
+3. If you are not a Team Lead, ask your supervisor to assign/reassign the caseload to you (self-pull is restricted)
+4. Check the availability hint (orange warning shows current owner and unit)
+5. Ensure both "Simulate Current Worker" and "Pull As" have your exact name
+6. If caseload is held by someone else, ask a supervisor to reassign it using the reassignment features
 
 ### Unit creation says "already exists"
 
