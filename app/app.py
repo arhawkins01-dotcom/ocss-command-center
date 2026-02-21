@@ -446,12 +446,31 @@ if 'users' not in st.session_state:
 def get_users_dataframe() -> pd.DataFrame:
     users = st.session_state.get('users', [])
     if not users:
-        return pd.DataFrame(columns=['Name', 'Role', 'Department'])
-    return pd.DataFrame(users).rename(columns={
+        return pd.DataFrame(columns=['Name', 'Role', 'Department', 'Unit Role'])
+
+    def _is_unit_team_lead(user_name: str) -> bool:
+        cleaned = str(user_name or '').strip()
+        if not cleaned:
+            return False
+        for unit in st.session_state.get('units', {}).values():
+            if cleaned in (unit.get('team_leads', []) or []):
+                return True
+        return False
+
+    users_df = pd.DataFrame(users).rename(columns={
         'name': 'Name',
         'role': 'Role',
         'department': 'Department'
     })
+
+    users_df['Unit Role'] = ''
+    support_mask = users_df['Role'] == 'Support Officer'
+    if support_mask.any():
+        users_df.loc[support_mask, 'Unit Role'] = users_df.loc[support_mask, 'Name'].apply(
+            lambda name: 'Team Lead' if _is_unit_team_lead(name) else 'Support Officer'
+        )
+
+    return users_df
 
 
 def get_department_options() -> list:
