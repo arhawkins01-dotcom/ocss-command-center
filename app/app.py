@@ -7,11 +7,17 @@ import os
 import json
 import re
 import inspect
+import hashlib
 from pathlib import Path
 import shutil
 from report_utils import SupportReportIngestionService
 import database
 import auth
+
+try:
+    from docx import Document  # type: ignore
+except Exception:  # pragma: no cover
+    Document = None
 
 try:
     from config import ensure_directories, get_data_path
@@ -66,6 +72,25 @@ EXPANDED_REPORT_TYPES = [
     "Training Completion",
     "Policy Exception Log"
 ]
+
+# Monthly QA schedule (days-to-due) for Excel parity sources.
+# Source keys align to canonical mapping: '56', 'PS', 'LOCATE'.
+MONTHLY_QA_DUE_DAYS_BY_MONTH: dict[int, dict[str, int]] = {
+    1: {'56': 3, 'PS': 2},
+    2: {'LOCATE': 3, 'PS': 2},
+    3: {'PS': 5},
+    4: {'56': 3, 'PS': 2},
+    5: {'LOCATE': 3, 'PS': 2},
+    6: {'PS': 5},
+    7: {'56': 3, 'PS': 2},
+    8: {'LOCATE': 3, 'PS': 2},
+    9: {'PS': 5},
+    10: {'56': 3, 'PS': 2},
+    11: {'LOCATE': 3, 'PS': 2},
+    12: {'PS': 5},
+}
+
+DEFAULT_QA_DUE_DAYS = 5
 
 # Page configuration
 st.set_page_config(
@@ -146,22 +171,161 @@ def _kb_seed_docs() -> dict:
     }
 
 
+def _kb_manifest_path() -> Path:
+    return _get_kb_dir() / ".seed_manifest.json"
+
+
+def _sha256_bytes(content: bytes) -> str:
+    return hashlib.sha256(content).hexdigest()
+
+
+def _sha256_file(path: Path) -> str:
+    try:
+        return _sha256_bytes(path.read_bytes())
+    except Exception:
+        return ""
+
+
+def _load_kb_manifest() -> dict:
+    path = _kb_manifest_path()
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _write_text_atomic(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(content, encoding="utf-8")
+    tmp.replace(path)
+
+
+def _write_bytes_atomic(path: Path, content: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_bytes(content)
+    tmp.replace(path)
+
+
+def _save_kb_manifest(manifest: dict) -> None:
+    try:
+        payload = json.dumps(manifest, indent=2, sort_keys=True)
+        _write_text_atomic(_kb_manifest_path(), payload)
+    except Exception:
+        # Best-effort; KB should still render even if manifest cannot persist.
+        pass
+
+
 def _ensure_kb_seeded() -> None:
+    """Seed the on-disk Knowledge Base docs.
+
+    Behavior:
+    - If the KB doc is missing, copy it from the repo docs.
+    - If the KB doc exists and has been edited via KB Admin, do NOT overwrite.
+    - If the KB doc exists and still matches the last seeded content, refresh it
+      when the repo seed source changes (so doc updates show up on relaunch).
+    """
     kb_dir = _get_kb_dir()
+    manifest = _load_kb_manifest()
+
+    updated = False
     for meta in _kb_seed_docs().values():
-        target = kb_dir / meta["filename"]
-        if target.exists():
+        filename = meta["filename"]
+        target = kb_dir / filename
+        source = meta.get("seed_source")
+
+        if not (isinstance(source, Path) and source.exists()):
+            if not target.exists():
+                try:
+                    target.write_text("# Document\n\n(Seed file missing.)\n", encoding="utf-8")
+                except Exception:
+                    pass
             continue
 
-        source = meta.get("seed_source")
-        try:
-            if isinstance(source, Path) and source.exists():
-                shutil.copyfile(source, target)
-            else:
-                target.write_text("# Document\n\n(Seed file missing.)\n", encoding="utf-8")
-        except Exception:
-            # Best-effort; KB should still render FAQ even if docs fail.
-            pass
+        source_hash = _sha256_file(source)
+        target_hash = _sha256_file(target) if target.exists() else ""
+        entry = manifest.get(filename) if isinstance(manifest, dict) else None
+        entry = entry if isinstance(entry, dict) else {}
+
+        # Never overwrite KB-admin customized docs.
+        if entry.get("edited_by_admin") is True:
+            continue
+
+        if not target.exists():
+            try:
+                _write_bytes_atomic(target, source.read_bytes())
+                manifest[filename] = {
+                    "seed_source": str(source),
+                    "source_hash": source_hash,
+                    "target_hash": source_hash,
+                    "seeded_at": datetime.now().isoformat(),
+                }
+                updated = True
+            except Exception:
+                pass
+            continue
+
+        # If target matches source but isn't tracked yet, adopt it into the manifest.
+        if not entry and target_hash and target_hash == source_hash:
+            manifest[filename] = {
+                "seed_source": str(source),
+                "source_hash": source_hash,
+                "target_hash": target_hash,
+                "seeded_at": datetime.now().isoformat(),
+            }
+            updated = True
+            continue
+
+        # Migration: if a KB file exists but isn't tracked yet (pre-manifest), and
+        # the repo seed source is newer on disk, refresh it.
+        if not entry:
+            try:
+                if target.exists() and target.stat().st_mtime < source.stat().st_mtime:
+                    _write_bytes_atomic(target, source.read_bytes())
+                    manifest[filename] = {
+                        "seed_source": str(source),
+                        "source_hash": source_hash,
+                        "target_hash": source_hash,
+                        "seeded_at": datetime.now().isoformat(),
+                    }
+                    updated = True
+                    continue
+            except Exception:
+                pass
+
+        # Refresh only if:
+        # - we have a manifest entry (meaning we seeded/own it),
+        # - the KB file still matches the last seeded hash (not admin-edited),
+        # - and the source changed.
+        last_seeded_hash = entry.get("target_hash") if entry else None
+        last_source_hash = entry.get("source_hash") if entry else None
+
+        if (
+            isinstance(last_seeded_hash, str)
+            and isinstance(last_source_hash, str)
+            and target_hash
+            and target_hash == last_seeded_hash
+            and source_hash
+            and source_hash != last_source_hash
+        ):
+            try:
+                _write_bytes_atomic(target, source.read_bytes())
+                manifest[filename] = {
+                    "seed_source": str(source),
+                    "source_hash": source_hash,
+                    "target_hash": source_hash,
+                    "seeded_at": datetime.now().isoformat(),
+                }
+                updated = True
+            except Exception:
+                pass
+
+    if updated:
+        _save_kb_manifest(manifest)
 
 
 def _read_text_file(path: Path) -> str:
@@ -317,6 +481,21 @@ If you don't receive an email within a few minutes, contact IT Support.
             try:
                 new_text = uploaded.getvalue().decode("utf-8", errors="replace")
                 edit_path.write_text(new_text, encoding="utf-8")
+                try:
+                    manifest = _load_kb_manifest()
+                    manifest[edit_meta["filename"]] = {
+                        "seed_source": str(edit_meta.get("seed_source")),
+                        "source_hash": _sha256_file(edit_meta.get("seed_source"))
+                        if isinstance(edit_meta.get("seed_source"), Path)
+                        else "",
+                        "target_hash": _sha256_file(edit_path),
+                        "seeded_at": (manifest.get(edit_meta["filename"], {}) or {}).get("seeded_at", ""),
+                        "edited_by_admin": True,
+                        "edited_at": datetime.now().isoformat(),
+                    }
+                    _save_kb_manifest(manifest)
+                except Exception:
+                    pass
                 st.success(f"✓ Updated {edit_target} from uploaded file.")
                 st.rerun()
             except Exception as exc:
@@ -333,6 +512,21 @@ If you don't receive an email within a few minutes, contact IT Support.
             if saved:
                 try:
                     edit_path.write_text(str(edited), encoding="utf-8")
+                    try:
+                        manifest = _load_kb_manifest()
+                        manifest[edit_meta["filename"]] = {
+                            "seed_source": str(edit_meta.get("seed_source")),
+                            "source_hash": _sha256_file(edit_meta.get("seed_source"))
+                            if isinstance(edit_meta.get("seed_source"), Path)
+                            else "",
+                            "target_hash": _sha256_file(edit_path),
+                            "seeded_at": (manifest.get(edit_meta["filename"], {}) or {}).get("seeded_at", ""),
+                            "edited_by_admin": True,
+                            "edited_at": datetime.now().isoformat(),
+                        }
+                        _save_kb_manifest(manifest)
+                    except Exception:
+                        pass
                     st.success(f"✓ Saved {edit_target}.")
                     st.rerun()
                 except Exception as exc:
@@ -389,36 +583,99 @@ def build_csv_export_filename(report_id: str, display_filename: str) -> str:
         return f"{report_id}_{base}.csv"
     return f"{report_id}.csv"
 
+
+def _get_persisted_state_path() -> Path:
+    """Return the on-disk path used to persist app configuration.
+
+    Persists organizational configuration that should survive Streamlit restarts
+    (users + units). Report data remains session-based.
+    """
+    if get_data_path:
+        try:
+            base = get_data_path()
+        except Exception:
+            base = _get_repo_root_dir() / "data"
+    else:
+        base = _get_repo_root_dir() / "data"
+
+    state_dir = base / "state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    return state_dir / "ocss_app_state.json"
+
+
+def _load_persisted_state() -> dict:
+    path = _get_persisted_state_path()
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
+
+def _persist_app_state() -> None:
+    """Persist current org configuration to disk (best-effort)."""
+    path = _get_persisted_state_path()
+    payload = {
+        "version": 2,
+        "saved_at": datetime.now().isoformat(),
+        "users": st.session_state.get("users", []),
+        "units": st.session_state.get("units", {}),
+        "current_user": st.session_state.get("current_user", ""),
+        # Acknowledgements for alert escalation (best-effort persistence).
+        "alert_acks": st.session_state.get("alert_acks", {}),
+    }
+
+    try:
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        tmp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        tmp_path.replace(path)
+    except Exception:
+        # Persistence is best-effort; app should still function without disk writes.
+        return
+
 # Initialize uploaded reports by caseload (for Program Officer to upload)
 if 'reports_by_caseload' not in st.session_state:
     st.session_state.reports_by_caseload = {'181000': [], '181001': [], '181002': []}
 
+# Load persisted org configuration (users + units) once per session.
+_persisted_state = _load_persisted_state() if 'units' not in st.session_state or 'users' not in st.session_state else {}
+
 # Organizational units: supervisors, team leads, support officers and caseload assignments
 if 'units' not in st.session_state:
-    st.session_state.units = {
-        'OCSS North': {
-            'supervisor': 'Alex Martinez',
-            'team_leads': ['Sarah Johnson'],
-            'support_officers': ['Michael Chen', 'Jessica Brown'],
-            'assignments': {
-                'Sarah Johnson': ['181000'],
-                'Michael Chen': ['181001'],
-                'Jessica Brown': ['181002']
-            }
-        },
-        'OCSS South': {
-            'supervisor': 'Priya Singh',
-            'team_leads': ['David Martinez'],
-            'support_officers': ['Amanda Wilson'],
-            'assignments': {
-                'David Martinez': ['181001'],
-                'Amanda Wilson': ['181000']
+    loaded_units = (_persisted_state or {}).get('units')
+    if isinstance(loaded_units, dict) and loaded_units:
+        st.session_state.units = loaded_units
+    else:
+        st.session_state.units = {
+            'OCSS North': {
+                'supervisor': 'Alex Martinez',
+                'team_leads': ['Sarah Johnson'],
+                'support_officers': ['Michael Chen', 'Jessica Brown'],
+                'assignments': {
+                    'Sarah Johnson': ['181000'],
+                    'Michael Chen': ['181001'],
+                    'Jessica Brown': ['181002']
+                }
+            },
+            'OCSS South': {
+                'supervisor': 'Priya Singh',
+                'team_leads': ['David Martinez'],
+                'support_officers': ['Amanda Wilson'],
+                'assignments': {
+                    'David Martinez': ['181001'],
+                    'Amanda Wilson': ['181000']
+                }
             }
         }
-    }
 
 if 'users' not in st.session_state:
-    st.session_state.users = []
+    loaded_users = (_persisted_state or {}).get('users')
+    if isinstance(loaded_users, list) and loaded_users:
+        st.session_state.users = loaded_users
+    else:
+        st.session_state.users = []
 
     def _seed_user(name, role_name, department, unit_role: str = ''):
         if not name:
@@ -442,6 +699,526 @@ if 'users' not in st.session_state:
             _seed_user(team_lead, 'Support Officer', unit_name)
         for support_officer in unit.get('support_officers', []):
             _seed_user(support_officer, 'Support Officer', unit_name)
+
+    _persist_app_state()
+
+if 'current_user' not in st.session_state:
+    persisted_current_user = (_persisted_state or {}).get('current_user', '')
+    if isinstance(persisted_current_user, str) and persisted_current_user:
+        st.session_state.current_user = persisted_current_user
+
+if 'alert_acks' not in st.session_state:
+    persisted_acks = (_persisted_state or {}).get('alert_acks', {})
+    st.session_state.alert_acks = persisted_acks if isinstance(persisted_acks, dict) else {}
+
+
+def _parse_dt(value) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        text = str(value).strip()
+    except Exception:
+        return None
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text)
+    except Exception:
+        return None
+
+
+def _resolve_report_source(report_entry: dict) -> str:
+    canonical_df = report_entry.get('canonical_data')
+    if isinstance(canonical_df, pd.DataFrame) and not canonical_df.empty and 'report_source' in canonical_df.columns:
+        try:
+            non_blank = canonical_df['report_source'].dropna().astype(str)
+            if not non_blank.empty:
+                return str(non_blank.iloc[0]).strip().upper()
+        except Exception:
+            return ''
+    return str(report_entry.get('report_source') or '').strip().upper()
+
+
+def _compute_due_at(
+    report_source: str,
+    report_frequency: str,
+    period_value: str,
+    uploaded_at: datetime,
+) -> tuple[int, datetime | None]:
+    """Return (due_days, due_at) for a report.
+
+    Uses monthly QA schedule when the report source is one of 56/PS/LOCATE.
+    For non-monthly periods or unknown sources, falls back to DEFAULT_QA_DUE_DAYS.
+    """
+    source = str(report_source or '').strip().upper()
+    freq = str(report_frequency or '').strip()
+
+    due_days = DEFAULT_QA_DUE_DAYS
+    if freq == 'Monthly':
+        try:
+            month = int(str(period_value).strip())
+        except Exception:
+            month = None
+        if month and month in MONTHLY_QA_DUE_DAYS_BY_MONTH and source:
+            due_days = int(MONTHLY_QA_DUE_DAYS_BY_MONTH[month].get(source, DEFAULT_QA_DUE_DAYS))
+    return due_days, (uploaded_at + timedelta(days=due_days) if due_days else None)
+
+
+def _get_user_unit_role(user_name: str) -> str:
+    cleaned = str(user_name or '').strip()
+    if not cleaned:
+        return ''
+    for user in st.session_state.get('users', []):
+        if str(user.get('name', '')).strip() == cleaned:
+            return str(user.get('unit_role', '') or '').strip()
+    return ''
+
+
+def _get_alert_ack(report_id: str) -> dict:
+    rid = str(report_id or '').strip()
+    if not rid:
+        return {}
+    acks = st.session_state.get('alert_acks', {})
+    if not isinstance(acks, dict):
+        acks = {}
+        st.session_state.alert_acks = acks
+    record = acks.get(rid)
+    return record if isinstance(record, dict) else {}
+
+
+def _set_alert_ack(report_id: str, ack_key: str, actor_name: str) -> None:
+    rid = str(report_id or '').strip()
+    if not rid:
+        return
+    acks = st.session_state.get('alert_acks', {})
+    if not isinstance(acks, dict):
+        acks = {}
+        st.session_state.alert_acks = acks
+
+    record = acks.get(rid)
+    if not isinstance(record, dict):
+        record = {}
+        acks[rid] = record
+
+    record[ack_key] = {
+        'at': datetime.now().isoformat(),
+        'by': str(actor_name or '').strip(),
+    }
+    st.session_state.alert_acks = acks
+    _persist_app_state()
+
+
+def _build_escalation_alerts_df() -> pd.DataFrame:
+    """Return per-report alert rows for escalation logic.
+
+    Keeps computation lightweight: report-level clocks only.
+    """
+    reports_by_caseload = st.session_state.get('reports_by_caseload', {}) or {}
+    if not isinstance(reports_by_caseload, dict) or not reports_by_caseload:
+        return pd.DataFrame()
+
+    now = datetime.now()
+    rows: list[dict] = []
+    for caseload, reports in reports_by_caseload.items():
+        caseload_key = normalize_caseload_number(caseload)
+        unit_name, owner = _find_assignment_owner(caseload_key)
+        for report in (reports or []):
+            if not isinstance(report, dict):
+                continue
+            report_id = str(report.get('report_id') or '').strip()
+            if not report_id:
+                continue
+
+            uploaded_at = _parse_dt(report.get('uploaded_at')) or _parse_dt(report.get('timestamp')) or now
+            due_at = _parse_dt(report.get('due_at'))
+            due_days = int(report.get('due_days') or 0) if str(report.get('due_days') or '').strip() else 0
+
+            report_source = _resolve_report_source(report)
+            assigned_to = str(report.get('assigned_worker') or owner or '').strip()
+            unassigned = assigned_to == ''
+
+            # Legacy compatibility: compute due_at when not present.
+            if not due_at:
+                period_month = str(report.get('period_month') or '').strip()
+                if not period_month:
+                    period_label = str(report.get('period_label') or '').strip()
+                    # Common monthly label format: YYYY-MM
+                    if '-' in period_label:
+                        maybe = period_label.split('-', 1)[1].strip()
+                        if maybe.isdigit() and len(maybe) == 2:
+                            period_month = maybe
+
+                freq = str(report.get('report_frequency') or 'Monthly').strip() or 'Monthly'
+                computed_due_days, computed_due_at = _compute_due_at(
+                    report_source=report_source,
+                    report_frequency=freq,
+                    period_value=period_month,
+                    uploaded_at=uploaded_at,
+                )
+                if computed_due_at:
+                    due_at = computed_due_at
+                if not due_days:
+                    due_days = computed_due_days
+
+            days_since_upload = max(0, (now.date() - uploaded_at.date()).days)
+            days_overdue = 0
+            if due_at:
+                days_overdue = max(0, (now.date() - due_at.date()).days)
+
+            ack = _get_alert_ack(report_id)
+            worker_ack = bool(ack.get('worker_ack'))
+            supervisor_ack = bool(ack.get('supervisor_ack'))
+            po_ack = bool(ack.get('program_officer_ack'))
+            dm_ack = bool(ack.get('department_manager_ack'))
+            director_ack = bool(ack.get('director_ack'))
+
+            rows.append({
+                'Report ID': report_id,
+                'Caseload': caseload_key,
+                'Unit': str(unit_name or ''),
+                'Assigned To': assigned_to,
+                'Unassigned': unassigned,
+                'Report Source': report_source,
+                'Uploaded At': uploaded_at.isoformat(timespec='seconds'),
+                'Due At': due_at.isoformat(timespec='seconds') if due_at else '',
+                'Due Days': due_days,
+                'Days Since Upload': days_since_upload,
+                'Days Overdue': days_overdue,
+                'Status': str(report.get('status') or ''),
+                'worker_ack': worker_ack,
+                'supervisor_ack': supervisor_ack,
+                'program_officer_ack': po_ack,
+                'department_manager_ack': dm_ack,
+                'director_ack': director_ack,
+            })
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    df = df.sort_values(by=['Unassigned', 'Days Overdue', 'Days Since Upload'], ascending=[False, False, False])
+    return df
+
+
+def _filter_alerts_for_viewer(
+    alerts_df: pd.DataFrame,
+    viewer_role: str,
+    viewer_name: str = '',
+    scope_unit: str | None = None,
+    viewer_unit_role: str = '',
+) -> pd.DataFrame:
+    if alerts_df is None or alerts_df.empty:
+        return pd.DataFrame()
+
+    role = str(viewer_role or '').strip()
+    name = str(viewer_name or '').strip()
+    unit_role = str(viewer_unit_role or '').strip()
+
+    df = alerts_df.copy()
+    # Base: only alert on at least 1 day old OR any unassigned caseload.
+    df = df[(df['Days Since Upload'] >= 1) | (df['Unassigned'] == True)]  # noqa: E712
+
+    if role == 'Support Officer':
+        if name:
+            df = df[df['Assigned To'].astype(str).str.strip() == name]
+        # Worker escalation window: 1-3 days.
+        df = df[(df['Days Since Upload'] >= 1) & (df['Days Since Upload'] < 3) & (~df['worker_ack'])]
+        return df
+
+    if role == 'Supervisor':
+        if scope_unit is not None:
+            df = df[(df['Unit'].astype(str) == scope_unit) | (df['Unassigned'] == True)]  # noqa: E712
+        # Supervisor escalation window: 3-5 days (unassigned always visible).
+        df = df[
+            (
+                ((df['Days Since Upload'] >= 3) & (df['Days Since Upload'] < 5))
+                | (df['Unassigned'] == True)  # noqa: E712
+            )
+            & (~df['supervisor_ack'])
+        ]
+        return df
+
+    if role == 'Program Officer':
+        # Program Officer escalation window: 5+ days (unassigned always visible).
+        df = df[((df['Days Since Upload'] >= 5) | (df['Unassigned'] == True)) & (~df['program_officer_ack'])]  # noqa: E712
+        return df
+
+    if role == 'IT Administrator':
+        # IT Admin: operational visibility only (no escalation ownership).
+        # Keep this compact: show only unassigned and/or overdue items.
+        df = df[(df['Unassigned'] == True) | (df['Days Overdue'] > 0)]  # noqa: E712
+        return df
+
+    # Director workspace: sub-roles drive who sees what.
+    if role == 'Director':
+        if unit_role == 'Department Manager':
+            df = df[(df['Days Since Upload'] >= 1) & (df['Days Since Upload'] <= 10) & (~df['worker_ack']) & (~df['supervisor_ack'])]
+            df = df[~df['department_manager_ack']]
+            return df
+        if unit_role in {'Director', 'Deputy Director'}:
+            df = df[((df['Days Since Upload'] >= 10) | (df['Unassigned'] == True)) & (~df['director_ack']) & (~df['program_officer_ack'])]  # noqa: E712
+            return df
+
+        # Other Director sub-roles: default to the Director-level (last) view.
+        df = df[((df['Days Since Upload'] >= 10) | (df['Unassigned'] == True)) & (~df['director_ack']) & (~df['program_officer_ack'])]  # noqa: E712
+        return df
+
+    return pd.DataFrame()
+
+
+def _render_alert_panel(
+    viewer_role: str,
+    viewer_name: str = '',
+    scope_unit: str | None = None,
+    viewer_unit_role: str = '',
+    key_prefix: str = 'alerts',
+) -> None:
+    all_alerts = _build_escalation_alerts_df()
+    viewer_alerts = _filter_alerts_for_viewer(
+        all_alerts,
+        viewer_role=viewer_role,
+        viewer_name=viewer_name,
+        scope_unit=scope_unit,
+        viewer_unit_role=viewer_unit_role,
+    )
+
+    with st.expander("Alerts (Escalation)", expanded=False):
+        if viewer_alerts.empty:
+            st.info("No escalation alerts right now.")
+            return
+
+        total = len(viewer_alerts)
+        unassigned = int(viewer_alerts['Unassigned'].sum()) if 'Unassigned' in viewer_alerts.columns else 0
+        overdue = int((viewer_alerts['Days Overdue'] > 0).sum()) if 'Days Overdue' in viewer_alerts.columns else 0
+        m1, m2, m3 = st.columns(3)
+        with m1:
+            st.metric("Alerts", total)
+        with m2:
+            st.metric("Unassigned", unassigned)
+        with m3:
+            st.metric("Overdue", overdue)
+
+        show_cols = [
+            'Report ID',
+            'Caseload',
+            'Unit',
+            'Assigned To',
+            'Report Source',
+            'Days Since Upload',
+            'Days Overdue',
+            'Due At',
+            'Status',
+        ]
+        existing_cols = [c for c in show_cols if c in viewer_alerts.columns]
+        st.dataframe(viewer_alerts[existing_cols].head(25), use_container_width=True, hide_index=True)
+
+        # Minimal acknowledgement control to prevent alert fatigue.
+        ack_role_map = {
+            'Support Officer': 'worker_ack',
+            'Supervisor': 'supervisor_ack',
+            'Program Officer': 'program_officer_ack',
+            'Director': 'director_ack' if str(viewer_unit_role or '').strip() in {'Director', 'Deputy Director', ''} else 'department_manager_ack',
+        }
+        ack_key = ack_role_map.get(str(viewer_role or '').strip())
+        if not ack_key:
+            return
+
+        report_options = viewer_alerts['Report ID'].astype(str).tolist()
+        selected_report_id = st.selectbox(
+            "Acknowledge report",
+            options=['(Select)'] + report_options,
+            key=f"{key_prefix}_ack_select_{viewer_role}_{scope_unit or 'all'}_{viewer_unit_role or 'na'}",
+        )
+        if selected_report_id and selected_report_id != '(Select)':
+            if st.button(
+                "Acknowledge",
+                key=f"{key_prefix}_ack_btn_{viewer_role}_{selected_report_id}",
+                use_container_width=True,
+            ):
+                actor = viewer_name or st.session_state.get('current_user', '') or viewer_role
+                _set_alert_ack(selected_report_id, ack_key, actor)
+                st.success("✓ Acknowledged")
+                st.rerun()
+
+
+def _safe_df(value) -> pd.DataFrame:
+    if isinstance(value, pd.DataFrame):
+        return value
+    try:
+        return pd.DataFrame(value)
+    except Exception:
+        return pd.DataFrame()
+
+
+def _build_unit_assignments_df() -> pd.DataFrame:
+    rows = []
+    for unit_name, unit in (st.session_state.get('units', {}) or {}).items():
+        assignments = unit.get('assignments', {}) or {}
+        for person, caseloads in assignments.items():
+            for caseload in (caseloads or []):
+                rows.append({
+                    'Unit': unit_name,
+                    'Assigned To': str(person or '').strip(),
+                    'Caseload': normalize_caseload_number(caseload),
+                })
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    return df.sort_values(by=['Unit', 'Assigned To', 'Caseload'])
+
+
+def _df_to_excel_bytes(sheets: dict[str, pd.DataFrame]) -> bytes:
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        for sheet_name, df in (sheets or {}).items():
+            clean_name = str(sheet_name or 'Sheet')[:31]
+            data = _safe_df(df)
+            if data.empty:
+                data = pd.DataFrame({'Info': [f'No data for {sheet_name}']})
+            # Avoid exploding exports; keep a sensible cap.
+            if len(data) > 5000:
+                data = data.head(5000).copy()
+            data.to_excel(writer, sheet_name=clean_name, index=False)
+    output.seek(0)
+    return output.getvalue()
+
+
+def _docx_add_dataframe_table(doc, df: pd.DataFrame, max_rows: int = 40) -> None:
+    if Document is None:
+        return
+    data = _safe_df(df)
+    if data.empty:
+        doc.add_paragraph("(No rows)")
+        return
+    if len(data) > max_rows:
+        data = data.head(max_rows).copy()
+
+    cols = [str(c) for c in data.columns.tolist()]
+    table = doc.add_table(rows=1, cols=len(cols))
+    hdr = table.rows[0].cells
+    for idx, col in enumerate(cols):
+        hdr[idx].text = col
+    for _, row in data.iterrows():
+        cells = table.add_row().cells
+        for idx, col in enumerate(cols):
+            try:
+                cells[idx].text = str(row.get(col, ''))
+            except Exception:
+                cells[idx].text = ''
+
+
+def _build_leadership_export_sheets(
+    viewer_role: str,
+    viewer_name: str = '',
+    scope_unit: str | None = None,
+    viewer_unit_role: str = '',
+) -> dict[str, pd.DataFrame]:
+    """Build relevant export sheets for senior leadership roles."""
+    role = str(viewer_role or '').strip()
+    unit = scope_unit
+
+    caseload_status = _build_caseload_work_status_df(scope_unit=unit)
+    all_alerts = _build_escalation_alerts_df()
+    viewer_alerts = _filter_alerts_for_viewer(
+        all_alerts,
+        viewer_role=role,
+        viewer_name=viewer_name,
+        scope_unit=unit,
+        viewer_unit_role=viewer_unit_role,
+    )
+
+    registry_df = _safe_df(st.session_state.get('report_ingestion_registry', []))
+    audit_df = _safe_df(st.session_state.get('upload_audit_log', []))
+    users_df = get_users_dataframe()
+    assignments_df = _build_unit_assignments_df()
+
+    if unit:
+        if not caseload_status.empty:
+            caseload_status = caseload_status[(caseload_status['Unit'].astype(str) == unit) | (caseload_status['Overall Status'] == 'Unassigned')].copy()
+        if not assignments_df.empty:
+            assignments_df = assignments_df[assignments_df['Unit'].astype(str) == unit].copy()
+        if not audit_df.empty and 'caseload_owner_unit' in audit_df.columns:
+            audit_df = audit_df[audit_df['caseload_owner_unit'].astype(str) == unit].copy()
+
+    sheets: dict[str, pd.DataFrame] = {
+        'Caseload Status': caseload_status,
+        'Escalation Alerts': viewer_alerts,
+        'All Alerts (Raw)': all_alerts,
+        'Assignments': assignments_df,
+        'Users': users_df,
+        'Ingestion Registry': registry_df,
+        'Upload Audit': audit_df,
+    }
+
+    # Add KPI snapshots for leadership roles where it makes sense.
+    if role in {'Director', 'Program Officer', 'Supervisor'}:
+        sheets['Support KPI'] = get_support_officer_kpi_dataframe()
+        sheets['Support Throughput'] = get_support_officer_throughput_dataframe()
+
+    return sheets
+
+
+def _build_leadership_docx_bytes(title: str, sheets: dict[str, pd.DataFrame]) -> bytes:
+    if Document is None:
+        return b''
+    doc = Document()
+    doc.add_heading(str(title or 'OCSS Leadership Export'), level=1)
+    doc.add_paragraph(f"Generated: {datetime.now().isoformat(timespec='seconds')}")
+    for sheet_name, df in (sheets or {}).items():
+        doc.add_heading(str(sheet_name), level=2)
+        _docx_add_dataframe_table(doc, df)
+    output = io.BytesIO()
+    doc.save(output)
+    output.seek(0)
+    return output.getvalue()
+
+
+def _render_leadership_exports(
+    viewer_role: str,
+    viewer_name: str = '',
+    scope_unit: str | None = None,
+    viewer_unit_role: str = '',
+    key_prefix: str = 'exports',
+) -> None:
+    with st.expander('Leadership Exports (Excel / Word)', expanded=False):
+        sheets = _build_leadership_export_sheets(
+            viewer_role=viewer_role,
+            viewer_name=viewer_name,
+            scope_unit=scope_unit,
+            viewer_unit_role=viewer_unit_role,
+        )
+
+        export_title = f"OCSS Leadership Export - {viewer_role}"
+        if viewer_unit_role:
+            export_title += f" ({viewer_unit_role})"
+        if scope_unit:
+            export_title += f" - {scope_unit}"
+
+        col1, col2 = st.columns(2)
+        with col1:
+            excel_bytes = _df_to_excel_bytes(sheets)
+            st.download_button(
+                label='Download Excel (.xlsx)',
+                data=excel_bytes,
+                file_name=f"ocss_export_{key_prefix}.xlsx",
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                key=f"{key_prefix}_xlsx_btn",
+                use_container_width=True,
+            )
+        with col2:
+            if Document is None:
+                st.info("Word export requires python-docx.")
+            else:
+                docx_bytes = _build_leadership_docx_bytes(export_title, sheets)
+                st.download_button(
+                    label='Download Word (.docx)',
+                    data=docx_bytes,
+                    file_name=f"ocss_export_{key_prefix}.docx",
+                    mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    key=f"{key_prefix}_docx_btn",
+                    use_container_width=True,
+                )
 
 
 def get_users_dataframe() -> pd.DataFrame:
@@ -946,6 +1723,7 @@ def assign_caseload_to_worker(worker_name: str, caseload_number: str):
     if owner_person:
         if owner_person == worker_name and owner_unit == unit_name:
             st.session_state.reports_by_caseload.setdefault(normalized_caseload, [])
+            _persist_app_state()
             return True, f"Caseload {normalized_caseload} is already assigned to {worker_name}."
         return False, f"Caseload {normalized_caseload} is already assigned to {owner_person} in unit '{owner_unit}'."
 
@@ -955,6 +1733,7 @@ def assign_caseload_to_worker(worker_name: str, caseload_number: str):
         assignments[worker_name].append(normalized_caseload)
 
     st.session_state.reports_by_caseload.setdefault(normalized_caseload, [])
+    _persist_app_state()
     return True, f"✓ Caseload {normalized_caseload} assigned to {worker_name} (unit: {unit_name})."
 
 
@@ -1279,6 +2058,7 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
                             continue
 
                         ingestion_id = f"ING-{datetime.now().strftime('%Y%m%d%H%M%S')}-{len(st.session_state.report_ingestion_registry)+1:04d}"
+                        imported_at = datetime.now()
                         ingestion_kwargs = {
                             'source_filename': uploaded_file.name,
                             'uploader_role': uploader_role,
@@ -1303,6 +2083,41 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
                         ingest_result = ingestion_service.build_ingestion_records(**ingestion_kwargs)
 
                         created_reports = ingest_result.get('created_reports', [])
+
+                        # Attach upload/due clock metadata for escalation alerts.
+                        # This is intentionally report-level (not per-row) to stay lightweight.
+                        due_days_by_report_id: dict[str, dict] = {}
+                        for report_entry in created_reports or []:
+                            if not isinstance(report_entry, dict):
+                                continue
+                            rid = str(report_entry.get('report_id') or '').strip()
+                            if not rid:
+                                continue
+
+                            report_source = _resolve_report_source(report_entry)
+                            report_entry['report_source'] = report_source
+
+                            uploaded_at = _parse_dt(report_entry.get('timestamp')) or imported_at
+                            report_entry['uploaded_at'] = uploaded_at.isoformat(timespec='seconds')
+
+                            # Persist month value for schedules (monthly only).
+                            report_entry['period_month'] = str(period_value) if str(report_frequency) == 'Monthly' else ''
+
+                            due_days, due_at = _compute_due_at(
+                                report_source=report_source,
+                                report_frequency=report_frequency,
+                                period_value=str(period_value),
+                                uploaded_at=uploaded_at,
+                            )
+                            report_entry['due_days'] = due_days
+                            report_entry['due_at'] = due_at.isoformat(timespec='seconds') if due_at else ''
+                            due_days_by_report_id[rid] = {
+                                'due_days': due_days,
+                                'due_at': report_entry.get('due_at', ''),
+                                'uploaded_at': report_entry.get('uploaded_at', ''),
+                                'report_source': report_source,
+                                'period_month': report_entry.get('period_month', ''),
+                            }
                         processed_caseloads_for_event = sorted(list({
                             normalize_caseload_number(r.get('caseload', ''))
                             for r in (created_reports or [])
@@ -1317,7 +2132,17 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
                             st.session_state.reports_by_caseload[caseload_key].append(report_entry)
 
                         st.session_state.uploaded_reports.extend(ingest_result.get('uploaded_rows', []))
-                        st.session_state.upload_audit_log.extend(ingest_result.get('audit_rows', []))
+
+                        # Enrich audit rows with due metadata for downstream alert display.
+                        enriched_audit_rows = []
+                        for audit_row in ingest_result.get('audit_rows', []) or []:
+                            if not isinstance(audit_row, dict):
+                                continue
+                            rid = str(audit_row.get('report_id') or '').strip()
+                            if rid and rid in due_days_by_report_id:
+                                audit_row.update(due_days_by_report_id[rid])
+                            enriched_audit_rows.append(audit_row)
+                        st.session_state.upload_audit_log.extend(enriched_audit_rows)
 
                         # DEBUG: Log confirmation rows for troubleshooting
                         debug_rows = [
@@ -1345,9 +2170,14 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
                                 'report_frequency': report_frequency,
                                 'period_key': period_key,
                                 'period_label': f"{period_year}-{period_value}",
+                                'period_month': str(period_value) if str(report_frequency) == 'Monthly' else '',
                                 'caseload': report_entry.get('caseload'),
                                 'dataframe_hash': dataframe_hash,
-                                'duplicate_detected': len(duplicate_candidates) > 0
+                                'duplicate_detected': len(duplicate_candidates) > 0,
+                                'report_source': report_entry.get('report_source', ''),
+                                'uploaded_at': report_entry.get('uploaded_at', ''),
+                                'due_at': report_entry.get('due_at', ''),
+                                'due_days': report_entry.get('due_days', 0),
                             })
 
                         st.session_state.report_ingestion_events.append({
@@ -1632,6 +2462,7 @@ def save_unit_grouping(unit_name: str, supervisor_name: str, team_leads: list, s
         target_unit
     )
 
+    _persist_app_state()
     return True, f"✓ Unit '{target_unit}' grouping saved."
 
 
@@ -1865,6 +2696,7 @@ def render_user_management_panel(key_prefix: str):
                 }
                 st.session_state.users.append(new_user)
                 _sync_user_to_units({}, new_user)
+                _persist_app_state()
                 st.success(f"✓ User '{cleaned_name}' added.")
                 st.rerun()
 
@@ -1959,6 +2791,7 @@ def render_user_management_panel(key_prefix: str):
                         }
                         st.session_state.users[selected_index] = updated_user
                         _sync_user_to_units(old_user, updated_user)
+                        _persist_app_state()
                         st.success(f"✓ Updated user '{cleaned_edited_name}'.")
                         st.rerun()
 
@@ -1974,6 +2807,7 @@ def render_user_management_panel(key_prefix: str):
                 else:
                     removed_user = st.session_state.users.pop(selected_index)
                     removed_count = _remove_user_from_units(removed_user['name'])
+                    _persist_app_state()
                     st.success(
                         f"✓ Removed user '{removed_user['name']}' and cleaned up {removed_count} assignment(s)."
                     )
@@ -2572,6 +3406,18 @@ if role == "Director":
     ])
     
     with dir_tab1:
+        viewer_name = (auth_result.display_name or auth_result.username or st.session_state.get('current_user', '') or '').strip()
+        viewer_unit_role = _get_user_unit_role(viewer_name) if viewer_name else 'Director'
+        if not viewer_unit_role:
+            viewer_unit_role = 'Director'
+        _render_alert_panel(
+            viewer_role='Director',
+            viewer_name=viewer_name,
+            scope_unit=None,
+            viewer_unit_role=viewer_unit_role,
+            key_prefix='dir_kpi',
+        )
+
         # KPI Overview
         col1, col2, col3, col4 = st.columns(4)
         with col1:
@@ -2609,6 +3455,27 @@ if role == "Director":
             st.info("No caseload work status available yet.")
         else:
             st.dataframe(caseload_status_df, use_container_width=True, hide_index=True)
+
+        # Escalation alerts (Director/Deputy/Department Manager views are driven by Unit Role).
+        viewer_name = (auth_result.display_name or auth_result.username or st.session_state.get('current_user', '') or '').strip()
+        viewer_unit_role = _get_user_unit_role(viewer_name) if viewer_name else 'Director'
+        if not viewer_unit_role:
+            viewer_unit_role = 'Director'
+        _render_alert_panel(
+            viewer_role='Director',
+            viewer_name=viewer_name,
+            scope_unit=None,
+            viewer_unit_role=viewer_unit_role,
+            key_prefix='dir',
+        )
+
+        _render_leadership_exports(
+            viewer_role='Director',
+            viewer_name=viewer_name,
+            scope_unit=None,
+            viewer_unit_role=viewer_unit_role,
+            key_prefix='director',
+        )
         
         # calculate real assignment metrics from session state
         worker_metrics = []
@@ -2709,6 +3576,7 @@ if role == "Director":
                 st.session_state.units[worker_unit]['assignments'][from_worker].remove(caseload_to_move)
                 # Add to dest
                 st.session_state.units[worker_unit]['assignments'].setdefault(to_worker, []).append(caseload_to_move)
+                _persist_app_state()
                 st.success(f"✓ Caseload {caseload_to_move} reassigned from {from_worker} to {to_worker}")
                 st.rerun()
             else:
@@ -2774,6 +3642,14 @@ elif role == "Program Officer":
     ])
     
     with prog_tab1:
+        _render_alert_panel(
+            viewer_role='Program Officer',
+            viewer_name=(auth_result.display_name or auth_result.username or st.session_state.get('current_user', '') or '').strip(),
+            scope_unit=None,
+            viewer_unit_role='',
+            key_prefix='po_kpi',
+        )
+
         # Re-use Director-style KPI Dashboard logic
         col1, col2, col3, col4 = st.columns(4)
         with col1:
@@ -2834,6 +3710,22 @@ The report type you select at ingestion determines which fields Support Officers
     
     with prog_tab3:
         st.subheader("👥 Processing Team Caseload - Program View")
+
+        _render_alert_panel(
+            viewer_role='Program Officer',
+            viewer_name=(auth_result.display_name or auth_result.username or st.session_state.get('current_user', '') or '').strip(),
+            scope_unit=None,
+            viewer_unit_role='',
+            key_prefix='po',
+        )
+
+        _render_leadership_exports(
+            viewer_role='Program Officer',
+            viewer_name=(auth_result.display_name or auth_result.username or st.session_state.get('current_user', '') or '').strip(),
+            scope_unit=None,
+            viewer_unit_role='',
+            key_prefix='program_officer',
+        )
 
         st.subheader("📍 Caseload Work Status (Real-Time)")
         caseload_status_df = _build_caseload_work_status_df(scope_unit=None)
@@ -2983,6 +3875,14 @@ elif role == "Supervisor":
     ])
     
     with sup_tab1:
+        _render_alert_panel(
+            viewer_role='Supervisor',
+            viewer_name=(auth_result.display_name or auth_result.username or st.session_state.get('current_user', '') or '').strip(),
+            scope_unit=None,
+            viewer_unit_role='',
+            key_prefix='sup_kpi',
+        )
+
         # KPI Cards
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -3062,10 +3962,28 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                         if c not in unit['assignments'][selected_supervisor]:
                             unit['assignments'][selected_supervisor].append(c)
 
+                    _persist_app_state()
+
                     st.info(
                         f"Unclaimed caseloads defaulted to supervisor '{selected_supervisor}': "
                         + ", ".join(globally_unassigned)
                     )
+
+                _render_alert_panel(
+                    viewer_role='Supervisor',
+                    viewer_name=str(selected_supervisor),
+                    scope_unit=unit_name,
+                    viewer_unit_role='',
+                    key_prefix='sup',
+                )
+
+                _render_leadership_exports(
+                    viewer_role='Supervisor',
+                    viewer_name=str(selected_supervisor),
+                    scope_unit=unit_name,
+                    viewer_unit_role='',
+                    key_prefix='supervisor',
+                )
 
                 # Build team overview
                 unit_workers = unit.get('team_leads', []) + unit.get('support_officers', [])
@@ -3095,6 +4013,7 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                         if caseload_choice in st.session_state.units[unit_name]['assignments'].get(from_worker, []):
                             st.session_state.units[unit_name]['assignments'][from_worker].remove(caseload_choice)
                             st.session_state.units[unit_name]['assignments'].setdefault(to_worker, []).append(caseload_choice)
+                            _persist_app_state()
                             st.success(f"✓ Caseload {caseload_choice} moved from {from_worker} to {to_worker}")
                         else:
                             st.error("Selected caseload not found for the source worker")
@@ -3131,6 +4050,7 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                                 st.session_state.units[dest_unit].setdefault('assignments', {}).setdefault(dest_person, [])
                                 if move_caseload not in st.session_state.units[dest_unit]['assignments'][dest_person]:
                                     st.session_state.units[dest_unit]['assignments'][dest_person].append(move_caseload)
+                                _persist_app_state()
                                 st.success(f"✓ Caseload {move_caseload} reassigned to {dest_person} (unit: {dest_unit})")
 
                     st.divider()
@@ -3255,6 +4175,7 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                                 else:
                                     # Assign to the pull_worker within this unit
                                     st.session_state.units[unit_name].setdefault('assignments', {}).setdefault(pull_worker, []).append(pull_caseload)
+                                    _persist_app_state()
                                     st.success(f"✓ Caseload {pull_caseload} claimed by {pull_worker} in unit '{unit_name}'")
                 else:
                     st.info("No team members assigned yet for this supervisor")
@@ -3420,6 +4341,16 @@ elif role == "Support Officer":
     # TAB 1: Caseload Report Dashboard
     with tab1:
         st.subheader("📊 Process Reports by Caseload")
+
+        # Light visibility: show the worker escalation panel even in dashboard tab.
+        if acting_so and acting_so != '(Select)':
+            _render_alert_panel(
+                viewer_role='Support Officer',
+                viewer_name=str(acting_so),
+                scope_unit=None,
+                viewer_unit_role='',
+                key_prefix='so_dash',
+            )
         
         # Caseload data with Excel information
         caseload_data = {
@@ -3666,6 +4597,46 @@ elif role == "Support Officer":
                 )
 
                 st.write("**Upload Routing Audit (My Assignments)**")
+
+                # Worker alerts: unfinished work + unsaved edits (lightweight).
+                unfinished_rows = []
+                for caseload in assigned_to_worker:
+                    for report_idx, report in enumerate(st.session_state.reports_by_caseload.get(caseload, [])):
+                        if not isinstance(report, dict):
+                            continue
+                        if report.get('assigned_worker') and report.get('assigned_worker') != acting_so:
+                            continue
+                        report_df = report.get('data', pd.DataFrame())
+                        if not isinstance(report_df, pd.DataFrame) or report_df.empty or 'Worker Status' not in report_df.columns or 'Assigned Worker' not in report_df.columns:
+                            continue
+                        mine = report_df[report_df['Assigned Worker'].astype(str).str.strip() == str(acting_so).strip()].copy()
+                        if mine.empty:
+                            continue
+                        pending = int((mine['Worker Status'].astype(str).str.strip() != 'Completed').sum())
+                        queue_key = f"{caseload}|{report_idx}"
+                        last_edit = _parse_dt(st.session_state.get(f"so_last_edit_{queue_key}"))
+                        last_saved = _parse_dt(st.session_state.get(f"so_last_saved_{queue_key}_iso"))
+                        unsaved = bool(last_edit and (not last_saved or last_edit > last_saved))
+                        if pending > 0 or unsaved:
+                            unfinished_rows.append({
+                                'Caseload': caseload,
+                                'Report ID': str(report.get('report_id') or ''),
+                                'Pending Rows': pending,
+                                'Unsaved Changes': 'Yes' if unsaved else 'No',
+                            })
+
+                if unfinished_rows:
+                    st.warning("You have unfinished and/or unsaved work.")
+                    st.dataframe(pd.DataFrame(unfinished_rows), use_container_width=True, hide_index=True)
+
+                # Escalation alert panel for this worker (uses report clocks + acks).
+                _render_alert_panel(
+                    viewer_role='Support Officer',
+                    viewer_name=str(acting_so),
+                    scope_unit=None,
+                    viewer_unit_role='',
+                    key_prefix='so',
+                )
                 my_audit_rows = []
                 for audit_entry in st.session_state.get('upload_audit_log', []):
                     if audit_entry.get('assigned_worker') == acting_so:
@@ -4008,6 +4979,7 @@ The app will block submission if any of your assigned rows are not marked **Comp
                                 # Apply edits immediately to working_df in session state
                                 if not edited_sheet_df.equals(sheet_df):
                                     now_stamp = datetime.now().isoformat()
+                                    st.session_state[f"so_last_edit_{selected_queue_key}"] = now_stamp
                                     changed_indices = sheet_df.index.intersection(edited_sheet_df.index)
                                     for idx in changed_indices:
                                         for col in edited_sheet_df.columns:
@@ -4030,7 +5002,16 @@ The app will block submission if any of your assigned rows are not marked **Comp
 
                                 with action_col1:
                                     if st.button("💾 Save Progress", key=f"so_save_{selected_queue_key}"):
-                                        st.session_state[f"so_last_saved_{selected_queue_key}"] = datetime.now().strftime("%Y-%m-%d %I:%M %p")
+                                        now_dt = datetime.now()
+                                        st.session_state[f"so_last_saved_{selected_queue_key}"] = now_dt.strftime("%Y-%m-%d %I:%M %p")
+                                        st.session_state[f"so_last_saved_{selected_queue_key}_iso"] = now_dt.isoformat()
+
+                                        # Worker acknowledgement reduces alert fatigue.
+                                        _set_alert_ack(
+                                            str(selected_report.get('report_id') or ''),
+                                            'worker_ack',
+                                            str(acting_so),
+                                        )
                                         st.success("✓ Progress saved to session.")
 
                                     last_saved = st.session_state.get(f"so_last_saved_{selected_queue_key}")
@@ -4116,6 +5097,12 @@ The app will block submission if any of your assigned rows are not marked **Comp
                                                 st.stop()
 
                                             selected_report['status'] = 'Submitted for Review'
+                                            # Submit implies acknowledgement.
+                                            _set_alert_ack(
+                                                str(selected_report.get('report_id') or ''),
+                                                'worker_ack',
+                                                str(acting_so),
+                                            )
                                             st.success(f"✓ Submitted {selected_report.get('report_id', 'report')} for supervisor review.")
                                             st.rerun()
     
@@ -4183,6 +5170,14 @@ elif role == "IT Administrator":
     ])
     
     with it_tab1:
+        _render_alert_panel(
+            viewer_role='IT Administrator',
+            viewer_name=(auth_result.display_name or auth_result.username or st.session_state.get('current_user', '') or '').strip(),
+            scope_unit=None,
+            viewer_unit_role='',
+            key_prefix='it',
+        )
+
         st.subheader("Custom Report Fields for Support Officer Workflow")
         # Initialize custom fields in session state
         if 'custom_report_fields' not in st.session_state:
@@ -4235,6 +5230,7 @@ elif role == "IT Administrator":
         current_user = st.text_input("Current User (for audit)", value=st.session_state.get('current_user', ''), help="Enter your name to be recorded in audit entries.")
         if current_user:
             st.session_state.current_user = current_user
+            _persist_app_state()
         
         # All Workers Across Organization (session-based)
         assignment_counts = get_assignment_counts_by_user()
@@ -4365,6 +5361,7 @@ elif role == "IT Administrator":
                         if caseload_to_assign not in person_list:
                             person_list.append(caseload_to_assign)
 
+            _persist_app_state()
             st.success(f"✓ Unit '{target_unit}' created/updated")
 
         # Quick view of units
@@ -4406,6 +5403,7 @@ elif role == "IT Administrator":
                                             if not assignments.get(remove_person):
                                                 del assignments[remove_person]
                                             st.session_state.units[remove_unit]['assignments'] = assignments
+                                            _persist_app_state()
                                             # Append audit log entry
                                             st.session_state.audit_log.append({
                                                 'timestamp': datetime.now().isoformat(),

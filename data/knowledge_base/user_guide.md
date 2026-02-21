@@ -33,6 +33,8 @@ The OCSS Command Center is a centralized dashboard for managing establishment re
 - **Ingestion Controls**: Ingestion confirmation ID, period metadata, and duplicate-period scanning
 - **Team Coordination**: Supervisors manage units and assign work to team members
 - **Audit Trail**: Upload routing, assignment changes, and ticket actions are logged in-session
+- **Escalation Alerts**: Time-based alerts for overdue/unacknowledged work (with acknowledgements)
+- **Leadership Exports**: Senior leadership can download Word/Excel briefing packs from live application data
 - **Help Ticket Center**: All roles can submit; leadership and IT roles can analyze ticket KPIs
 
 ### System Requirements
@@ -43,11 +45,10 @@ The OCSS Command Center is a centralized dashboard for managing establishment re
 
 ### Important Notes
 
-- **Session-Based Storage**: Currently, assignments and uploaded data are stored in session memory. This means:
-  - Data persists only during your browser session
-  - Server restarts will reset assignments and uploads
-  - Always export important data to CSV for backup
-  - Database persistence is planned for Phase 2
+- **Mixed Persistence Model**:
+   - **Organizational configuration persists across app restarts** (Users, Units, Assignments, Current User (for audit), and Alert Acknowledgements)
+   - **Report data is session-based** (uploaded report content and row-level edits)
+   - Use **Leadership Exports** (Excel/Word) for periodic snapshots when needed
 
 ---
 
@@ -90,6 +91,7 @@ The main content area will update to show features relevant to your role.
 #### Dashboard Features
 
 **📊 KPIs & Metrics Tab**
+- **Alerts (Escalation)**: A compact expander shows aging/unacknowledged work relevant to your leadership title (see Unit Role below)
 - View organizational performance metrics:
   - Report Completion Rate
   - On-Time Submissions
@@ -102,6 +104,16 @@ The main content area will update to show features relevant to your role.
 - Overview of all active caseloads
 - Regional distribution metrics
 - Completion status by region
+- **Leadership Exports (Excel/Word)**: Download an executive packet from live application data (caseload status, alerts, assignments, audit)
+
+**Leadership Titles (Unit Role)**
+The sidebar role remains **Director**, but leadership titles are captured under **Unit Role** in User Management:
+- Director (one allowed)
+- Deputy Director
+- Department Manager
+- Senior Administrative Officer
+
+Alerts and export views adapt based on Unit Role.
 
 **📋 Team Performance Tab**
 - Individual worker performance comparison (dynamically updated)
@@ -139,6 +151,7 @@ The main content area will update to show features relevant to your role.
    - Report Type (for example: P-S Report)
    - Frequency (Monthly / Quarterly / Bi-Annual)
    - Period Year and Period Value
+   - **Due-Date Clock**: For monthly 56RA / P-S / Locate sources, the app calculates a due date automatically based on the monthly schedule (see below). The clock starts at upload time.
 5. **Process Report**: Click **"Process Report"**
 6. **Review Confirmation**:
    - Ingestion ID (`ING-...`) is displayed on success
@@ -169,6 +182,27 @@ The main content area will update to show features relevant to your role.
 - **Naming Convention**: Name files clearly (e.g., `ENV_Report_Q1_2026.xlsx`)
 - **Data Validation**: Review the preview before uploading to catch errors early
 - **Regular Uploads**: Upload reports as soon as they're prepared to keep work flowing
+
+#### Monthly Report Distribution Schedule (Current)
+
+For monthly processing cycles, the QA due-date clock is based on the report source and month:
+
+| Month | Primary Report (QA) | Secondary Report (QA) |
+|---|---|---|
+| January | 56RA (3 days) | P-S (2 days) |
+| February | Locate (3 days) | P-S (2 days) |
+| March | P-S (5 days) |  |
+| April | 56RA (3 days) | P-S (2 days) |
+| May | Locate (3 days) | P-S (2 days) |
+| June | P-S (5 days) |  |
+| July | 56RA (3 days) | P-S (2 days) |
+| August | Locate (3 days) | P-S (2 days) |
+| September | P-S (5 days) |  |
+| October | 56RA (3 days) | P-S (2 days) |
+| November | Locate (3 days) | P-S (2 days) |
+| December | P-S (5 days) |  |
+
+If a report source cannot be detected or the frequency is not Monthly, the app uses a default due window.
 
 ---
 
@@ -233,6 +267,13 @@ This feature allows eligible users to claim caseloads for themselves.
 - **Encourage Self-Pull (when applicable)**: Team Leads can claim new work when they have capacity
 - **Audit Trail**: All assignments are logged; you can review changes in IT Admin view
 
+#### Alerts & Exports
+
+- **Alerts (Escalation)**: A compact expander highlights:
+   - Items aging **3–5 days** without acknowledgement (Supervisor tier)
+   - **Unassigned** caseload work items (always visible to leadership)
+- **Leadership Exports (Excel/Word)**: Supervisors can download a unit-scoped packet for briefings and workload reviews
+
 ---
 
 ### Support Officer
@@ -243,7 +284,7 @@ This feature allows eligible users to claim caseloads for themselves.
 
 **Act as Support Officer / Team Lead**
 
-**Important**: If authentication is enabled, your role is locked after sign-in. If you are *not* signed in, you must manually select your name from the dropdown to see your assigned work (this simulates login).
+**Important**: If authentication is enabled, your role is locked after sign-in. If you are *not* signed in, you must manually select your name from the dropdown to see your work (this simulates login).
 
 1. Find the "Act as Support Officer / Team Lead" dropdown at the top
 2. Select your name from the list
@@ -283,6 +324,12 @@ View and process reports by caseload:
 - **Report-type guardrails**: The app enforces report-specific dropdowns and required fields (see the 56RA / P-S / Locate sections below)
 - View KPI Tracker and Throughput (7-day / 30-day) summaries
 
+#### Alerts for Support Officers
+
+- The app shows a lightweight warning when you have **unfinished and/or unsaved work**.
+- The **Alerts (Escalation)** expander is also available. Worker alerts focus on the **1–3 day** window before escalation moves upward.
+- Clicking **💾 Save Progress** also acknowledges the report to reduce repeated alerts.
+
 **🆘 Support Tickets Tab**
 - View and manage support requests related to your caseloads
 
@@ -312,6 +359,7 @@ View and process reports by caseload:
 - Database status
 - Active user count
 - Configuration paths
+- **Alerts (Operational View)**: IT Admin sees a compact read-only view focused on overdue and unassigned items
 
 **👥 User & Caseload Management Tab**
 
@@ -440,6 +488,29 @@ Create and manage organizational units:
 2. Go to **👥 Caseload Management**
 3. Review the **Caseload Work Status (Real-Time)** table
 4. Use it to see assigned vs unassigned caseloads and overall status: **Pending / Finished / Completed / Unassigned**
+
+### How to Use Alerts (Escalation) and Acknowledge
+
+1. Open your role workspace
+2. Find **Alerts (Escalation)** (available for all roles)
+3. Review the top items (unassigned and/or aging work)
+4. Select a report in **Acknowledge report** and click **Acknowledge**
+
+Escalation ladder (time since upload):
+- Support Officer: 1–3 days
+- Supervisor: 3–5 days
+- Program Officer: 5+ days
+- Department Manager: 1–10 days *only when Support Officer + Supervisor have not acknowledged*
+- Director/Deputy Director: 10+ days (last)
+
+### How to Export Leadership Reports (Excel / Word)
+
+1. Director: go to **👥 Caseload Management**
+2. Program Officer: go to **👥 Caseload Management**
+3. Supervisor: go to **👥 Team Caseload** (after selecting your supervisor)
+4. Open **Leadership Exports (Excel / Word)** and download:
+   - Excel packet with multiple sheets
+   - Word packet suitable for briefings
 
 ### How to Process a Report (Support Officer)
 

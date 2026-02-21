@@ -4,6 +4,12 @@
 
 The OCSS Command Center is a role-based web application designed to streamline establishment report processing and caseload management. Built on the Streamlit framework with Python, it provides an integrated dashboard system for five distinct user roles with real-time data processing and export capabilities.
 
+Key operational features implemented in Feb 2026 include:
+- Escalation alerts with role-based timing windows and acknowledgements
+- Report due-date clocks computed at upload time for monthly QA sources (56RA / P-S / Locate)
+- Senior leadership exports in Excel and Word formats
+- Mixed persistence model: organizational configuration persisted on disk; report/work data remains session-based
+
 **Project Status:** Production-Ready (v1.0.0)  
 **Framework:** Streamlit 1.x with Python 3.8+  
 **Deployment:** Single-server containerized application  
@@ -46,6 +52,7 @@ The OCSS Command Center is a role-based web application designed to streamline e
 | **Backend Language** | Python | 3.8+ | Business Logic |
 | **Data Processing** | Pandas | Latest | DataFrames & Excel/CSV |
 | **Excel Support** | openpyxl | Latest | Read/Write Excel Files |
+| **Word Export** | python-docx | Latest | Generate leadership packets (.docx) |
 | **Version Control** | Git | - | Source Code Management |
 | **Container** | Docker | 24.x | Application Deployment |
 | **Session Storage** | In-Memory | - | User Session Data |
@@ -55,7 +62,7 @@ The OCSS Command Center is a role-based web application designed to streamline e
 ```
 /workspaces/ocss-command-center/
 ├── app/
-│   ├── app.py                          # Main 900+ line Streamlit application
+│   ├── app.py                          # Main Streamlit application
 │   ├── auth.py                         # Optional authentication modes (none/demo/secrets/header)
 │   ├── report_utils.py                 # Utility functions (expandable)
 │   └── requirements.txt                # Python dependencies
@@ -94,6 +101,8 @@ The app keeps the sidebar role list to these five roles, but User Management sup
 - Deputy Director
 - Department Manager
 - Senior Administrative Officer
+
+Operational note: Senior Administrative Officer (SAO), Supervisor, and Program Officer often have similar operational needs (workload visibility, alerts, exports). SAO is implemented as a Director **Unit Role** subtype (not a separate sidebar role), so SAO visibility is controlled by Director-role logic plus Unit Role.
 
 #### 1. **Director** 
 - **Dashboard Tabs:** KPIs, Caseload Management, Team Performance, Report Intake, Ticket KPIs, Manage Users
@@ -175,6 +184,10 @@ Support Officers can export reports in multiple formats:
 - **Format:** Field-Value pairs for easy spreadsheet import
 - **Batch Operations:** Download multiple reports as individual files
 
+Senior leadership (Director / Program Officer / Supervisor) can also export executive briefing packets from live application state:
+- **Excel (.xlsx):** Multi-sheet export (caseload status, alerts, assignments, ingestion/audit snapshots)
+- **Word (.docx):** Executive packet with summary sections and embedded tables
+
 ### 2.5 Interactive Workflow Enhancements
 
 Recent updates (Feb 2026) have introduced significant usability and data integrity improvements:
@@ -240,6 +253,7 @@ streamlit>=1.28.0
 pandas>=2.0.0
 openpyxl>=3.10.0
 numpy>=1.24.0
+python-docx>=1.1.2
 ```
 
 **Development (Optional):**
@@ -326,8 +340,62 @@ st.session_state:
 ```
 
 **Session Lifetime:** Duration of user's browser session  
-**Data Loss:** Occurs on browser close or page refresh (design limitation)  
-**Future Improvement:** Implement database for persistent storage
+**Data Loss:** Occurs on browser close or page refresh for report/work data (design limitation)  
+
+#### Mixed Persistence Model (Current)
+
+The app uses a mixed approach to persistence:
+- **Persisted to disk (survives Streamlit restarts):** organizational configuration (Users, Units, current user for audit, and alert acknowledgements)
+- **Session-based (does not survive restarts by design):** uploaded report data, row-level work queues, and most KPI aggregates
+
+**Persisted state file:** `data/state/ocss_app_state.json`
+
+Notes:
+- This state file is intentionally excluded from git so local configuration and audit context are not committed.
+- The Knowledge Base also persists to `data/knowledge_base/` for deployments with a writable filesystem.
+
+**Future Improvement:** Implement a database for report/work persistence
+
+---
+
+## 7. Alerts, Due-Date Clocks, and Knowledge Base
+
+### 7.1 Due-Date Clocks (Upload vs Due)
+
+When a Program Officer uploads a report, the ingestion pipeline records:
+- `uploaded_at` (timestamp)
+- `report_source` (canonical source key when available)
+- `period_month` / period metadata
+- `due_days` and computed `due_at` (for Monthly QA sources)
+
+Monthly QA due windows are defined month-by-month for these sources:
+- **56RA** (`56`): typically 3 days in Jan/Apr/Jul/Oct
+- **P-S** (`PS`): 2 or 5 days depending on the month
+- **Locate** (`LOCATE`): typically 3 days in Feb/May/Aug/Nov
+
+This enables alert clocks and audit/registry reporting based on “uploaded vs due”.
+
+### 7.2 Escalation Alerts (Acknowledgements)
+
+The app computes a lightweight per-report alert table from `reports_by_caseload` and displays a compact **Alerts (Escalation)** panel across all roles.
+
+Escalation ladder (time since upload):
+- Support Officer: 1–3 days
+- Supervisor: 3–5 days
+- Program Officer: 5+ days
+- Department Manager: 1–10 days *only when Support Officer + Supervisor have not acknowledged*
+- Director / Deputy Director: 10+ days (last)
+
+Acknowledgements are stored per report ID and tier, and persisted in `data/state/ocss_app_state.json`.
+
+### 7.3 Knowledge Base Seeding and Refresh
+
+The Knowledge Base stores Markdown files on disk under `data/knowledge_base/`.
+
+Seeding behavior:
+- On first run, the app seeds `User Guide` and `Technical Guide` from `docs/USER_MANUAL.md` and `docs/TECHNICAL_GUIDE.md`.
+- On subsequent runs, seeded KB docs are automatically refreshed when the repo source docs change **as long as the KB doc was not edited via Knowledge Base Admin**.
+- If a Program Officer or IT Administrator edits a KB doc in-app, the app will not overwrite it automatically.
 
 ---
 

@@ -53,6 +53,13 @@ audit_logs/
 !**/sample_*.csv
 !**/sample_*.xlsx
 
+# Local app state (persisted configuration)
+data/state/
+data/audit_log.jsonl
+
+# Knowledge Base runtime manifest
+data/knowledge_base/.seed_manifest.json
+
 # Temporary files
 tmp/
 temp/
