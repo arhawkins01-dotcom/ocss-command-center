@@ -147,6 +147,25 @@ if 'help_ticket_log' not in st.session_state:
     st.session_state.help_ticket_log = []
 
 
+def _safe_df(data) -> pd.DataFrame:
+    """Safely convert various data shapes into a pandas DataFrame.
+
+    Accepts None, DataFrame, list-of-dicts, dict, or other iterables. Returns
+    an empty DataFrame on failure.
+    """
+    if data is None:
+        return pd.DataFrame()
+    if isinstance(data, pd.DataFrame):
+        return data.copy()
+    try:
+        return pd.DataFrame(data)
+    except Exception:
+        try:
+            return pd.DataFrame([data])
+        except Exception:
+            return pd.DataFrame()
+
+
 def _get_repo_root_dir() -> Path:
     return Path(__file__).resolve().parent.parent
 
@@ -1040,41 +1059,48 @@ def _render_alert_panel(
             key=f"{key_prefix}_ack_select_{viewer_role}_{scope_unit or 'all'}_{viewer_unit_role or 'na'}",
         )
         if selected_report_id and selected_report_id != '(Select)':
-            if st.button(
-                "Acknowledge",
-                key=f"{key_prefix}_ack_btn_{viewer_role}_{selected_report_id}",
-                width='stretch',
-            ):
-                actor = viewer_name or st.session_state.get('current_user', '') or viewer_role
-                _set_alert_ack(selected_report_id, ack_key, actor)
-                st.success("✓ Acknowledged")
-                st.rerun()
+                                st.markdown(
+                                    f"""
+1. Open and update each row assigned to you using the inline editor controls.
+2. Use **Worker Status** consistently:
+   - **Not Started**: you have not begun
+   - **In Progress**: you are actively working the row
+   - **Completed**: row is fully reviewed and ready for supervisor
+3. When marking a row **Completed**, fill the report-type required fields:
+{required_fields_text}
+4. Use the in-app **Update** control (when shown) to apply edits for a row. The application persists edits to session state automatically while you work.
+5. When all assigned rows are **Completed**, use **✅ Submit Caseload as Complete** to finalize — the app validates completion and required fields before allowing submission.
 
+The app will block submission if any of your assigned rows are not marked **Completed** or if required report-type fields are missing.
 
-def _safe_df(value) -> pd.DataFrame:
-    if isinstance(value, pd.DataFrame):
-        return value
-    try:
-        return pd.DataFrame(value)
-    except Exception:
-        return pd.DataFrame()
+---
+
+**Sample narration templates (copy/paste):**
+
+- **56RA Report:** Case pending GTU. Action taken: Scheduled GT. Next steps: follow up after appointment date.
+- **56RA Report:** PCR pending at court. Next hearing: __/__/____. Next steps: monitor docket and follow up.
+- **56RA Report:** COBO. Sent COBO letter(s) to all parties. Deadline: __/__/____.
+- **Locate Report:** Cleared BMV/SVES/dockets/ODRC/Work Number; no info. Contacted CP; no new address. Case in locate 2+ years with SSN; closed UNL.
+- **Locate Report:** Cleared databases; no info. No response from CP. Case in locate 6+ months without SSN; closed NAS.
+- **P-S Report:** Contacted client via phone/web portal. Action taken: CONTACT LETTER. Next steps: follow up by __/__/____.
+                                    """
+                                )
+    
 
 
 def _build_unit_assignments_df() -> pd.DataFrame:
-    rows = []
-    for unit_name, unit in (st.session_state.get('units', {}) or {}).items():
-        assignments = unit.get('assignments', {}) or {}
-        for person, caseloads in assignments.items():
-            for caseload in (caseloads or []):
+    """Build a flat dataframe of unit -> assignee -> caseload rows from session state."""
+    rows: list[dict] = []
+    units = st.session_state.get('units', {}) if hasattr(st, 'session_state') else {}
+    for unit_name, unit_data in sorted(units.items()):
+        assignments = unit_data.get('assignments', {})
+        for person, caseloads in sorted(assignments.items()):
+            for caseload in caseloads:
                 rows.append({
                     'Unit': unit_name,
                     'Assigned To': str(person or '').strip(),
                     'Caseload': normalize_caseload_number(caseload),
                 })
-    df = pd.DataFrame(rows)
-    if df.empty:
-        return df
-    return df.sort_values(by=['Unit', 'Assigned To', 'Caseload'])
 
 
 def _build_all_ingested_reports_df(scope_unit: str | None = None) -> pd.DataFrame:
