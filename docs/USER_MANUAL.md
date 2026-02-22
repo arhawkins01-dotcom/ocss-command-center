@@ -636,9 +636,7 @@ The Locate report identifies cases where OCSS can still meet locate-effort requi
 
 ### Step-by-step
 
-1. Save the spreadsheet to your Desktop or P: drive.
-2. Filter the **Caseload** column to only your caseload(s).
-3. Review **each** case on the spreadsheet.
+1. 
 4. Clear the NCP in all relevant databases (BMV, SVES, court dockets, ODRC, Work Number, etc.).
    - If there is an indication the NCP may be out of state, request a **CLEAR** search.
 5. Clear all received information on **ILSU**.

@@ -37,6 +37,7 @@ copilot/build-streamlit-application
 ### Step 1: Access Streamlit Cloud
 
 1. Go to **https://streamlit.io/cloud**
+
 2. Sign in with your GitHub account
 3. Click **"New app"** or **"Deploy an app"**
 

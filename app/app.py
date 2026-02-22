@@ -438,7 +438,7 @@ If you don't receive an email within a few minutes, contact IT Support.
                 ],
             }
         )
-        st.dataframe(common_issues, use_container_width=True)
+        st.dataframe(common_issues.astype(str), width='stretch')
 
         return
 
@@ -1020,7 +1020,7 @@ def _render_alert_panel(
             'Status',
         ]
         existing_cols = [c for c in show_cols if c in viewer_alerts.columns]
-        st.dataframe(viewer_alerts[existing_cols].head(25), use_container_width=True, hide_index=True)
+        st.dataframe(viewer_alerts[existing_cols].head(25).astype(str), width='stretch', hide_index=True)
 
         # Minimal acknowledgement control to prevent alert fatigue.
         ack_role_map = {
@@ -1043,7 +1043,7 @@ def _render_alert_panel(
             if st.button(
                 "Acknowledge",
                 key=f"{key_prefix}_ack_btn_{viewer_role}_{selected_report_id}",
-                use_container_width=True,
+                width='stretch',
             ):
                 actor = viewer_name or st.session_state.get('current_user', '') or viewer_role
                 _set_alert_ack(selected_report_id, ack_key, actor)
