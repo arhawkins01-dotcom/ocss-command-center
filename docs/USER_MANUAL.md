@@ -515,30 +515,26 @@ Export note:
 1. Select **Support Officer** role
 2. Choose your name in "Act as Support Officer / Team Lead"
 3. Go to **📝 My Assigned Reports** tab
-4. Select a report from your queue
-5. Choose a case-row filter and select one case row
-6. Update editable row fields (including `Worker Status`)
-7. Edits are applied immediately to the session
-8. Click **"💾 Save Progress"** to checkpoint your work
-9. Repeat until all assigned rows are marked `Completed`
-10. Click **"✅ Submit Caseload as Complete"** to finalize and send to supervisor
+4. Select a report from your queue and open a case row
+5. Update editable row fields (including `Worker Status`) using the inline controls; use the in-app **Update** control to apply changes when shown
+6. Repeat until all assigned rows are marked `Completed`
+7. Click **"✅ Submit Caseload as Complete"** to finalize and send to supervisor — the application validates that all assigned rows are `Completed` before allowing submission
 
 #### Completion Checklist (What “Done” Means)
 
 Use this checklist to ensure your caseload is ready to submit:
 
-1. In **📝 My Assigned Reports**, set the filter to **Pending / In Progress**
-2. Open each remaining case row assigned to you
-3. Review/update the editable fields required for your report type
-4. Set **Worker Status** for that row:
+1. Open each remaining case row assigned to you
+2. Review/update the editable fields required for your report type
+3. Set **Worker Status** for that row:
    - **Not Started**: you have not begun work on the row
    - **In Progress**: you have started but are not finished
    - **Completed**: row is fully reviewed and ready for supervisor
-5. Click **💾 Save Progress** regularly (recommended after every few rows)
-6. Before submitting, switch the filter to **All** and verify there are **no** assigned rows left in **Not Started** or **In Progress**
-7. Click **✅ Submit Caseload as Complete**
+4. Use the in-app **Update** control (when available) to apply changes for each row
+5. Confirm there are no assigned rows remaining in `Not Started` or `In Progress`
+6. Click **✅ Submit Caseload as Complete** to finalize
 
-**Important:** The app will block submission if any of your assigned rows are not marked **Completed**. This is intentional to prevent partial or inconsistent submissions.
+**Important:** The app validates completion and will block submission if any assigned rows are not marked **Completed**. This prevents partial or inconsistent submissions.
 
 ---
 
