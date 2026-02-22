@@ -1,3 +1,22 @@
+# OCSS Department Structure
+OCSS_DEPARTMENTS = {
+    'Establishment': {
+        'description': 'New Case Intakes, Paternity and New Child Support Orders',
+        'units': ['Establishment Unit 1', 'Establishment Unit 2', 'Establishment Unit 3', 'Establishment Unit 4', 'Establishment Unit 5']
+    },
+    'Financial Operations': {
+        'description': 'New Order Data Entry, Child Support Payment Processing',
+        'units': ['Financial Unit 1', 'Financial Unit 2', 'Financial Unit 3', 'Financial Unit 4', 'Financial Unit 5']
+    },
+    'Case Maintenance': {
+        'description': 'Paying child support cases',
+        'units': ['Maintenance Unit 1', 'Maintenance Unit 2', 'Maintenance Unit 3', 'Maintenance Unit 4', 'Maintenance Unit 5']
+    },
+    'Compliance': {
+        'description': 'Non-paying child support cases',
+        'units': ['Compliance Unit 1', 'Compliance Unit 2', 'Compliance Unit 3', 'Compliance Unit 4', 'Compliance Unit 5']
+    }
+}
 """
 Configuration settings for OCSS Command Center Application
 Centralized configuration management for production deployment
@@ -76,7 +95,9 @@ SUPPORTED_REPORT_TYPES = [
 
 # Organizational Units Configuration
 DEFAULT_UNITS = {
-    'OCSS North': {
+    # Example structure for each department/unit
+    'Establishment Unit 1': {
+        'department': 'Establishment',
         'supervisor': 'Alex Martinez',
         'team_leads': ['Sarah Johnson'],
         'support_officers': ['Michael Chen', 'Jessica Brown'],
@@ -86,7 +107,8 @@ DEFAULT_UNITS = {
             'Jessica Brown': ['181002']
         }
     },
-    'OCSS South': {
+    'Financial Unit 1': {
+        'department': 'Financial Operations',
         'supervisor': 'Priya Singh',
         'team_leads': ['David Martinez'],
         'support_officers': ['Amanda Wilson'],
@@ -94,7 +116,8 @@ DEFAULT_UNITS = {
             'David Martinez': ['181001'],
             'Amanda Wilson': ['181000']
         }
-    }
+    },
+    # Add additional units for each department as needed
 }
 
 # Caseload Configuration

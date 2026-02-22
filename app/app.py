@@ -35,13 +35,22 @@ try:
 except Exception:
     pass
 
-CORE_APP_ROLES = ["Director", "Program Officer", "Supervisor", "Support Officer", "IT Administrator"]
+
+# Expanded roles including sub-roles
+CORE_APP_ROLES = [
+    "Director", "Deputy Director", "Program Officer", "Senior Administrative Officer",
+    "Supervisor", "Team Lead", "Support Officer", "IT Administrator"
+]
 
 # Only these roles are available in the UI.
 SUPPORTED_USER_ROLES = CORE_APP_ROLES
 
-# Retained for backwards compatibility with existing logic; no expanded roles are supported.
-ROLE_VIEW_MAP = {}
+# Map sub-roles to main roles for dashboard logic
+ROLE_VIEW_MAP = {
+    "Deputy Director": "Director",
+    "Senior Administrative Officer": "Supervisor",
+    "Team Lead": "Supervisor"
+}
 
 DEFAULT_DEPARTMENTS = [
     "Executive",
@@ -3486,14 +3495,14 @@ else:
 st.sidebar.markdown("---")
 st.sidebar.markdown("""
 ### Quick Stats
-- **Establishments**: 45
+- **Units**: 45
 - **Reports Pending**: 12
 - **Reports Completed**: 389
 - **Last Update**: Today
 """)
 
 # Main content area
-if role == "Director":
+if role in ["Director", "Deputy Director"]:
     st.markdown('<div class="header-title">📈 Executive Dashboard</div>', unsafe_allow_html=True)
     st.markdown("**Strategy & Oversight**")
     
@@ -3545,9 +3554,9 @@ if role == "Director":
         # Strategic Insights
         col1, col2 = st.columns(2)
         with col1:
-            st.info("✅ **Strategic Wins**: All establishments now submitting reports on schedule")
+            st.info("✅ **Strategic Wins**: All units now submitting reports on schedule")
         with col2:
-            st.warning("⚠️ **Action Items**: 3 establishments need compliance support")
+            st.warning("⚠️ **Action Items**: 3 units need compliance support")
     
     with dir_tab2:
         st.subheader("👥 Caseload Management - All Workers")
@@ -3777,9 +3786,9 @@ elif role == "Program Officer":
         # Strategic Insights
         col1, col2 = st.columns(2)
         with col1:
-            st.info("✅ **Strategic Wins**: All establishments now submitting reports on schedule")
+            st.info("✅ **Strategic Wins**: All units now submitting reports on schedule")
         with col2:
-            st.warning("⚠️ **Action Items**: 3 establishments need compliance support")
+            st.warning("⚠️ **Action Items**: 3 units need compliance support")
 
     with prog_tab2:
         render_report_intake_portal("program_officer_intake", "Program Officer")
@@ -3962,7 +3971,7 @@ The report type you select at ingestion determines which fields Support Officers
     with prog_tab7:
         render_knowledge_base("Program Officer", "program_officer")
 
-elif role == "Supervisor":
+elif role in ["Supervisor", "Team Lead", "Senior Administrative Officer"]:
     st.markdown('<div class="header-title">📊 KPI Monitoring Dashboard</div>', unsafe_allow_html=True)
     st.markdown("**Real-Time KPI Visibility**")
     
@@ -3994,17 +4003,17 @@ elif role == "Supervisor":
             st.metric("Quality Score", "94.2%", "+2.1%")
         with col3:
             st.metric("Team Compliance", "100%", "✓")
-        
-        # Establishment Performance
-        st.subheader("Establishment Performance")
-        
-        establishments = pd.DataFrame({
-            'Establishment': ['Lincoln Elem', 'Grant Middle', 'Jefferson HS', 'Adams Presch', 'Madison Elem'],
+
+        # Unit Performance
+        st.subheader("Unit Performance")
+
+        units_df = pd.DataFrame({
+            'Unit': ['Lincoln Elem', 'Grant Middle', 'Jefferson HS', 'Adams Presch', 'Madison Elem'],
             'Reports Submitted': [45, 38, 42, 35, 48],
             'Avg Quality Score': [96, 92, 94, 91, 97],
             'Last Submission': ['Today', '2 days', 'Today', '5 days', 'Yesterday']
         })
-        st.dataframe(establishments, use_container_width=True)
+        st.dataframe(units_df, use_container_width=True)
         
         # Trend Analysis
         st.subheader("Quality Trend")
@@ -4058,19 +4067,18 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                     for lst in (u.get('assignments', {}) or {}).values()
                     for c in (lst or [])
                 }
+
                 globally_unassigned = [c for c in all_known_caseloads if c not in globally_assigned]
                 if globally_unassigned:
                     unit.setdefault('assignments', {}).setdefault(selected_supervisor, [])
-                    for c in globally_unassigned:
-                        if c not in unit['assignments'][selected_supervisor]:
-                            unit['assignments'][selected_supervisor].append(c)
-
-                    _persist_app_state()
-
-                    st.info(
-                        f"Unclaimed caseloads defaulted to supervisor '{selected_supervisor}': "
-                        + ", ".join(globally_unassigned)
-                    )
+                    st.markdown("**Unassigned Caseloads:** " + ", ".join(globally_unassigned))
+                    caseload_to_pull = st.selectbox("Self-Pull Caseload", globally_unassigned, key="sup_self_pull")
+                    if st.button("Pull Selected Caseload to Myself", key="sup_self_pull_btn"):
+                        if caseload_to_pull and caseload_to_pull not in unit['assignments'][selected_supervisor]:
+                            unit['assignments'][selected_supervisor].append(caseload_to_pull)
+                            _persist_app_state()
+                            st.success(f"✓ Caseload {caseload_to_pull} assigned to {selected_supervisor}")
+                            st.rerun()
 
                 _render_alert_panel(
                     viewer_role='Supervisor',
