@@ -10,9 +10,9 @@ import inspect
 import hashlib
 from pathlib import Path
 import shutil
-from report_utils import SupportReportIngestionService
-import database
-import auth
+from .report_utils import SupportReportIngestionService
+from . import database
+from . import auth
 
 try:
     from docx import Document  # type: ignore
@@ -20,7 +20,7 @@ except Exception:  # pragma: no cover
     Document = None
 
 try:
-    from config import ensure_directories, get_data_path
+    from .config import ensure_directories, get_data_path
 except Exception:  # pragma: no cover
     ensure_directories = None
     get_data_path = None
