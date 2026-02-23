@@ -5,6 +5,11 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      redeploy_webhook:
+        description: 'Optional: redeploy webhook URL (not stored as secret)'
+        required: false
 
 jobs:
   test:

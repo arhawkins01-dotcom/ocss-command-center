@@ -19,6 +19,19 @@ If you prefer automatic redeploys only after CI passes, add a webhook or deploy 
 - In your repo settings > Secrets, add `STREAMLIT_REDEPLOY_WEBHOOK` with the webhook URL.
 - The included GitHub Actions workflow `.github/workflows/python-tests.yml` will POST to that webhook after successful tests when the secret is present.
 
+Setting the webhook secret (recommended)
+
+- Open your repository on GitHub → Settings → Secrets → Actions → `New repository secret`.
+- Set the **Name** to `STREAMLIT_REDEPLOY_WEBHOOK` and **Value** to your webhook URL, then save.
+- The CI workflow will use this secret when present to POST a redeploy trigger after tests pass.
+
+Manually triggering the workflow from GitHub (no secret change required)
+
+- The CI workflow supports manual runs via GitHub's "Actions" tab using `workflow_dispatch`.
+- From the repo page open **Actions → CI — Tests and optional redeploy**, click **Run workflow**, select the `main` branch and optionally paste a `redeploy_webhook` value to test an ad-hoc deploy URL for this run.
+
+Security note: prefer storing the webhook as a repository secret rather than passing it as a workflow input, which may be visible in logs. If you need help creating a secure webhook receiver (Lambda, small service), I can add an example implementation.
+
 3) Secrets and app configuration
 
 - For runtime secrets (API keys, DB credentials), either add them in the Streamlit Cloud UI under the app's "Secrets" section, or include a `.streamlit/secrets.toml` locally and add values via the Cloud UI. Do NOT commit secrets to Git.
