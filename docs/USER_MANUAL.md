@@ -313,11 +313,53 @@ View and process reports by caseload:
 **📝 My Assigned Reports Tab**
 - View report queue for your assigned caseloads
 - Process one case line at a time (row-level workflow)
-- **How to complete this report (checklist)**: Review the in-dashboard checklist (includes sample narration templates you can copy/paste)
-- **Save Progress**: Click **"💾 Save Progress"** periodically to checkpoint your work (the UI shows your last saved timestamp)
-- **Conditional Submit**: The **"✅ Submit Caseload"** button checks your work. It will only allow submission if *all* your assigned rows are marked `Completed`. If rows are `Pending` or `In Progress`, you'll see a warning.
-- **Report-type guardrails**: The app enforces report-specific dropdowns and required fields (see the 56RA / P-S / Locate sections below)
-- View KPI Tracker and Throughput (7-day / 30-day) summaries
+
+**Report Processing — Step-by-Step (Command Center)**
+
+Follow these five universal steps for each case line to match Command Center behavior and ensure consistent narration and status updates:
+
+1. Open Assigned Work Queue
+   - From the sidebar: Dashboard → Assigned Reports → select the caseload or report you were assigned.
+   - Click the report card to expand the first unworked case line.
+
+2. Review Case Status and Sources
+   - Check all linked systems displayed in the panel: SFRC, PEGT, CTHS, ILSU, court dockets, and locate sources (BMV, SVES, etc.).
+   - Note any existing `Worker Status`, prior contact attempts, `ilsu_status`, `postal_verification`, and whether `gt_scheduled` or `ads_ready` are present in the row details.
+
+3. Process the Required Action
+   - Choose the appropriate next action from the context-aware dropdown (examples below):
+     - `Schedule GT` — when paternity/eligibility is confirmed and a GT appointment must be scheduled.
+     - `Prep ADS` — when documents are ready for Alternative Dispute Services.
+     - `Refer to Court` — when evidence meets referral criteria.
+     - `Issue Contact Letter` / `COBO` — when written contact or notice is required.
+     - `Postal Verification` — when address confirmation is required.
+     - `Complete Locate Efforts` — when NCP is found or locate sources are exhausted.
+     - `Close Case` — when the case meets closure criteria (UNL, NAS, or other SOP criteria).
+
+4. Update Command Center Fields
+   - `Date Action Taken`: set to today or the date the activity occurred.
+   - `Action Taken / Status`: select the new status (e.g., `In Progress`, `Ready for GT`, `Located`, `Completed`).
+   - `Case Narrated (Y/N)`: mark `Y` when narration is complete.
+   - `Comments`: add supporting details (optional) and link any external documents (OnBase reference or local filename).
+   - Click **"💾 Update Report"** or **"💾 Save Progress"** to persist changes (the UI shows your last saved timestamp).
+
+5. Complete Case Narration (Standard)
+   - Use the narration template fields to capture the essential elements:
+     - **Status of Case** — current state after your action (e.g., Ready for GT, Located, Pending Court Referral).
+     - **Systems Reviewed** — list systems checked: SFRC, PEGT, CTHS, ILSU, Court Dockets, Locate sources.
+     - **Action Completed** — short description of what you did (scheduled GT, issued postal verification, attempted contact, etc.).
+     - **Next Steps** — what should happen next and who is responsible.
+   - Example narration:
+     - "Command Center Review: Status verified in SFRC. Locate sources checked. Postal verification issued. Case pending next SOP action."
+
+**Conditional Submit & Guards**
+- The **"✅ Submit Caseload"** button validates that all assigned rows are `Completed`. If rows are `Pending` or `In Progress`, submission is blocked and a warning lists the incomplete rows.
+- The app enforces report-type guardrails and required dropdowns for 56RA, P-S, and Locate reports — required fields must be filled before marking a row `Completed`.
+
+**Where to file documents**
+- When you attach or reference supporting documents, record the OnBase or other repository reference in `Comments` or the `Document Reference` field so supervisors and auditors can locate the files.
+
+View KPI Tracker and Throughput (7-day / 30-day) summaries
 
 #### Alerts for Support Officers
 
