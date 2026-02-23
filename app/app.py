@@ -1112,6 +1112,8 @@ def _build_unit_assignments_df() -> pd.DataFrame:
                     'Assigned To': str(person or '').strip(),
                     'Caseload': normalize_caseload_number(caseload),
                 })
+    # Return a safe DataFrame even when there are no rows or unexpected data.
+    return _safe_df(rows)
 
 
 def _build_all_ingested_reports_df(scope_unit: str | None = None) -> pd.DataFrame:
