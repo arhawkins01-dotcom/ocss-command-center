@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-The OCSS Command Center is a role-based web application designed to streamline unit report processing and caseload management. Built on the Streamlit framework with Python, it provides an integrated dashboard system for multiple user roles (Director, Deputy Director, Senior Administrative Officer, Program Officer, Supervisor, Team Lead, Support Officer, IT Administrator) with real-time data processing and export capabilities. The agency structure includes four departments (Establishment, Financial Operations, Case Maintenance, Compliance) and their individual units.
+The OCSS Command Center is a role-based web application designed to streamline establishment report processing and caseload management. Built on the Streamlit framework with Python, it provides an integrated dashboard system for five distinct user roles with real-time data processing and export capabilities.
 
 Key operational features implemented in Feb 2026 include:
 - Escalation alerts with role-based timing windows and acknowledgements
@@ -86,26 +86,23 @@ Key operational features implemented in Feb 2026 include:
 
 ### 2.1 Role-Based Access Control
 
-The application supports multiple user roles with specialized interfaces:
+The application supports **5 distinct user roles** with specialized interfaces:
 
-The role selector in the sidebar presents these roles:
+The role selector in the sidebar presents only these five roles:
 - Director
-- Deputy Director
-- Senior Administrative Officer
 - Program Officer
 - Supervisor
-- Team Lead
 - Support Officer
 - IT Administrator
 
 **Note on Leadership Titles (Director role):**
-User Management supports leadership titles under the Director role via a **Unit Role** field:
+The app keeps the sidebar role list to these five roles, but User Management supports leadership titles under the Director role via a **Unit Role** field:
 - Director (only one allowed)
 - Deputy Director
 - Department Manager
 - Senior Administrative Officer
 
-Operational note: Senior Administrative Officer (SAO), Supervisor, and Program Officer often have similar operational needs (workload visibility, alerts, exports). SAO is implemented as a Supervisor-level sub-role, reporting to Director or Deputy Director, and has agency-wide KPI access.
+Operational note: Senior Administrative Officer (SAO), Supervisor, and Program Officer often have similar operational needs (workload visibility, alerts, exports). SAO is implemented as a Director **Unit Role** subtype (not a separate sidebar role), so SAO visibility is controlled by Director-role logic plus Unit Role.
 
 #### 1. **Director** 
 - **Dashboard Tabs:** KPIs, Caseload Management, Team Performance, Report Intake, Ticket KPIs, Manage Users
@@ -208,7 +205,7 @@ Recent updates (Feb 2026) have introduced significant usability and data integri
 Director/Program Officer views include a caseload rollup table that combines assignment ownership with report-level workflow into one overall status: **Pending / Finished / Completed / Unassigned**.
 
 #### 2.5.3 Logic & Validation
-- **Caseload Reassignment & Self-Pull:** Directors and Supervisors can now functionally move caseloads between workers, and Supervisors can self-pull unassigned caseloads to themselves directly from their dashboard. This updates the underlying session state immediately, reflecting changes across all dashboards.
+- **Caseload Reassignment:** Directors and Supervisors can now functionally move caseloads between workers. This updates the underlying session state immediately, reflecting changes across all dashboards.
 - **Submission Safety:** Support Officers cannot submit a caseload as "Complete" if any row remains in "Pending" or "In Progress" status. A warning is displayed, ensuring data completeness before supervisory review.
 
 **User Management (Unit Role column):**

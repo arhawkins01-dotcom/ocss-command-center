@@ -27,8 +27,12 @@ The OCSS Command Center is a centralized dashboard for managing establishment re
 
 ### Key Features
 
-**Report Processing**: Upload, review, edit, and export unit reports
-**Team Coordination**: Supervisors and Senior Administrative Officers manage units and assign work to team members
+- **Role-Based Access**: Each user sees relevant features for their role
+- **Caseload Management**: Track and assign work by caseload (181000 series)
+- **Report Processing**: Upload, review, edit, and export establishment reports
+- **Ingestion Controls**: Ingestion confirmation ID, period metadata, and duplicate-period scanning
+- **Team Coordination**: Supervisors manage units and assign work to team members
+- **Audit Trail**: Upload routing, assignment changes, and ticket actions are logged in-session
 - **Escalation Alerts**: Time-based alerts for overdue/unacknowledged work (with acknowledgements)
 - **Leadership Exports**: Senior leadership can download Word/Excel briefing packs from live application data
 - **Help Ticket Center**: All roles can submit; leadership and IT roles can analyze ticket KPIs
@@ -175,10 +179,10 @@ Alerts and export views adapt based on Unit Role.
 
 #### Best Practices
 
-**File Format**: Use standardized Excel templates for initial uploads; all subsequent report completion and editing is done in the Command Center application
-**Naming Convention**: Name files clearly (e.g., `ENV_Report_Q1_2026.xlsx`)
-**Data Validation**: Review the preview before uploading to catch errors early
-**Regular Uploads**: Upload reports as soon as they're prepared to keep work flowing
+- **File Format**: Use standardized Excel templates for consistent data structure
+- **Naming Convention**: Name files clearly (e.g., `ENV_Report_Q1_2026.xlsx`)
+- **Data Validation**: Review the preview before uploading to catch errors early
+- **Regular Uploads**: Upload reports as soon as they're prepared to keep work flowing
 
 #### Monthly Report Distribution Schedule (Current)
 
@@ -223,21 +227,23 @@ If a report source cannot be detected or the frequency is not Monthly, the app u
 - **Caseload to Move**: Choose the caseload
 - Click **"🔄 Move Caseload"** to reassign
 
+**Worker Self-Pull (Claim a Caseload)**:
 
-**Supervisor Self-Pull (Claim a Caseload):**
+This feature allows eligible users to claim caseloads for themselves.
 
-Supervisors can now claim unassigned caseloads directly from their dashboard.
+**Access**:
+- **Allowed**: Director, Program Officer, and Support Officer **Team Leads**
+- **Not allowed**: Regular Support Officers (non-Team Leads)
 
-**How it works:**
-1. Select **Supervisor** role in the sidebar
-2. Choose your supervisor's name from the dropdown
-3. In the "Unassigned Caseloads" section, select a caseload from the dropdown
-4. Click **"Pull Selected Caseload to Myself"** to assign it to yourself
-5. The system will confirm the assignment and update the dashboard
-
-**Access:**
-- Allowed: Supervisors, Director, Deputy Director, Senior Administrative Officer, Program Officer, Team Leads
-- Not allowed: Regular Support Officers (non-Team Leads)
+1. **Worker Action**:
+   - Select **Supervisor** role in the sidebar
+   - Choose your supervisor's name from the dropdown
+   - Scroll to the **Worker Self-Pull** section
+   - Enter your name in "Simulate Current Worker"
+   - Select yourself in "Pull As" (must match exactly)
+   - Choose a caseload from "Caseload to Claim"
+   - The system shows if the caseload is available or who currently owns it
+   - Click **"🧷 Pull Caseload to Self"**
 
 2. **Availability Hints**:
    - Green info box: Caseload already assigned to you
@@ -515,26 +521,30 @@ Export note:
 1. Select **Support Officer** role
 2. Choose your name in "Act as Support Officer / Team Lead"
 3. Go to **📝 My Assigned Reports** tab
-4. Select a report from your queue and open a case row
-5. Update editable row fields (including `Worker Status`) using the inline controls; use the in-app **Update** control to apply changes when shown
-6. Repeat until all assigned rows are marked `Completed`
-7. Click **"✅ Submit Caseload as Complete"** to finalize and send to supervisor — the application validates that all assigned rows are `Completed` before allowing submission
+4. Select a report from your queue
+5. Choose a case-row filter and select one case row
+6. Update editable row fields (including `Worker Status`)
+7. Edits are applied immediately to the session
+8. Click **"💾 Save Progress"** to checkpoint your work
+9. Repeat until all assigned rows are marked `Completed`
+10. Click **"✅ Submit Caseload as Complete"** to finalize and send to supervisor
 
 #### Completion Checklist (What “Done” Means)
 
 Use this checklist to ensure your caseload is ready to submit:
 
-1. Open each remaining case row assigned to you
-2. Review/update the editable fields required for your report type
-3. Set **Worker Status** for that row:
+1. In **📝 My Assigned Reports**, set the filter to **Pending / In Progress**
+2. Open each remaining case row assigned to you
+3. Review/update the editable fields required for your report type
+4. Set **Worker Status** for that row:
    - **Not Started**: you have not begun work on the row
    - **In Progress**: you have started but are not finished
    - **Completed**: row is fully reviewed and ready for supervisor
-4. Use the in-app **Update** control (when available) to apply changes for each row
-5. Confirm there are no assigned rows remaining in `Not Started` or `In Progress`
-6. Click **✅ Submit Caseload as Complete** to finalize
+5. Click **💾 Save Progress** regularly (recommended after every few rows)
+6. Before submitting, switch the filter to **All** and verify there are **no** assigned rows left in **Not Started** or **In Progress**
+7. Click **✅ Submit Caseload as Complete**
 
-**Important:** The app validates completion and will block submission if any assigned rows are not marked **Completed**. This prevents partial or inconsistent submissions.
+**Important:** The app will block submission if any of your assigned rows are not marked **Completed**. This is intentional to prevent partial or inconsistent submissions.
 
 ---
 
@@ -544,23 +554,23 @@ Use this checklist to ensure your caseload is ready to submit:
 
 56RA helps identify cases where OCSS can still meet Service of Process (SOP) and move the case forward (establish an order, provide customer service, or close when appropriate). Data captured on the worksheet supports analysis of outcomes, success, bottlenecks, and process gaps.
 
-1. Open the Locate report in the Command Center application.
-2. Review each assigned case directly in the app.
-3. Clear the NCP in all relevant databases (BMV, SVES, court dockets, ODRC, Work Number, etc.).
-   - If there is an indication the NCP may be out of state, request a **CLEAR** search.
-4. Record all received information in the app fields for each case.
-   - Ensure the **Data received** field is blank if no new information.
-   - Consider **NAS** / **UNL** closures if criteria are met.
-5. Attempt contact with CP/CTR and/or PPF/NCP (if available) via phone, JFS7711, web portal, etc.
-   - Narrate what you requested and the deadline (if applicable).
-   - If the client provides address information, take the next appropriate action.
-6. If applicable, close the case using the appropriate closure code:
-   - **UNL**: locate 2+ years with SSN
-   - **NAS**: locate 6+ months with no SSN
-7. If the NCP is located, process the next appropriate action within **5 business days** (SOP clock starts when CIP1 is updated with a valid address).
-   - Review OnBase for any required documents (do not delay unless necessary documents are missing).
-8. Narrate every case directly in the app.
-9. Submit your completed Locate report in the app. Submission is blocked until all assigned cases are marked **Completed**.
+### Step-by-step
+
+1. Save the spreadsheet to your P: drive or Desktop.
+2. Filter the **Caseload** column to show only your caseload(s).
+3. Review **every** case on your caseload.
+4. Take real action (do not only narrate that action is needed): schedule GT, prep ADS, refer to court, close case, etc.
+5. Complete these fields for each case:
+   - **Date Report was Processed** (in the app: **Date Action Taken**)
+   - **Action Taken/Status** (drop-down)
+   - **Case Narrated**
+   - **Comment** (as needed; required if Action Taken/Status = OTHER)
+6. Narrate every case (when applicable include status, action taken, and next steps/follow-up needed).
+7. Email the completed spreadsheet to your Supervisor and Establishment PO3 at each deadline.
+
+### 56RA Action Taken/Status values
+
+- Scheduled GT
 - Pending GTU
 - Prepped ADS
 - Pending AHU
@@ -591,12 +601,9 @@ Process every case on the work list to meet SOP requirements, provide customer s
 
 ### Step-by-step
 
-1. Open the Paternity-Support Work List in the Command Center application.
-2. Work your assigned unit/caseload cases directly in the app and meet the monthly deadlines.
-3. Document actions for each case in **Action Taken/Status** (select from drop-down).
-4. Complete all required fields and narrate each case as appropriate.
-5. Submit your completed work list in the app. Submission is blocked until all assigned cases are marked **Completed**.
-6. Contact your Supervisor with questions or for review.
+1. Save the worksheet to your P: drive or Desktop.
+2. Work your assigned unit/caseload cases and meet the monthly deadlines.
+3. Document actions in **Action Taken/Status** (drop-down).
 4. Narrations must begin with **P-S Report.**
 5. Avoid unnecessary appointments; contact clients via phone, web portal, etc.
 6. Complete all actions and follow up (no “to be scheduled” narrations).
@@ -632,7 +639,9 @@ The Locate report identifies cases where OCSS can still meet locate-effort requi
 
 ### Step-by-step
 
-1. 
+1. Save the spreadsheet to your Desktop or P: drive.
+2. Filter the **Caseload** column to only your caseload(s).
+3. Review **each** case on the spreadsheet.
 4. Clear the NCP in all relevant databases (BMV, SVES, court dockets, ODRC, Work Number, etc.).
    - If there is an indication the NCP may be out of state, request a **CLEAR** search.
 5. Clear all received information on **ILSU**.

@@ -1,0 +1,151 @@
+# OCSS Command Center - Validation and KPI rules (YAML mirror)
+#
+# Purpose:
+# - Keep a portable, code-free representation of the app's validation and KPI rules.
+# - Aligns with:
+#   - app/config/settings.py (VALIDATION_RULES, KPI_THRESHOLDS, upload limits)
+#   - app/report_utils.py (ReportProcessor.validate_dataframe, DataValidator)
+#
+# This file is not currently read by the Streamlit app at runtime.
+# It is intended for documentation, template generation, and future config-driven validation.
+
+ruleset:
+  name: OCSS CC Rules
+  version: 1
+  last_updated: "2026-02-20"
+
+# Excel-parity (56 / PS / Locate) configuration.
+excel_parity:
+  supported_report_sources: ["56", "PS", "LOCATE"]
+
+  detection:
+    header_signature:
+      "56":
+        all_of: ["setsnumber", "servicedue"]
+      "LOCATE":
+        any_of: ["resultsofreview", "caseclosurecode"]
+      "PS":
+        all_of: ["casenumber", "casetype", "casemode"]
+
+  canonical:
+    required_fields:
+      - case_number
+    narration_truthy: ["y", "yes", "true", "1"]
+    narration_falsy: ["n", "no", "false", "0"]
+
+  quarter_slicing:
+    mode: "calendar" # allowed: calendar, ffy
+    calendar_quarters:
+      Q1: [1, 2, 3]
+      Q2: [4, 5, 6]
+      Q3: [7, 8, 9]
+      Q4: [10, 11, 12]
+    ffy_quarters:
+      Q1: [10, 11, 12]
+      Q2: [1, 2, 3]
+      Q3: [4, 5, 6]
+      Q4: [7, 8, 9]
+
+  qa_checks:
+    invalid_date_fields: ["service_due_date", "action_taken_date"]
+    duplicate_key_fields:
+      - report_source
+      - case_number
+      - caseload
+      - service_due_date
+      - action_taken_date
+      - action_taken_status
+    warn_on_unknown_columns: true
+
+  flags:
+    # Excel conditional formatting -> rules engine flags.
+    - id: MISSING_CASE_NUMBER
+      severity: FAIL
+      when: "case_number is blank"
+    - id: NARRATION_MISSING
+      severity: FAIL
+      when: "case_narrated is blank or false"
+    - id: MISSING_ACTIVITY_DATE
+      severity: WARN
+      when: "activity_date is blank"
+    - id: MISSED_90_DAY_TIMEFRAME
+      severity: FAIL
+      when: "action_taken_date - service_due_date > 90 days"
+    - id: LOCATE_REVIEW_REQUIRED
+      severity: WARN
+      when: "report_source == LOCATE and action_taken_status is blank"
+    - id: LOCATE_CLOSURE_CODE_MISSING
+      severity: INFO
+      when: "report_source == LOCATE and case_closure_code is blank"
+
+upload:
+  allowed_extensions:
+    - .xlsx
+    - .xls
+    - .csv
+  max_upload_size_mb: 50
+
+validation:
+  dataframe:
+    reject_if_empty: true
+    null_percentage_warning_threshold: 50
+
+  required_columns:
+    # Mirrors app/config/settings.py VALIDATION_RULES['required_columns']
+    establishment_report:
+      - Case_ID
+      - Worker
+      - Status
+      - Date_Filed
+    monthly_summary:
+      - Month
+      - Total_Cases
+      - Completed
+      - In_Progress
+
+  data_types:
+    # Mirrors app/config/settings.py VALIDATION_RULES['data_types']
+    Case_ID: string
+    Date_Filed: datetime
+    Total_Cases: integer
+
+  business_rules:
+    # Mirrors app/report_utils.py DataValidator defaults
+    case_id:
+      required: true
+      validation: non_empty_string
+
+    status:
+      required: true
+      allowed_values:
+        - Pending
+        - In Progress
+        - Completed
+        - Approved
+        - Rejected
+
+    date:
+      required: false
+      validation: pandas_to_datetime_parsable
+
+    numeric:
+      required: false
+      validation: float_castable
+      range:
+        min: null
+        max: null
+
+kpi_thresholds:
+  # Mirrors app/config/settings.py KPI_THRESHOLDS
+  completion_rate:
+    excellent: 95.0
+    good: 85.0
+    needs_improvement: 75.0
+  on_time_submission:
+    excellent: 95.0
+    good: 90.0
+    needs_improvement: 80.0
+  data_quality:
+    excellent: 98.0
+    good: 95.0
+    needs_improvement: 90.0

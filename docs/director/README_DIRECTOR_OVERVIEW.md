@@ -8,6 +8,7 @@ The Establishment Command Center is a governance and analytics enhancement — n
 - Real-time KPI visibility
 - Audit‑ready export archive
 - SAVES and CQI alignment
+- **Interactive Control**: Reassign caseloads instantly between staff members
 
 ## Roles
 Director → Strategy & Oversight

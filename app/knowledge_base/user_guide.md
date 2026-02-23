@@ -301,21 +301,18 @@ View and process reports by caseload:
    - File name
    - Key data fields
 3. **Edit Report Data**:
-   - Click inside the expandable report card
-   - Use the form to update field values
-   - Click **"💾 Update Report"** to save changes
+   - Click inside the expandable report card and use the provided fields to update values.
+   - Use the in-app **Update** control (when shown) to apply edits for a row; the app manages session state while you work.
 4. **Action Buttons**:
-   - **📥 Download CSV**: Export report data
+   - **📥 Download CSV**: Export report data for offline review or archiving
    - **✅ Approve**: Mark report as approved
-   - **💾 Save**: Save progress
    - **📤 Submit**: Submit for review
 
 **📝 My Assigned Reports Tab**
 - View report queue for your assigned caseloads
 - Process one case line at a time (row-level workflow)
 - **How to complete this report (checklist)**: Review the in-dashboard checklist (includes sample narration templates you can copy/paste)
-- **Save Progress**: Click **"💾 Save Progress"** periodically to checkpoint your work (the UI shows your last saved timestamp)
-- **Conditional Submit**: The **"✅ Submit Caseload"** button checks your work. It will only allow submission if *all* your assigned rows are marked `Completed`. If rows are `Pending` or `In Progress`, you'll see a warning.
+ - **Submission Rules**: Use the **Submit Caseload** control to finalize your caseload; submission will only succeed when all assigned rows are marked `Completed` and required fields are present.
 - **Report-type guardrails**: The app enforces report-specific dropdowns and required fields (see the 56RA / P-S / Locate sections below)
 - View KPI Tracker and Throughput (7-day / 30-day) summaries
 
@@ -323,7 +320,7 @@ View and process reports by caseload:
 
 - The app shows a lightweight warning when you have **unfinished and/or unsaved work**.
 - The **Alerts (Escalation)** expander is also available. Worker alerts focus on the **1–3 day** window before escalation moves upward.
-- Clicking **💾 Save Progress** also acknowledges the report to reduce repeated alerts.
+- Progress is persisted to session state as you work; use the Submit control to finalize and acknowledge completion.
 
 **🆘 Support Tickets Tab**
 - View and manage support requests related to your caseloads
@@ -515,52 +512,57 @@ Export note:
 1. Select **Support Officer** role
 2. Choose your name in "Act as Support Officer / Team Lead"
 3. Go to **📝 My Assigned Reports** tab
-4. Select a report from your queue and open a case row
-5. Update editable row fields (including `Worker Status`) using the inline controls; use the in-app **Update** control to apply changes when shown
-6. Repeat until all assigned rows are marked `Completed`
-7. Click **"✅ Submit Caseload as Complete"** to finalize and send to supervisor — the application validates that all assigned rows are `Completed` before allowing submission
+4. Select a report from your queue
+5. Choose a case-row filter and select one case row
+6. Update editable row fields (including `Worker Status`)
+7. Edits are applied immediately to the session
+8. Click **"💾 Save Progress"** to checkpoint your work
+9. Repeat until all assigned rows are marked `Completed`
+10. Click **"✅ Submit Caseload as Complete"** to finalize and send to supervisor
 
 #### Completion Checklist (What “Done” Means)
 
 Use this checklist to ensure your caseload is ready to submit:
 
-1. Open each remaining case row assigned to you
-2. Review/update the editable fields required for your report type
-3. Set **Worker Status** for that row:
+1. In **📝 My Assigned Reports**, set the filter to **Pending / In Progress**
+2. Open each remaining case row assigned to you
+3. Review/update the editable fields required for your report type
+4. Set **Worker Status** for that row:
    - **Not Started**: you have not begun work on the row
    - **In Progress**: you have started but are not finished
    - **Completed**: row is fully reviewed and ready for supervisor
-4. Use the in-app **Update** control (when available) to apply changes for each row
-5. Confirm there are no assigned rows remaining in `Not Started` or `In Progress`
-6. Click **✅ Submit Caseload as Complete** to finalize
+5. Click **💾 Save Progress** regularly (recommended after every few rows)
+6. Before submitting, switch the filter to **All** and verify there are **no** assigned rows left in **Not Started** or **In Progress**
+7. Click **✅ Submit Caseload as Complete**
 
-**Important:** The app validates completion and will block submission if any assigned rows are not marked **Completed**. This prevents partial or inconsistent submissions.
+**Important:** The app will block submission if any of your assigned rows are not marked **Completed**. This is intentional to prevent partial or inconsistent submissions.
 
 ---
+
 
 ## 56RA Report Spreadsheet Instructions (Support Officer)
 
 ### Background / Rationale (Summary)
 
-56RA helps identify cases where OCSS can still meet Service of Process (SOP) and move the case forward (establish an order, provide customer service, or close when appropriate). Data captured on the worksheet supports analysis of outcomes, success, bottlenecks, and process gaps.
+56RA helps identify cases where OCSS can still meet Service of Process (SOP) and move the case forward — establish an order, provide customer service, or close when appropriate. Data captured on the worksheet supports analysis of outcomes, success, bottlenecks, and process gaps.
 
-1. Open the Locate report in the Command Center application.
-2. Review each assigned case directly in the app.
-3. Clear the NCP in all relevant databases (BMV, SVES, court dockets, ODRC, Work Number, etc.).
-   - If there is an indication the NCP may be out of state, request a **CLEAR** search.
-4. Record all received information in the app fields for each case.
-   - Ensure the **Data received** field is blank if no new information.
-   - Consider **NAS** / **UNL** closures if criteria are met.
-5. Attempt contact with CP/CTR and/or PPF/NCP (if available) via phone, JFS7711, web portal, etc.
-   - Narrate what you requested and the deadline (if applicable).
-   - If the client provides address information, take the next appropriate action.
-6. If applicable, close the case using the appropriate closure code:
-   - **UNL**: locate 2+ years with SSN
-   - **NAS**: locate 6+ months with no SSN
-7. If the NCP is located, process the next appropriate action within **5 business days** (SOP clock starts when CIP1 is updated with a valid address).
-   - Review OnBase for any required documents (do not delay unless necessary documents are missing).
-8. Narrate every case directly in the app.
-9. Submit your completed Locate report in the app. Submission is blocked until all assigned cases are marked **Completed**.
+### Step-by-step
+
+- Save the spreadsheet to your P: drive or Desktop.
+- Filter the **Caseload** column to show only your caseload(s).
+- Review every case on your caseload.
+- Take real action (do not only narrate that action is needed): schedule GT, prep ADS, refer to court, close case, etc.
+- Complete these fields for each case:
+  - **Date Report was Processed** (in the app: **Date Action Taken**)
+  - **Action Taken/Status** (select from drop-down)
+  - **Case Narrated** (narration describing status, action taken, next steps)
+  - **Comment** (as needed; required if **Action Taken/Status = OTHER**)
+- Narrate every case (when applicable include status, action taken, and next steps/follow-up needed).
+- Email the completed spreadsheet to your Supervisor and Establishment PO3 at each deadline.
+
+### 56RA Action Taken/Status values
+
+- Scheduled GT
 - Pending GTU
 - Prepped ADS
 - Pending AHU
@@ -591,16 +593,13 @@ Process every case on the work list to meet SOP requirements, provide customer s
 
 ### Step-by-step
 
-1. Open the Paternity-Support Work List in the Command Center application.
-2. Work your assigned unit/caseload cases directly in the app and meet the monthly deadlines.
-3. Document actions for each case in **Action Taken/Status** (select from drop-down).
-4. Complete all required fields and narrate each case as appropriate.
-5. Submit your completed work list in the app. Submission is blocked until all assigned cases are marked **Completed**.
-6. Contact your Supervisor with questions or for review.
-4. Narrations must begin with **P-S Report.**
-5. Avoid unnecessary appointments; contact clients via phone, web portal, etc.
-6. Complete all actions and follow up (no “to be scheduled” narrations).
-7. Email the completed report to your Supervisor and Emily at each deadline.
+- Save the worksheet to your P: drive or Desktop.
+- Work your assigned unit/caseload cases and meet the monthly deadlines.
+- Document actions in **Action Taken/Status** (drop-down).
+- Narrations must begin with **P-S Report**.
+- Avoid unnecessary appointments; contact clients via phone, web portal, etc.
+- Complete all actions and follow up (no “to be scheduled” narrations).
+- Email the completed report to your Supervisor and Emily at each deadline.
 
 ### P-S Action Taken/Status values
 
@@ -632,21 +631,23 @@ The Locate report identifies cases where OCSS can still meet locate-effort requi
 
 ### Step-by-step
 
-1. 
-4. Clear the NCP in all relevant databases (BMV, SVES, court dockets, ODRC, Work Number, etc.).
-   - If there is an indication the NCP may be out of state, request a **CLEAR** search.
-5. Clear all received information on **ILSU**.
-   - Ensure the **Data received** column is blank.
-   - Consider **NAS** / **UNL** closures if criteria are met.
-6. Attempt contact with CP/CTR and/or PPF/NCP (if available) via phone, JFS7711, web portal, etc.
-   - Narrate what you requested and the deadline (if applicable).
-   - If the client provides address information, take the next appropriate action.
-7. If applicable, close the case using the appropriate closure code:
-   - **UNL**: locate 2+ years with SSN
-   - **NAS**: locate 6+ months with no SSN
-8. If the NCP is located, process the next appropriate action within **5 business days** (SOP clock starts when CIP1 is updated with a valid address).
-   - Review OnBase for any required documents (do not delay unless necessary documents are missing).
-9. Narrate every case that appears on the spreadsheet.
+- Save the spreadsheet to your Desktop or P: drive.
+- Filter the **Caseload** column to only your caseload(s).
+- Review each case on the spreadsheet.
+- Clear the NCP in all relevant databases (BMV, SVES, court dockets, ODRC, Work Number, etc.).
+  - If there is an indication the NCP may be out of state, request a **CLEAR** search.
+- Clear all received information on **ILSU**.
+  - Ensure the **Data received** column is blank.
+  - Consider **NAS / UNL** closures if criteria are met.
+- Attempt contact with CP/CTR and/or PPF/NCP (if available) via phone, JFS7711, web portal, etc.
+  - Narrate what you requested and the deadline (if applicable).
+  - If the client provides address information, take the next appropriate action.
+- If applicable, close the case using the appropriate closure code:
+  - **UNL**: locate 2+ years with SSN
+  - **NAS**: locate 6+ months with no SSN
+- If the NCP is located, process the next appropriate action within **5 business days** (SOP clock starts when CIP1 is updated with a valid address).
+  - Review OnBase for any required documents (do not delay unless necessary documents are missing).
+- Narrate every case that appears on the spreadsheet.
 
 ### Narration patterns (examples)
 

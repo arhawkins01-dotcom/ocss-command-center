@@ -1,3 +1,6 @@
+# Server Deployment Requirements
+# These dependencies should be installed on the Windows Server
+
 # Core Framework
 streamlit>=1.30.0
 
@@ -18,3 +21,8 @@ python-json-logger>=2.0.0
 
 # Optional Performance Enhancements
 pyarrow>=14.0.0
+
+# Python Package Manager
+pip>=23.0.0
+setuptools>=65.0.0
+wheel>=0.40.0

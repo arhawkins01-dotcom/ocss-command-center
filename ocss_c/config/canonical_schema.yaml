@@ -1,0 +1,103 @@
+# Canonical schema definitions for OCSS Command Center data ingestion.
+#
+# This file is intentionally "data-only" (no code) so that downstream tools
+# can standardize file templates and header mappings without importing Python.
+#
+# NOTE: The Streamlit app currently implements these rules in:
+# - app/report_utils.py (normalize_support_report_dataframe, SUPPORT_REPORT_HEADER_ALIASES)
+# - app/app.py (mirrors of the same mapping)
+#
+# If you update this file, consider updating those Python mappings as well.
+
+schema:
+  name: OCSS Establishment Command Center Canonical Schema
+  version: 1
+  last_updated: "2026-02-20"
+
+# Canonical model (Excel tabs -> unified table).
+canonical_model:
+  description: >-
+    All imported report rows are mapped into these core canonical fields.
+    This enables consistent filtering, KPI rollups, and drilldown case lists.
+  fields:
+    case_number: { type: string, notes: "SETS Number or Case Number" }
+    caseload: { type: string }
+    case_type: { type: string, notes: "Normalized to UPPER" }
+    case_mode: { type: string, notes: "Normalized to UPPER" }
+    service_due_date: { type: date, notes: "56 report primarily" }
+    action_taken_date: { type: date, notes: "Date Action Taken / Date Case Reviewed" }
+    action_taken_status: { type: string, notes: "Action Taken/Status / Results of Review" }
+    case_closure_code: { type: string, notes: "Locate only" }
+    case_narrated: { type: boolean, notes: "Parsed from Y/N/Yes/No" }
+    comment: { type: string }
+    report_source: { type: enum, values: ["56", "PS", "LOCATE"] }
+    activity_date: { type: date, notes: "coalesce(action_taken_date, service_due_date)" }
+
+lineage_fields:
+  ingestion_id: { type: string, notes: "Batch/import identifier" }
+  source_filename: { type: string }
+  sheet_name: { type: string, notes: "XLSX sheet name when applicable" }
+  imported_at: { type: datetime }
+
+reports:
+  detection_rules:
+    description: "Header signature detection rules"
+    header_signature:
+      "56":
+        all_of: ["setsnumber", "servicedue"]
+      "LOCATE":
+        any_of: ["resultsofreview", "caseclosurecode"]
+      "PS":
+        all_of: ["casenumber", "casetype", "casemode"]
+
+  source_columns:
+    "56":
+      columns:
+        - "SETS Number"
+        - Caseload
+        - Mode
+        - Type
+        - "Service Due"
+        - "Date Action Taken"
+        - "Action Taken/Status"
+        - "Case Narrated"
+        - "Comment (as needed)"
+    PS:
+      columns:
+        - "Case Number"
+        - Caseload
+        - "Case Type"
+        - "Case Mode"
+        - "Action Taken/Status"
+        - "Case Narrated"
+        - Comments
+    LOCATE:
+      columns:
+        - "Case Number"
+        - "Case load"
+        - "Case Type"
+        - "Case Mode"
+        - "Date Case Reviewed"
+        - "Results of Review"
+        - "Case Closure Code"
+        - "Case Narrated"
+        - Comment
+
+normalization:
+  header_key:
+    algorithm: "lowercase_then_keep_only_alphanumeric"
+    example:
+      input: "Action Taken/Status"
+      output: "actiontakenstatus"
+
+  caseload_number:
+    description: >-
+      Normalizes caseload values to digits-only, preferring 6-digit values
+      that start with "18". 4-digit values starting with "1" are expanded
+      to 6 digits by prefixing "18".
+    rules:
+      - "Remove all non-digit characters"
+      - "If result is 4 digits and starts with '1' => prefix '18'"
+      - "If result is 6 digits and starts with '18' => keep"
+      - "Otherwise keep digits-only result"
+

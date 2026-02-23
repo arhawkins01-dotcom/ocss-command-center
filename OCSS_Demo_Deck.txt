@@ -1,0 +1,57 @@
+OCSS Command Center Demo
+Senior Leadership & IT Demo
+Date: February 21, 2026
+
+---
+
+Slide 1: Introduction
+- Purpose: Streamlined reporting, analytics, and knowledge management for OCSS
+- Audience: Senior Leadership, IT, Development Director
+
+---
+
+Slide 2: Application Overview
+- Streamlit-based dashboard
+- Role-based access: Director, Deputy Director, Manager, Officer, Supervisor
+- Demo authentication mode
+
+---
+
+Slide 3: Knowledge Base
+- Auto-refreshed from documentation
+- Editable in-app for admins
+- User Guide & Technical Guide integration
+
+---
+
+Slide 4: Reports & Exports
+- Leadership exports: KPIs, metrics, team performance
+- Completion rates, on-time submissions, data quality scores
+- “All Ingested Reports” export
+
+---
+
+Slide 5: Data Ingestion Workflow
+- Import/upload sample data
+- Consolidated reporting
+- Demo: Show ingestion and export
+
+---
+
+Slide 6: Documentation & Support
+- Updated User Manual & Technical Guide
+- In-app Knowledge Base
+- IT-managed SSO option
+
+---
+
+Slide 7: Demo Readiness
+- Integration tests passed
+- Port conflict handling
+- All features and docs up-to-date
+
+---
+
+Slide 8: Q&A / Next Steps
+- Customization options
+- Feedback and support channels
