@@ -59,7 +59,8 @@ SUPPORTED_USER_ROLES = CORE_APP_ROLES
 ROLE_VIEW_MAP = {
     "Deputy Director": "Director",
     "Senior Administrative Officer": "Supervisor",
-    "Team Lead": "Supervisor"
+    # Team Leads process reports like Support Officers (not Supervisors)
+    "Team Lead": "Support Officer"
 }
 
 DEFAULT_DEPARTMENTS = [
