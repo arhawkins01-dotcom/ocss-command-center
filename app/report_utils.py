@@ -412,6 +412,24 @@ def canonical_to_workflow_dataframe(canonical_df: Optional[pd.DataFrame]) -> pd.
     return out
 
 
+def _sanitize_pii_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Redact obvious PII-like columns (SSN, DOB, birth, social) when enabled.
+
+    This is conservative and only targets columns whose name indicates PII.
+    """
+    if df is None or df.empty:
+        return df
+    pii_patterns = re.compile(r"ssn|social|dob|birth|date_of_birth|person[_ ]?id|identifier", re.I)
+    redacted = df.copy()
+    for col in redacted.columns:
+        if pii_patterns.search(str(col)):
+            try:
+                redacted[col] = '<REDACTED>'
+            except Exception:
+                pass
+    return redacted
+
+
 COMMON_SUPPORT_REPORT_HEADERS = [
     'Case Number',
     'Caseload',
@@ -822,7 +840,12 @@ class ReportProcessor:
     """Main class for processing establishment reports"""
     
     def __init__(self):
-        self.supported_extensions = ['.xlsx', '.xls', '.csv']
+        # Load supported extensions from central settings so deployments can restrict types
+        try:
+            from .config import settings
+            self.supported_extensions = settings.ALLOWED_UPLOAD_EXTENSIONS
+        except Exception:
+            self.supported_extensions = ['.xlsx', '.xls', '.csv']
         self.required_columns = ['Case_ID', 'Worker', 'Status']
         
     def validate_file_extension(self, filename: str) -> bool:
@@ -846,12 +869,42 @@ class ReportProcessor:
         """
         try:
             file_extension = Path(filename).suffix.lower()
+            # Basic size check
+            try:
+                from .config import settings
+                max_bytes = getattr(settings, 'MAX_UPLOAD_SIZE_BYTES', None)
+                max_rows = getattr(settings, 'MAX_IMPORT_ROWS', None)
+                sanitize_pii = getattr(settings, 'SANITIZE_PII_ON_IMPORT', False)
+            except Exception:
+                max_bytes = None
+                max_rows = None
+                sanitize_pii = False
+
+            if max_bytes and len(file_data) > max_bytes:
+                raise ValueError(f"Uploaded file exceeds maximum allowed size ({max_bytes} bytes)")
+
             if file_extension in ['.xlsx', '.xls']:
+                # Read all sheets, then enforce row limits and optional sanitization
                 all_sheets = pd.read_excel(io.BytesIO(file_data), sheet_name=None)
-                logger.info(f"Successfully read Excel file: {filename}, sheets: {list(all_sheets.keys())}")
-                return all_sheets
+                processed = {}
+                for name, df in (all_sheets or {}).items():
+                    if df is None:
+                        continue
+                    if max_rows and len(df) > max_rows:
+                        df = df.head(max_rows).copy()
+                    if sanitize_pii:
+                        df = _sanitize_pii_columns(df)
+                    processed[name] = df
+                logger.info(f"Successfully read Excel file: {filename}, sheets: {list(processed.keys())}")
+                return processed
             elif file_extension == '.csv':
-                df = pd.read_csv(io.BytesIO(file_data))
+                # Use nrows for CSV to limit import size
+                if max_rows:
+                    df = pd.read_csv(io.BytesIO(file_data), nrows=max_rows)
+                else:
+                    df = pd.read_csv(io.BytesIO(file_data))
+                if sanitize_pii:
+                    df = _sanitize_pii_columns(df)
                 logger.info(f"Successfully read CSV file: {filename}, shape: {df.shape}")
                 return {'Data': df}
             else:
@@ -1024,6 +1077,15 @@ class ReportExporter:
         Returns:
             Bytes content of Excel file
         """
+        try:
+            from .config import settings
+            if not getattr(settings, 'ALLOW_DOWNLOADS', True):
+                logger.warning("Excel export requested but downloads are disabled in configuration.")
+                raise NotImplementedError("Downloads are disabled in this deployment.")
+        except Exception:
+            # If settings cannot be loaded, fall back to allowing exports
+            pass
+
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name='Data')

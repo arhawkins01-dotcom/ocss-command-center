@@ -216,6 +216,10 @@ User Management displays a derived **Unit Role** column:
 - Support Officers: **Team Lead** vs **Support Officer** based on unit configuration
 - Director role users: leadership title from the stored Unit Role (Director / Deputy Director / Department Manager / Senior Administrative Officer)
 
+**KPI Scope Toggle**
+
+Directors and Deputy Directors can now toggle KPI scope between **Agency** and **Department** level views. When "Department" is selected, choose a department from the selector to view escalation alerts and caseload work-status filtered to units belonging to that department. This mirrors the existing Department Manager departmental KPI view and enables targeted oversight from executive roles.
+
 ---
 
 ## 3. System Requirements

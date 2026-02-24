@@ -72,6 +72,17 @@ On the left sidebar, use the **"Select Your Role"** radio buttons to choose your
 - Support Officer
 - IT Administrator
 
+Additional Roles Available in the Sidebar (Expanded UI)
+- Deputy Director
+- Department Manager
+- Senior Administrative Officer
+
+Role Capability Notes
+- Leadership roles (Deputy Director, Department Manager, Program Officer, Senior Administrative Officer, Supervisor) now have expanded management capabilities including user management and caseload management similar to IT Administrator. The `Director` role retains executive-only privileges and does not process caseloads directly.
+
+Deployment Safety
+- Exports and downloads (Excel/Word/CSV) can be disabled in an environment by setting the `ALLOW_DOWNLOADS` environment variable to `false`. This is recommended for production deployments where exporting live data is restricted.
+
 The main content area will update to show features relevant to your role.
 
 **Note**: If authentication is enabled and you are signed in, role selection is handled automatically.

@@ -175,6 +175,15 @@ VALIDATION_RULES = {
 EXPORT_FORMATS = ['xlsx', 'csv', 'json']
 DEFAULT_EXPORT_FORMAT = 'xlsx'
 
+# Download / export safety: set to 'false' in production env to disable downloads
+ALLOW_DOWNLOADS = os.getenv('ALLOW_DOWNLOADS', 'true').lower() == 'true'
+
+# Import sanitization: when true, attempt to redact obvious PII columns during ingestion
+SANITIZE_PII_ON_IMPORT = os.getenv('SANITIZE_PII_ON_IMPORT', 'false').lower() == 'true'
+
+# Maximum number of rows to read from uploaded files to avoid very large imports
+MAX_IMPORT_ROWS = int(os.getenv('MAX_IMPORT_ROWS', str(200000)))
+
 # KPI Thresholds
 KPI_THRESHOLDS = {
     'completion_rate': {

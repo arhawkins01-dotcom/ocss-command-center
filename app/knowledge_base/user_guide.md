@@ -96,6 +96,10 @@ The main content area will update to show features relevant to your role.
 - Review monthly submission trends
 - Identify strategic wins and action items
 
+**KPI Scope Toggle (Executives)**
+
+Directors and Deputy Directors may now choose the KPI scope at the top of the KPIs tab: `Agency` (organization-wide) or `Department`. Selecting `Department` opens a department selector and filters alerts and caseload rollups to the chosen department, matching the Department Manager's departmental KPI view.
+
 **👥 Caseload Management Tab**
 - Overview of all active caseloads
 - Regional distribution metrics
