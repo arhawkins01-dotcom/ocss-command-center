@@ -26,7 +26,7 @@ app/requirements.txt
 
 **Branch to Deploy:**
 ```
-copilot/build-streamlit-application
+main
 ```
 (or `main` once merged)
 
@@ -48,7 +48,7 @@ Fill in the deployment form with these values:
 | Field | Value |
 |-------|-------|
 | **Repository** | `arhawkins01-dotcom/ocss-command-center` |
-| **Branch** | `copilot/build-streamlit-application` (or `main`) |
+| **Branch** | `main` |
 | **Main file path** | `app/app.py` ⭐ |
 
 > 🚨 **IMPORTANT:** The "Main file path" must be exactly `app/app.py` (with the `app/` prefix).
@@ -82,7 +82,7 @@ Click **"Advanced settings"** if you need to configure:
 You can use this URL to quickly start the deployment process:
 
 ```
-https://share.streamlit.io/deploy?repository=arhawkins01-dotcom/ocss-command-center&branch=copilot/build-streamlit-application&mainModule=app/app.py
+https://share.streamlit.io/deploy?repository=arhawkins01-dotcom/ocss-command-center&branch=main&mainModule=streamlit_app.py
 ```
 
 ---

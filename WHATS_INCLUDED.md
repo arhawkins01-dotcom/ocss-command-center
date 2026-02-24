@@ -145,13 +145,13 @@ All required packages specified:
 3. **Click "New app"**
 4. **Enter these values:**
    - Repository: `arhawkins01-dotcom/ocss-command-center`
-   - Branch: `copilot/build-streamlit-application`
+   - Branch: `main`
    - Main file path: `app/app.py`
 5. **Click "Deploy!"**
 
 **Or use this direct link:**
 ```
-https://share.streamlit.io/deploy?repository=arhawkins01-dotcom/ocss-command-center&branch=copilot/build-streamlit-application&mainModule=app/app.py
+https://share.streamlit.io/deploy?repository=arhawkins01-dotcom/ocss-command-center&branch=main&mainModule=streamlit_app.py
 ```
 
 **That's it!** All 5 dashboards, all features, all enhancements will be live in 2-3 minutes!

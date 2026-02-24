@@ -87,7 +87,7 @@ When deploying, use these settings:
 | Setting | Value |
 |---------|-------|
 | **Repository** | `arhawkins01-dotcom/ocss-command-center` |
-| **Branch** | `copilot/build-streamlit-application` or `main` |
+| **Branch** | `main` |
 | **Main file path** | `app/app.py` ⭐ |
 | **Python version** | 3.10 or higher |
 
@@ -98,7 +98,7 @@ When deploying, use these settings:
 Use this pre-configured link with the correct path:
 
 ```
-https://share.streamlit.io/deploy?repository=arhawkins01-dotcom/ocss-command-center&branch=copilot/build-streamlit-application&mainModule=app/app.py
+https://share.streamlit.io/deploy?repository=arhawkins01-dotcom/ocss-command-center&branch=main&mainModule=streamlit_app.py
 ```
 
 Notice the `mainModule=app/app.py` parameter!
