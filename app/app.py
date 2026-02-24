@@ -10,14 +10,15 @@ import inspect
 import hashlib
 from pathlib import Path
 import shutil
-    try:
-        # Preferred: package-relative imports when `app` is a package.
-        from .report_utils import SupportReportIngestionService, canonical_to_workflow_dataframe
+# Support running `app` as a package or as a top-level script. Prefer
+# package-relative imports when possible, but fall back to absolute imports
+# so `streamlit run app/app.py` also works in development environments.
+try:
+    from .report_utils import SupportReportIngestionService, canonical_to_workflow_dataframe
     from . import database
     from . import auth
-    except Exception:
-        # Fallback: absolute imports when modules are loaded as top-level scripts
-        from report_utils import SupportReportIngestionService, canonical_to_workflow_dataframe
+except Exception:
+    from report_utils import SupportReportIngestionService, canonical_to_workflow_dataframe
     import database
     import auth
 
@@ -27,10 +28,7 @@ except Exception:  # pragma: no cover
     Document = None
 
 try:
-    try:
-        from .config import ensure_directories, get_data_path
-    except Exception:
-        from config import ensure_directories, get_data_path
+    from .config import ensure_directories, get_data_path
 except Exception:  # pragma: no cover
     ensure_directories = None
     get_data_path = None
@@ -59,8 +57,7 @@ SUPPORTED_USER_ROLES = CORE_APP_ROLES
 ROLE_VIEW_MAP = {
     "Deputy Director": "Director",
     "Senior Administrative Officer": "Supervisor",
-    # Team Leads process reports like Support Officers (not Supervisors)
-    "Team Lead": "Support Officer"
+    "Team Lead": "Supervisor"
 }
 
 DEFAULT_DEPARTMENTS = [
@@ -1112,8 +1109,6 @@ def _build_unit_assignments_df() -> pd.DataFrame:
                     'Assigned To': str(person or '').strip(),
                     'Caseload': normalize_caseload_number(caseload),
                 })
-    # Return a safe DataFrame even when there are no rows or unexpected data.
-    return _safe_df(rows)
 
 
 def _build_all_ingested_reports_df(scope_unit: str | None = None) -> pd.DataFrame:
@@ -4990,50 +4985,6 @@ The app will block submission if any of your assigned rows are not marked **Comp
                                 st.info("No case rows match the selected filter.")
                                 selected_report['data'] = working_df
                             else:
-                                # Build and show helper/prepopulated columns derived from the row data
-                                def _digits_only(s):
-                                    return ''.join(ch for ch in str(s) if ch.isdigit())
-
-                                helper_df = candidate_rows.copy()
-                                # Prepopulated Case Number (digits-only; prefer 10-digit for 56)
-                                helper_df['Prepop Case Number'] = helper_df.get('Case Number', '').astype(str).fillna('').map(_digits_only)
-                                try:
-                                    source_val = str(selected_report.get('report_source', '')).strip().upper()
-                                except Exception:
-                                    source_val = ''
-                                if source_val == '56':
-                                    def _fmt56(v):
-                                        if len(v) == 10:
-                                            return v
-                                        if len(v) > 10:
-                                            return v[-10:]
-                                        return v
-                                    helper_df['Prepop Case Number'] = helper_df['Prepop Case Number'].map(_fmt56)
-
-                                # Prepopulated Caseload (short 4-digit when possible)
-                                helper_df['Prepop Caseload'] = helper_df.get('Caseload', '').astype(str).fillna('').map(_digits_only).map(
-                                    lambda v: (v[-4:] if (v.startswith('18') and len(v) == 6) else v)
-                                )
-
-                                # Case Type normalized
-                                helper_df['Prepop Case Type'] = helper_df.get('Case Type', '').astype(str).fillna('').str.strip().str.upper()
-
-                                # Case Mode normalized to S/P when possible
-                                def _fmt_mode(v):
-                                    v = str(v).strip().upper()
-                                    if not v:
-                                        return ''
-                                    if v and v[0] in ('S', 'P'):
-                                        return v[0]
-                                    return v
-                                helper_df['Prepop Case Mode'] = helper_df.get('Case Mode', '').astype(str).fillna('').map(_fmt_mode)
-
-                                # Service Due (already parsed earlier as a date column in the canonical flow)
-                                helper_df['Prepop Service Due'] = helper_df.get('Service Due', '')
-
-                                with st.expander("Auto-filled (prepopulated) helper values — review before editing", expanded=False):
-                                    display_cols = [c for c in ['Prepop Case Number', 'Prepop Caseload', 'Prepop Case Type', 'Prepop Case Mode', 'Prepop Service Due'] if c in helper_df.columns]
-                                    st.dataframe(helper_df[display_cols].head(50), use_container_width=True)
                                 # Ensure workflow/content columns exist so the sheet editor can enforce
                                 # consistent processing across report types.
                                 for required_col in [
@@ -5148,34 +5099,37 @@ The app will block submission if any of your assigned rows are not marked **Comp
                                     + ", ".join([c for c in sheet_df.columns if c in editable_columns and c != 'Worker Status'])
                                 )
 
-                                # Before rendering the editor, copy prepopulated helper values
-                                # into editable columns when those cells are blank so workers
-                                # start with sensible defaults they can adjust.
-                                prepop_df = helper_df.copy()
-                                # Align indices
-                                prepop_df = prepop_df.reindex(sheet_df.index)
-                                # For each editable column, if the cell is blank, fill from prepop
-                                for col in editable_columns:
-                                    prepop_col = None
-                                    if col == 'Action Taken/Status' and 'Prepop Case Type' in prepop_df.columns:
-                                        prepop_col = 'Prepop Case Type'
-                                    elif col == 'Date Action Taken' and 'Prepop Service Due' in prepop_df.columns:
-                                        prepop_col = 'Prepop Service Due'
-                                    elif col == 'Case Narrated' and 'Prepop Case Mode' in prepop_df.columns:
-                                        prepop_col = 'Prepop Case Mode'
-                                    elif col == 'Comment' and 'Prepop Case Type' in prepop_df.columns:
-                                        prepop_col = 'Prepop Case Type'
-                                    # default mapping: try to use like-named prepop columns
-                                    if prepop_col is None and f'Prepop {col}' in prepop_df.columns:
-                                        prepop_col = f'Prepop {col}'
-                                    if prepop_col and prepop_col in prepop_df.columns and col in sheet_df.columns:
-                                        for idx in sheet_df.index:
-                                            try:
-                                                cur = str(sheet_df.at[idx, col]) if col in sheet_df.columns else ''
-                                            except Exception:
-                                                cur = ''
-                                            if not cur or cur.strip() == '':
-                                                sheet_df.at[idx, col] = prepop_df.at[idx, prepop_col]
+                                # Guidance panel for workers: status usage, required fields, and narration templates
+                                with st.expander("Worker Guidance & Narration Templates", expanded=False):
+                                    st.markdown(
+                                        """
+- **Worker Status**: Use the following statuses consistently:
+    - **Not Started**: you have not begun
+    - **In Progress**: you are actively working the row
+    - **Completed**: row is fully reviewed and ready for supervisor
+
+- **When marking a row "Completed"**: ensure required fields for the report type are filled.
+    - Locate required fields: **Date Case Reviewed**, **Results of Review**, **Case Narrated** = Yes, and **Comment** for certain outcomes/closures.
+
+- Use the per-row **Update** control (when shown) to apply edits for a single row. The app persists edits to session state automatically while you work.
+
+- **When all assigned rows are Completed**: use **✅ Submit Caseload as Complete** to finalize — the app validates completion and required fields before allowing submission.
+
+Sample narration templates (copy/paste):
+
+56RA Report: Case pending GTU. Action taken: Scheduled GT. Next steps: follow up after appointment date.
+
+56RA Report: PCR pending at court. Next hearing: //____. Next steps: monitor docket and follow up.
+
+56RA Report: COBO. Sent COBO letter(s) to all parties. Deadline: //____.
+
+Locate Report: Cleared BMV/SVES/dockets/ODRC/Work Number; no info. Contacted CP; no new address. Case in locate 2+ years with SSN; closed UNL.
+
+Locate Report: Cleared databases; no info. No response from CP. Case in locate 6+ months without SSN; closed NAS.
+
+P-S Report: Contacted client via phone/web portal. Action taken: CONTACT LETTER. Next steps: follow up by //____.
+"""
+                                                                        )
 
                                 edited_sheet_df = st.data_editor(
                                     sheet_df,
@@ -5217,6 +5171,38 @@ The app will block submission if any of your assigned rows are not marked **Comp
                                             working_df.at[idx, col] = after
                                             if 'Last Updated' in working_df.columns:
                                                 working_df.at[idx, 'Last Updated'] = now_stamp
+                                            # If worker marked this row Completed, validate required fields for the report type.
+                                            try:
+                                                if col == 'Worker Status' and str(after).strip().lower() == 'completed':
+                                                    row = working_df.loc[idx].astype(str).fillna('')
+                                                    row_issues: list[str] = []
+                                                    if 'Case Narrated' in row.index:
+                                                        if row.get('Case Narrated', '').strip().lower() != 'yes':
+                                                            row_issues.append('Case Narrated must be Yes')
+                                                    if report_source_value == 'Locate':
+                                                        if 'Date Case Reviewed' in row.index and row.get('Date Case Reviewed', '').strip() == '':
+                                                            row_issues.append('Date Case Reviewed is required for Locate')
+                                                        if 'Results of Review' in row.index and row.get('Results of Review', '').strip() == '':
+                                                            row_issues.append('Results of Review is required for Locate')
+                                                        else:
+                                                            rr = row.get('Results of Review', '').strip().lower()
+                                                            if ('closed' in rr or 'unl' in rr or 'nas' in rr) and 'Comment' in row.index and row.get('Comment', '').strip() == '':
+                                                                row_issues.append('Comment required for closure outcomes')
+                                                    if report_source_value in {'PS', '56'}:
+                                                        if 'Action Taken/Status' in row.index and row.get('Action Taken/Status', '').strip() == '':
+                                                            row_issues.append('Action Taken/Status is required for PS/56 when Completed')
+                                                        if report_source_value == '56' and 'Date Action Taken' in row.index and row.get('Date Action Taken', '').strip() == '':
+                                                            row_issues.append('Date Action Taken is required for 56 when Completed')
+                                                    if 'Action Taken/Status' in row.index and row.get('Action Taken/Status', '').strip().upper() == 'OTHER':
+                                                        if 'Comment' in row.index and row.get('Comment', '').strip() == '':
+                                                            row_issues.append('Comment required when Action Taken/Status = OTHER')
+                                                    if row_issues:
+                                                        working_df.at[idx, col] = before
+                                                        if idx in edited_sheet_df.index and col in edited_sheet_df.columns:
+                                                            edited_sheet_df.at[idx, col] = before
+                                                        st.warning(f"Row {idx}: cannot mark Completed — " + "; ".join(row_issues))
+                                            except Exception:
+                                                pass
 
                                     st.session_state.reports_by_caseload[selected_ref['caseload']][selected_ref['index']]['data'] = working_df
                                     st.rerun()
