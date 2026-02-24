@@ -10,14 +10,14 @@ import inspect
 import hashlib
 from pathlib import Path
 import shutil
-try:
-    # Preferred: package-relative imports when `app` is a package.
-    from .report_utils import SupportReportIngestionService
+    try:
+        # Preferred: package-relative imports when `app` is a package.
+        from .report_utils import SupportReportIngestionService, canonical_to_workflow_dataframe
     from . import database
     from . import auth
-except Exception:
-    # Fallback: absolute imports when modules are loaded as top-level scripts
-    from report_utils import SupportReportIngestionService
+    except Exception:
+        # Fallback: absolute imports when modules are loaded as top-level scripts
+        from report_utils import SupportReportIngestionService, canonical_to_workflow_dataframe
     import database
     import auth
 
@@ -4990,6 +4990,50 @@ The app will block submission if any of your assigned rows are not marked **Comp
                                 st.info("No case rows match the selected filter.")
                                 selected_report['data'] = working_df
                             else:
+                                # Build and show helper/prepopulated columns derived from the row data
+                                def _digits_only(s):
+                                    return ''.join(ch for ch in str(s) if ch.isdigit())
+
+                                helper_df = candidate_rows.copy()
+                                # Prepopulated Case Number (digits-only; prefer 10-digit for 56)
+                                helper_df['Prepop Case Number'] = helper_df.get('Case Number', '').astype(str).fillna('').map(_digits_only)
+                                try:
+                                    source_val = str(selected_report.get('report_source', '')).strip().upper()
+                                except Exception:
+                                    source_val = ''
+                                if source_val == '56':
+                                    def _fmt56(v):
+                                        if len(v) == 10:
+                                            return v
+                                        if len(v) > 10:
+                                            return v[-10:]
+                                        return v
+                                    helper_df['Prepop Case Number'] = helper_df['Prepop Case Number'].map(_fmt56)
+
+                                # Prepopulated Caseload (short 4-digit when possible)
+                                helper_df['Prepop Caseload'] = helper_df.get('Caseload', '').astype(str).fillna('').map(_digits_only).map(
+                                    lambda v: (v[-4:] if (v.startswith('18') and len(v) == 6) else v)
+                                )
+
+                                # Case Type normalized
+                                helper_df['Prepop Case Type'] = helper_df.get('Case Type', '').astype(str).fillna('').str.strip().str.upper()
+
+                                # Case Mode normalized to S/P when possible
+                                def _fmt_mode(v):
+                                    v = str(v).strip().upper()
+                                    if not v:
+                                        return ''
+                                    if v and v[0] in ('S', 'P'):
+                                        return v[0]
+                                    return v
+                                helper_df['Prepop Case Mode'] = helper_df.get('Case Mode', '').astype(str).fillna('').map(_fmt_mode)
+
+                                # Service Due (already parsed earlier as a date column in the canonical flow)
+                                helper_df['Prepop Service Due'] = helper_df.get('Service Due', '')
+
+                                with st.expander("Auto-filled (prepopulated) helper values — review before editing", expanded=False):
+                                    display_cols = [c for c in ['Prepop Case Number', 'Prepop Caseload', 'Prepop Case Type', 'Prepop Case Mode', 'Prepop Service Due'] if c in helper_df.columns]
+                                    st.dataframe(helper_df[display_cols].head(50), use_container_width=True)
                                 # Ensure workflow/content columns exist so the sheet editor can enforce
                                 # consistent processing across report types.
                                 for required_col in [
@@ -5103,6 +5147,35 @@ The app will block submission if any of your assigned rows are not marked **Comp
                                     f"Sheet editor (source: {report_source_value}). Editable fields: "
                                     + ", ".join([c for c in sheet_df.columns if c in editable_columns and c != 'Worker Status'])
                                 )
+
+                                # Before rendering the editor, copy prepopulated helper values
+                                # into editable columns when those cells are blank so workers
+                                # start with sensible defaults they can adjust.
+                                prepop_df = helper_df.copy()
+                                # Align indices
+                                prepop_df = prepop_df.reindex(sheet_df.index)
+                                # For each editable column, if the cell is blank, fill from prepop
+                                for col in editable_columns:
+                                    prepop_col = None
+                                    if col == 'Action Taken/Status' and 'Prepop Case Type' in prepop_df.columns:
+                                        prepop_col = 'Prepop Case Type'
+                                    elif col == 'Date Action Taken' and 'Prepop Service Due' in prepop_df.columns:
+                                        prepop_col = 'Prepop Service Due'
+                                    elif col == 'Case Narrated' and 'Prepop Case Mode' in prepop_df.columns:
+                                        prepop_col = 'Prepop Case Mode'
+                                    elif col == 'Comment' and 'Prepop Case Type' in prepop_df.columns:
+                                        prepop_col = 'Prepop Case Type'
+                                    # default mapping: try to use like-named prepop columns
+                                    if prepop_col is None and f'Prepop {col}' in prepop_df.columns:
+                                        prepop_col = f'Prepop {col}'
+                                    if prepop_col and prepop_col in prepop_df.columns and col in sheet_df.columns:
+                                        for idx in sheet_df.index:
+                                            try:
+                                                cur = str(sheet_df.at[idx, col]) if col in sheet_df.columns else ''
+                                            except Exception:
+                                                cur = ''
+                                            if not cur or cur.strip() == '':
+                                                sheet_df.at[idx, col] = prepop_df.at[idx, prepop_col]
 
                                 edited_sheet_df = st.data_editor(
                                     sheet_df,

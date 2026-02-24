@@ -9,7 +9,7 @@ https://github.com/arhawkins01-dotcom/ocss-command-center
 
 ### Repository Settings
 - **Repository:** `arhawkins01-dotcom/ocss-command-center`
-- **Branch:** `copilot/build-streamlit-application` or `main`
+- **Branch:** `main`
 - **Main file path:** `app/app.py` ⭐
 - **Python version:** 3.10+
 
@@ -20,7 +20,7 @@ https://github.com/arhawkins01-dotcom/ocss-command-center
 ### Direct Deploy URL
 Click this link to deploy directly:
 ```
-https://share.streamlit.io/deploy?repository=arhawkins01-dotcom/ocss-command-center&branch=copilot/build-streamlit-application&mainModule=app/app.py
+https://share.streamlit.io/deploy?repository=arhawkins01-dotcom/ocss-command-center&branch=main&mainModule=streamlit_app.py
 ```
 
 ### Your App URL (after deployment)

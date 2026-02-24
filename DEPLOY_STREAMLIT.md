@@ -5,9 +5,9 @@ This guide explains how to deploy the `ocss-command-center` app to Streamlit Com
 
 1) Quick deploy via Streamlit Cloud (recommended)
 
-- Push your code to GitHub (`main` branch).
-- Go to  https://share.streamlit.ioand sign in with GitHub.
-- Click "New app" → select repository `arhawkins01-dotcom/ocss-command-center`, branch `main`, and set the entrypoint to `streamlit_app.py`.
+-- Push your code to GitHub (`main` branch).
+-- Go to https://share.streamlit.io and sign in with GitHub.
+-- Click "New app" → select repository `arhawkins01-dotcom/ocss-command-center`, branch `main`, and set the entrypoint to `streamlit_app.py`.
 - Streamlit will install dependencies from `requirements.txt` automatically.
 - In the app settings enable "Auto deploy" to redeploy on every push to the selected branch.
 

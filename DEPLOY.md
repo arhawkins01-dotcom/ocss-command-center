@@ -1,13 +1,13 @@
 # Deploying OCSS Command Center to Streamlit Cloud
 
-This repository is prepared for Streamlit Cloud deployment. The branch `copilot/build-streamlit-application`
+This repository is prepared for Streamlit Cloud deployment. The `main` branch
 contains the Streamlit entrypoint `streamlit_app.py` and a root `requirements.txt` suitable for Cloud.
 
 Quick manual deploy (Streamlit Cloud)
 
 1. Open https://share.streamlit.io and sign in with your GitHub account.
 2. Click **New app** → select the repository `arhawkins01-dotcom/ocss-command-center`.
-3. Choose branch: `copilot/build-streamlit-application`.
+3. Choose branch: `main`.
 4. Set the main file to `streamlit_app.py` and click **Deploy**.
 
 Notes and recommended settings

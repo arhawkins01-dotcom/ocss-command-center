@@ -229,6 +229,17 @@ def apply_excel_parity_flags(canonical_df: Optional[pd.DataFrame]) -> pd.DataFra
     if canonical_df is None:
         return pd.DataFrame()
     df = canonical_df.copy()
+
+    def _ensure_series(col_name: str, default: Any = '') -> pd.Series:
+        val = df.get(col_name, default)
+        if isinstance(val, pd.Series):
+            # Ensure consistent string dtype for textual columns
+            try:
+                return val.astype(str).fillna('')
+            except Exception:
+                return val.fillna('').astype(str)
+        # scalar -> broadcast to series
+        return pd.Series([str(val) if val is not None else ''] * len(df), index=df.index)
     if df.empty:
         return df
 
@@ -303,15 +314,71 @@ def canonical_to_workflow_dataframe(canonical_df: Optional[pd.DataFrame]) -> pd.
     df = canonical_df.copy()
     out = pd.DataFrame(index=df.index.copy())
 
-    out['Case Number'] = df.get('case_number', '').astype(str)
-    out['Caseload'] = df.get('caseload', '').astype(str)
-    out['Case Type'] = df.get('case_type', '').astype(str)
-    out['Case Mode'] = df.get('case_mode', '').astype(str)
+    def _ensure_series(col_name: str, default: Any = '') -> pd.Series:
+        val = df.get(col_name, default)
+        if isinstance(val, pd.Series):
+            try:
+                return val.astype(str).fillna('')
+            except Exception:
+                return val.fillna('').astype(str)
+        return pd.Series([str(val) if val is not None else ''] * len(df), index=df.index)
+
+    # Normalize and prepopulate commonly used fields for the UI/editor
+    def _digits_only(s: Any) -> str:
+        return ''.join(ch for ch in str(s) if ch.isdigit())
+
+    report_source = ''
+    try:
+        report_source = str(df.get('report_source', '').astype(str).dropna().iloc[0]).strip().upper()
+    except Exception:
+        report_source = ''
+
+    # Case number: prefer digits-only. For 56/SETS ensure 10-digit format when possible.
+    raw_case = _ensure_series('case_number', '')
+    case_nums = raw_case.map(_digits_only)
+    if report_source == '56':
+        # try to extract or pad to 10 digits when reasonable
+        def _fmt_56(v: str) -> str:
+            if len(v) == 10:
+                return v
+            if len(v) > 10:
+                # take last 10 digits (common when prefixes exist)
+                return v[-10:]
+            return v
+        case_nums = case_nums.map(_fmt_56)
+
+    out['Case Number'] = case_nums.astype(str)
+
+    # Caseload: normalize numeric form; present short 4-digit when possible (strip leading 18)
+    raw_caseload = _ensure_series('caseload', '')
+    caseload_digits = raw_caseload.map(_digits_only)
+    def _short_caseload(v: str) -> str:
+        if v.startswith('18') and len(v) == 6:
+            return v[-4:]
+        if len(v) == 4:
+            return v
+        return v
+    out['Caseload'] = caseload_digits.map(_short_caseload).astype(str)
+
+    # Case Type: normalize to uppercase and validate common codes
+    raw_type = _ensure_series('case_type', '')
+    out['Case Type'] = raw_type.str.strip().str.upper()
+
+    # Case Mode: normalize to single-letter S/P when present
+    raw_mode = _ensure_series('case_mode', '')
+    def _fmt_mode(v: str) -> str:
+        v = v.strip().upper()
+        if not v:
+            return ''
+        if v and v[0] in ('S', 'P'):
+            return v[0]
+        return v
+    out['Case Mode'] = raw_mode.map(_fmt_mode)
 
     # Keep legacy naming even when the source is 56/PS.
     out['Date Case Reviewed'] = df.get('action_taken_date', pd.NaT)
-    out['Results of Review'] = df.get('action_taken_status', '').astype(str)
-    out['Case Closure Code'] = df.get('case_closure_code', '').astype(str)
+    out['Results of Review'] = _ensure_series('action_taken_status', '').astype(str)
+    out['Case Closure Code'] = _ensure_series('case_closure_code', '').astype(str)
 
     if 'case_narrated' in df.columns:
         narrated = df['case_narrated']
@@ -319,20 +386,20 @@ def canonical_to_workflow_dataframe(canonical_df: Optional[pd.DataFrame]) -> pd.
     else:
         out['Case Narrated'] = ''
 
-    out['Comment'] = df.get('comment', '').astype(str)
+    out['Comment'] = _ensure_series('comment', '').astype(str)
 
     # Add parity-friendly extra columns (safe to ignore by UI).
-    out['Report Source'] = df.get('report_source', '').astype(str)
+    out['Report Source'] = _ensure_series('report_source', '').astype(str)
     out['Service Due'] = df.get('service_due_date', pd.NaT)
     out['Date Action Taken'] = df.get('action_taken_date', pd.NaT)
-    out['Action Taken/Status'] = df.get('action_taken_status', '').astype(str)
+    out['Action Taken/Status'] = _ensure_series('action_taken_status', '').astype(str)
     out['Activity Date'] = df.get('activity_date', pd.NaT)
-    out['Flags'] = df.get('flag_reasons', '').astype(str)
-    out['Flag Severity'] = df.get('flag_severity', '').astype(str)
-    out['Ingestion ID'] = df.get('ingestion_id', '').astype(str)
-    out['Source File'] = df.get('source_filename', '').astype(str)
-    out['Sheet Name'] = df.get('sheet_name', '').astype(str)
-    out['Imported At'] = df.get('imported_at', '').astype(str)
+    out['Flags'] = _ensure_series('flag_reasons', '').astype(str)
+    out['Flag Severity'] = _ensure_series('flag_severity', '').astype(str)
+    out['Ingestion ID'] = _ensure_series('ingestion_id', '').astype(str)
+    out['Source File'] = _ensure_series('source_filename', '').astype(str)
+    out['Sheet Name'] = _ensure_series('sheet_name', '').astype(str)
+    out['Imported At'] = _ensure_series('imported_at', '').astype(str)
 
     # Workflow columns
     if 'Worker Status' not in out.columns:
