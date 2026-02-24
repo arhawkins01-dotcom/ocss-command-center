@@ -1,3 +1,5 @@
+import streamlit as st
+SAFE_MODE = True
 import sqlite3
 import pandas as pd
 import json

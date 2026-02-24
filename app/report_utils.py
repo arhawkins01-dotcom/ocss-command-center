@@ -822,7 +822,8 @@ class ReportProcessor:
     """Main class for processing establishment reports"""
     
     def __init__(self):
-        self.supported_extensions = ['.xlsx', '.xls', '.csv']
+        # Excel support disabled: only CSV uploads allowed
+        self.supported_extensions = ['.csv']
         self.required_columns = ['Case_ID', 'Worker', 'Status']
         
     def validate_file_extension(self, filename: str) -> bool:
@@ -846,16 +847,12 @@ class ReportProcessor:
         """
         try:
             file_extension = Path(filename).suffix.lower()
-            if file_extension in ['.xlsx', '.xls']:
-                all_sheets = pd.read_excel(io.BytesIO(file_data), sheet_name=None)
-                logger.info(f"Successfully read Excel file: {filename}, sheets: {list(all_sheets.keys())}")
-                return all_sheets
-            elif file_extension == '.csv':
+            # Only CSV upload/processing is supported now
+            if file_extension == '.csv':
                 df = pd.read_csv(io.BytesIO(file_data))
                 logger.info(f"Successfully read CSV file: {filename}, shape: {df.shape}")
                 return {'Data': df}
-            else:
-                raise ValueError(f"Unsupported file format: {file_extension}")
+            raise ValueError(f"Unsupported file format: {file_extension}. Excel support has been disabled; upload CSV files only.")
         except Exception as e:
             logger.error(f"Error reading file {filename}: {str(e)}")
             raise
@@ -1024,12 +1021,8 @@ class ReportExporter:
         Returns:
             Bytes content of Excel file
         """
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name='Data')
-        output.seek(0)
-        logger.info(f"DataFrame exported to Excel: {filename}")
-        return output.getvalue()
+        logger.error("Excel export requested but Excel support is disabled.")
+        raise NotImplementedError("Excel export is disabled. Please export to CSV or JSON instead.")
     
     @staticmethod
     def to_csv(df: pd.DataFrame) -> str:
