@@ -5534,15 +5534,15 @@ elif role == "Support Officer":
                                 st.markdown(
                                     f"""
 1. Set **Case Row Filter** to **Pending / In Progress**
-2. Open and update each row assigned to you
+2. Open and update each row assigned to you using the in-app editor (do NOT save report files to your local drives).
 3. Use **Worker Status** consistently:
    - **Not Started**: you have not begun
    - **In Progress**: you are actively working the row
    - **Completed**: row is fully reviewed and ready for supervisor
 4. When marking a row **Completed**, fill the report-type required fields:
 {required_fields_text}
-5. Click **💾 Save Progress** regularly
-6. Submit only when **all** your assigned rows are **Completed**
+5. Click **💾 Save Progress** regularly to persist edits to session state. Avoid editing files offline — use the in-app editor and **Save Progress**.
+6. Submit only when **all** your assigned rows are **Completed** using the **✅ Submit Caseload as Complete** button.
 
 The app will block submission if any of your assigned rows are not marked **Completed**.
 

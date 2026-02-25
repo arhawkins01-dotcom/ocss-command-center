@@ -1,7 +1,20 @@
+import importlib.util
+import os
+import sys
 import streamlit as st
 from datetime import datetime, timedelta
 
-from app.helpers import get_kpi_metrics
+# Ensure the app source directory is importable (so report_utils and others resolve)
+app_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if app_dir not in sys.path:
+    sys.path.insert(0, app_dir)
+
+# Load helpers module directly to avoid package import issues during pytest collection
+_helpers_path = os.path.join(app_dir, 'helpers.py')
+spec = importlib.util.spec_from_file_location("app_helpers", _helpers_path)
+helpers = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(helpers)
+get_kpi_metrics = helpers.get_kpi_metrics
 
 
 def test_get_kpi_metrics_basic():

@@ -211,6 +211,20 @@ Director/Program Officer views include a caseload rollup table that combines ass
 - **Caseload Reassignment & Self-Pull:** Directors and Supervisors can now functionally move caseloads between workers, and Supervisors can self-pull unassigned caseloads to themselves directly from their dashboard. This updates the underlying session state immediately, reflecting changes across all dashboards.
 - **Submission Safety:** Support Officers cannot submit a caseload as "Complete" if any row remains in "Pending" or "In Progress" status. A warning is displayed, ensuring data completeness before supervisory review.
 
+##### Report Completion & In-App Editing (Operational Guidance)
+
+To maintain data integrity and auditability across the workflow, the application requires Support Officers and Program Officers to use the built-in editor and submission controls rather than editing files offline:
+
+1. Open the report in the in-app editor (expand the report card for the selected caseload).
+2. Update case rows using the provided editable fields and picklists; do not download the report, edit locally, and re-upload.
+3. For report-type specific required fields, the app enforces these on submission:
+  - **P-S**: `Action Taken/Status`, `Case Narrated = Yes`, and `Comment` if `Action Taken/Status = OTHER`.
+  - **56RA**: `Date Report was Processed (Date Action Taken)`, `Action Taken/Status`, `Case Narrated = Yes`, and `Comment` if `Action Taken/Status = OTHER`.
+  - **Locate**: `Date Case Reviewed`, `Results of Review`, `Case Narrated = Yes`, and `Comment` for closure outcomes.
+4. Use **Save Progress** to persist row edits to session state; use **Submit Caseload as Complete** when all assigned rows meet completion criteria.
+
+Rationale: in-app editing preserves row-level metadata (assigned worker, timestamps, acknowledgements) and prevents conflicting versions that arise from local file editing.
+
 **User Management (Unit Role column):**
 User Management displays a derived **Unit Role** column:
 - Support Officers: **Team Lead** vs **Support Officer** based on unit configuration

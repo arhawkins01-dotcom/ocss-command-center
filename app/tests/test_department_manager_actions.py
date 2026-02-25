@@ -4,7 +4,23 @@ import os
 # Ensure app package is importable when tests run in CI or locally
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-from app.helpers import assign_caseloads_bulk, normalize_caseload_number
+import importlib.util
+import os
+import sys
+import streamlit as st
+
+# Ensure the app source directory is importable (so report_utils and others resolve)
+app_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if app_dir not in sys.path:
+    sys.path.insert(0, app_dir)
+
+# Load helpers module directly to avoid package import issues during pytest collection
+_helpers_path = os.path.join(app_dir, 'helpers.py')
+spec = importlib.util.spec_from_file_location("app_helpers", _helpers_path)
+helpers = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(helpers)
+assign_caseloads_bulk = helpers.assign_caseloads_bulk
+normalize_caseload_number = helpers.normalize_caseload_number
 import streamlit as st
 
 

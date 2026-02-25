@@ -132,6 +132,51 @@ Alerts and export views adapt based on Unit Role.
 - Identify teams needing support
 - Export reports for executive briefings
 
+### Deputy Director
+
+**Purpose**: Support the Director with agency-wide oversight and act as an alternate executive for KPI and export workflows.
+
+Deputy Directors share the Director's dashboard and capabilities (they map to the Director view). They can:
+- Toggle KPI scope (Agency / Department) and view filtered department rollups
+- Run leadership exports and download executive briefing packets
+- Reassign caseloads and manage user/unit configurations when delegated
+
+Use Case: The Deputy Director acts as the Director's delegate during absences and supports cross-department coordination.
+
+### Department Manager
+
+**Purpose**: Department-scoped leadership for supervising multiple units and ensuring department-level KPI performance.
+
+Department Managers have department-scoped access to alerts, caseload rollups, and leadership exports. Key features:
+- Department KPI tab: view escalations and caseload work-status filtered to units that belong to the manager's department
+- Department-scoped leadership exports (Excel/Word) for briefings and operational reviews
+- Ability to manage users and units within their department and perform bulk or single caseload reassignments
+- Same server-side guards as leadership roles ensure assignments and reassignments are audited and permission-checked
+
+Use Case: Department Managers reconcile unit-level workloads, support supervisors, and surface department trends to executive leadership.
+
+### Senior Administrative Officer
+
+**Purpose**: Operational leader with supervisor-level responsibilities for administrative coordination and org hygiene.
+
+The Senior Administrative Officer (SAO) maps to the Supervisor view with additional leadership capabilities. SAOs can:
+- Access team-level caseload status and performance analytics
+- Run leadership exports scoped to their oversight area
+- Assist with user management and unit setup
+
+Use Case: SAOs handle administrative coordination across units, step in for supervisors, and support Director-level requests.
+
+### Team Lead
+
+**Purpose**: Senior support worker responsible for leading a small team and processing caseloads.
+
+Team Leads function like Support Officers for caseload processing but have extra permissions:
+- Can self-pull caseloads for their unit and supervise assigned Support Officers
+- Included in unit assignment lists and counted toward Team Lead minima for organizational validation
+- Can process case rows, use the in-app editor, and submit caseloads while retaining an oversight role for their team
+
+Use Case: Team Leads coordinate day-to-day processing, mentor Support Officers, and ensure submissions meet required quality standards.
+
 ---
 
 ### Program Officer
@@ -341,6 +386,22 @@ View and process reports by caseload:
 - **Use CSV Export**: Download data for offline analysis or archiving
 - **Update Status**: Use `Worker Status` (`Not Started`, `In Progress`, `Completed`) per case line
 - **Ask for Help**: Use Support Tickets if you encounter data issues
+
+### Report Completion: Use In-App Editing (Do Not Save Locally)
+
+For all report types (56RA, P-S, Locate) the Command Center enforces row-level validation and submission rules. Follow these steps to complete reports consistently:
+
+1. Use the in-app editor inside the report card — do not download, edit, and re-upload files from your local drive.
+2. Set **Case Row Filter** to **Pending / In Progress** and work rows one at a time.
+3. For **P-S** rows: ensure **Action Taken/Status**, **Case Narrated = Yes**, and **Comment** if Action Taken/Status = OTHER.
+4. For **56RA** rows: ensure **Date Report was Processed**, **Action Taken/Status**, **Case Narrated = Yes**, and **Comment** if Action Taken/Status = OTHER.
+5. For **Locate** rows: ensure **Date Case Reviewed**, **Results of Review**, **Case Narrated = Yes**, and **Comment** for closure or exceptional outcomes.
+6. Click **💾 Save Progress** frequently to persist your edits in-session.
+7. Use **✅ Submit Caseload as Complete** only when *all* assigned rows are marked **Completed** and all required fields are present; the app will block submission otherwise.
+
+Why this matters:
+- The in-app editor preserves row-level metadata and prevents synchronization issues introduced by local file edits.
+- Using the built-in **Save Progress** and **Submit** controls ensures auditability and prevents lost or conflicting updates.
 
 ---
 
