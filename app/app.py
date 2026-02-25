@@ -51,13 +51,31 @@ database.init_db()
 # this module with a minimal proxy that provides `session_state` and harmless
 # no-op functions so import-time evaluation of UI helpers won't fail.
 if __name__ != "__main__":
+    class _StUIProxy:
+        """A lightweight proxy for nested Streamlit UI containers (sidebar, expander, etc.).
+
+        Attribute access returns a no-op callable so calls like `st.sidebar.title(...)`
+        or `st.expander(...).button(...)` do not raise during import-time evaluation.
+        """
+        def __getattr__(self, name):
+            def _noop(*args, **kwargs):
+                return None
+            return _noop
+
+        def __call__(self, *args, **kwargs):
+            return None
+
     class _StImportProxy:
         def __init__(self):
             # Use the real streamlit.session_state if present, else provide a dict
             self.session_state = getattr(st, 'session_state', {})
 
         def __getattr__(self, name):
-            # Return a no-op callable for UI functions used during import
+            # For UI container attributes (sidebar, expander, etc.) return a UI proxy
+            if name in ('sidebar', 'expander', 'container', 'form', 'beta_columns', 'columns'):
+                return _StUIProxy()
+
+            # Return a no-op callable for other UI functions used during import
             def _noop(*args, **kwargs):
                 return None
             return _noop
