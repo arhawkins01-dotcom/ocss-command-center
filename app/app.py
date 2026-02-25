@@ -56,6 +56,7 @@ if __name__ != "__main__":
 
         Attribute access returns a no-op callable so calls like `st.sidebar.title(...)`
         or `st.expander(...).button(...)` do not raise during import-time evaluation.
+        Also supports use as a context manager (`with st.expander(...):`).
         """
         def __getattr__(self, name):
             def _noop(*args, **kwargs):
@@ -65,15 +66,38 @@ if __name__ != "__main__":
         def __call__(self, *args, **kwargs):
             return None
 
+        # Support use as a context manager (e.g., `with st.expander(...):`)
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
     class _StImportProxy:
         def __init__(self):
             # Use the real streamlit.session_state if present, else provide a dict
             self.session_state = getattr(st, 'session_state', {})
 
         def __getattr__(self, name):
-            # For UI container attributes (sidebar, expander, etc.) return a UI proxy
-            if name in ('sidebar', 'expander', 'container', 'form', 'beta_columns', 'columns'):
+            # UI container attributes return a proxy that safely swallows attribute calls
+            if name in ('sidebar', 'expander', 'container', 'form'):
                 return _StUIProxy()
+
+            # `columns` accepts an int or list/tuple of widths and returns a sequence
+            # of column objects; provide proxies so unpacking works in tests.
+            if name in ('columns', 'beta_columns'):
+                def _cols(arg, *args, **kwargs):
+                    try:
+                        if isinstance(arg, int):
+                            n = int(arg)
+                        elif isinstance(arg, (list, tuple)):
+                            n = len(arg)
+                        else:
+                            n = 1
+                    except Exception:
+                        n = 1
+                    return tuple(_StUIProxy() for _ in range(n))
+                return _cols
 
             # Return a no-op callable for other UI functions used during import
             def _noop(*args, **kwargs):
