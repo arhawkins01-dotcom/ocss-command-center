@@ -46,6 +46,24 @@ except Exception:  # pragma: no cover
 # Initialize Database
 database.init_db()
 
+# When this module is imported (e.g., during pytest collection), avoid executing
+# Streamlit UI code that requires a running ScriptRunContext. Replace `st` in
+# this module with a minimal proxy that provides `session_state` and harmless
+# no-op functions so import-time evaluation of UI helpers won't fail.
+if __name__ != "__main__":
+    class _StImportProxy:
+        def __init__(self):
+            # Use the real streamlit.session_state if present, else provide a dict
+            self.session_state = getattr(st, 'session_state', {})
+
+        def __getattr__(self, name):
+            # Return a no-op callable for UI functions used during import
+            def _noop(*args, **kwargs):
+                return None
+            return _noop
+
+    st = _StImportProxy()
+
 # Ensure local data/log/export directories exist (dev + internal server deployments).
 try:
     if ensure_directories:
