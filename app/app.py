@@ -165,23 +165,15 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom styling
-                                          st.markdown(
-                                                f"""
-1. Set **Case Row Filter** to **Pending / In Progress**
-2. Open and update each row assigned to you using the in-app editor — do not download, edit, and re-upload files from your local drive.
-3. Use **Worker Status** consistently:
-    - **Not Started**: you have not begun
-    - **In Progress**: you are actively working the row
-    - **Completed**: row is fully reviewed and ready for supervisor
-4. When marking a row **Completed**, fill the report-type required fields:
-```"""
-                                          )
-        font-size: 2.5em;
-        margin-bottom: 10px;
-    }
+# Custom styling (minimal)
+st.markdown(
+    """
+    <style>
+    .cc-title { font-size: 2.2em; margin-bottom: 8px; }
     </style>
-""", unsafe_allow_html=True)
+    """,
+    unsafe_allow_html=True,
+)
 
 # Initialize session state
 if 'uploaded_reports' not in st.session_state:
