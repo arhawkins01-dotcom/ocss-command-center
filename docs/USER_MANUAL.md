@@ -1,3 +1,277 @@
+# OCSS Command Center - User Manual
+
+**Version 1.0.0**  
+**Last Updated: February 21, 2026**
+
+---
+
+## Table of Contents
+
+1. [System Overview](#system-overview)
+2. [Getting Started](#getting-started)
+3. [Role-Specific Guides](#role-specific-guides)
+   - [Director](#director)
+   - [Program Officer](#program-officer)
+   - [Supervisor](#supervisor)
+   - [Support Officer](#support-officer)
+   - [IT Administrator](#it-administrator)
+4. [Common Tasks](#common-tasks)
+5. [Troubleshooting](#troubleshooting)
+6. [Support & Contact](#support--contact)
+
+---
+
+## System Overview
+
+The OCSS Command Center is a centralized dashboard for managing establishment reports, caseloads, and team assignments. The system provides role-based views to support different workflows across your organization.
+
+### Key Features
+
+**Report Processing**: Upload, review, edit, and export unit reports
+**Team Coordination**: Supervisors and Senior Administrative Officers manage units and assign work to team members
+- **Escalation Alerts**: Time-based alerts for overdue/unacknowledged work (with acknowledgements)
+- **Leadership Exports**: Senior leadership can download Word/Excel briefing packs from live application data
+- **Help Ticket Center**: All roles can submit; leadership and IT roles can analyze ticket KPIs
+
+### System Requirements
+
+- Modern web browser (Chrome, Firefox, Edge, Safari)
+- Network access to the OCSS Command Center server
+- Your assigned username/credentials (when authentication is enabled)
+
+### Important Notes
+
+- **Mixed Persistence Model**:
+   - **Organizational configuration persists across app restarts** (Users, Units, Assignments, Current User (for audit), and Alert Acknowledgements)
+   - **Report data is session-based** (uploaded report content and row-level edits)
+   - Use **Leadership Exports** (Excel/Word) for periodic snapshots when needed
+
+---
+
+## Getting Started
+
+### Accessing the System
+
+1. Open your web browser
+2. Navigate to: `http://[your-server-address]:8501`
+3. The dashboard will load automatically
+
+### Signing In (Optional)
+
+Most deployments use the sidebar role selector (no sign-in). Some environments (management demo or IT-managed SSO gateway) may enable a sign-in screen.
+
+- If you see a **Sign in** screen, complete sign-in (or choose **Continue without signing in** when available).
+- When signed in, your **role is locked** to your authenticated identity and the sidebar role radio will not appear.
+
+### Selecting Your Role
+
+On the left sidebar, use the **"Select Your Role"** radio buttons to choose your role:
+- Director
+- Program Officer
+- Supervisor
+- Support Officer
+- IT Administrator
+
+The main content area will update to show features relevant to your role.
+
+**Note**: If authentication is enabled and you are signed in, role selection is handled automatically.
+
+---
+
+## Role-Specific Guides
+
+### Director
+
+**Purpose**: Executive oversight, strategic planning, and performance monitoring.
+
+#### Dashboard Features
+
+**📊 KPIs & Metrics Tab**
+- **Alerts (Escalation)**: A compact expander shows aging/unacknowledged work relevant to your leadership title (see Unit Role below)
+- View organizational performance metrics:
+  - Report Completion Rate
+  - On-Time Submissions
+  - Data Quality Score
+  - CQI Alignments
+- Review monthly submission trends
+- Identify strategic wins and action items
+
+**KPI Scope Toggle (Executives)**
+
+Directors and Deputy Directors may now choose the KPI scope at the top of the KPIs tab: `Agency` (organization-wide) or `Department`. Selecting `Department` opens a department selector and filters alerts and caseload rollups to the chosen department, matching the Department Manager's departmental KPI view.
+
+**👥 Caseload Management Tab**
+- Overview of all active caseloads
+- Regional distribution metrics
+- Completion status by region
+- **Leadership Exports (Excel/Word)**: Download an executive packet from live application data (caseload status, alerts, assignments, audit)
+   - Includes **All Ingested Reports**: a consolidated report of everything ingested by import/upload
+
+**Leadership Titles (Unit Role)**
+The sidebar role remains **Director**, but leadership titles are captured under **Unit Role** in User Management:
+- Director (one allowed)
+- Deputy Director
+- Department Manager
+- Senior Administrative Officer
+
+Alerts and export views adapt based on Unit Role.
+
+**📋 Team Performance Tab**
+- Individual worker performance comparison (dynamically updated)
+- Real-time team efficiency metrics and quality scores
+- **Note**: This tab now aggregates data directly from Support Officer work queues.
+
+**🆘 Ticket KPIs Tab**
+- Organization-level ticket analytics
+- Filter support by scope, priority, category, establishment, and date window
+- Custom date range with automatic start/end correction
+
+#### Quick Actions
+
+- Monitor high-level trends
+- Identify teams needing support
+- Export reports for executive briefings
+
+### Deputy Director
+
+**Purpose**: Support the Director with agency-wide oversight and act as an alternate executive for KPI and export workflows.
+
+Deputy Directors share the Director's dashboard and capabilities (they map to the Director view). They can:
+- Toggle KPI scope (Agency / Department) and view filtered department rollups
+- Run leadership exports and download executive briefing packets
+- Reassign caseloads and manage user/unit configurations when delegated
+
+Use Case: The Deputy Director acts as the Director's delegate during absences and supports cross-department coordination.
+
+### Department Manager
+
+**Purpose**: Department-scoped leadership for supervising multiple units and ensuring department-level KPI performance.
+
+Department Managers have department-scoped access to alerts, caseload rollups, and leadership exports. Key features:
+- Department KPI tab: view escalations and caseload work-status filtered to units that belong to the manager's department
+- Department-scoped leadership exports (Excel/Word) for briefings and operational reviews
+- Ability to manage users and units within their department and perform bulk or single caseload reassignments
+- Same server-side guards as leadership roles ensure assignments and reassignments are audited and permission-checked
+
+Use Case: Department Managers reconcile unit-level workloads, support supervisors, and surface department trends to executive leadership.
+
+### Senior Administrative Officer
+
+**Purpose**: Operational leader with supervisor-level responsibilities for administrative coordination and org hygiene.
+
+The Senior Administrative Officer (SAO) maps to the Supervisor view with additional leadership capabilities. SAOs can:
+- Access team-level caseload status and performance analytics
+- Run leadership exports scoped to their oversight area
+- Assist with user management and unit setup
+
+Use Case: SAOs handle administrative coordination across units, step in for supervisors, and support Director-level requests.
+
+### Team Lead
+
+**Purpose**: Senior support worker responsible for leading a small team and processing caseloads.
+
+Team Leads function like Support Officers for caseload processing but have extra permissions:
+- Can self-pull caseloads for their unit and supervise assigned Support Officers
+- Included in unit assignment lists and counted toward Team Lead minima for organizational validation
+- Can process case rows, use the in-app editor, and submit caseloads while retaining an oversight role for their team
+
+Use Case: Team Leads coordinate day-to-day processing, mentor Support Officers, and ensure submissions meet required quality standards.
+
+---
+
+### Program Officer
+
+**Purpose**: Upload establishment reports and manage caseload data.
+
+#### Dashboard Features
+
+**📤 Upload & Processing Tab**
+
+1. **Select Caseload**: Choose the target caseload (181000, 181001, 181002, etc.)
+2. **Upload File**: Click "Browse files" and select an Excel (.xlsx) or CSV file
+3. **Review Preview**: The system displays:
+   - File name and size
+   - Number of rows and columns
+   - Data preview (first 5 rows)
+4. **Set Ingestion Metadata**:
+   - Report Type (for example: P-S Report)
+   - Frequency (Monthly / Quarterly / Bi-Annual)
+   - Period Year and Period Value
+   - **Due-Date Clock**: For monthly 56RA / P-S / Locate sources, the app calculates a due date automatically based on the monthly schedule (see below). The clock starts at upload time.
+5. **Process Report**: Click **"Process Report"**
+6. **Review Confirmation**:
+   - Ingestion ID (`ING-...`) is displayed on success
+   - Duplicate-period scanning runs automatically before ingest
+   - **Note**: Any non-critical processing warnings are now grouped in a collapsible "⚠️ Warnings" section to keep your view clean. Click to expand and review them.
+
+7. **(Optional) Rename processed report display names**:
+   - Update the **"Rename to"** field for one or more processed items
+   - Click **"✏️ Update"** to apply a single rename
+   - Or click **"✏️ Update All Names"** to apply all edits in one step
+
+**📊 Caseload Overview Tab**
+- View all active caseloads
+- See upload statistics by caseload
+- Monitor report status
+
+**📋 Report Status Tab**
+- Track reports in progress
+- View completion status
+- Export summary data
+
+**🆘 Ticket KPIs Tab**
+- Program Officer ticket KPI analytics with the same filters used by leadership roles
+
+#### Best Practices
+
+**File Format**: Use standardized Excel templates for initial uploads; all subsequent report completion and editing is done in the Command Center application
+**Naming Convention**: Name files clearly (e.g., `ENV_Report_Q1_2026.xlsx`)
+**Data Validation**: Review the preview before uploading to catch errors early
+**Regular Uploads**: Upload reports as soon as they're prepared to keep work flowing
+
+#### Monthly Report Distribution Schedule (Current)
+
+For monthly processing cycles, the QA due-date clock is based on the report source and month:
+
+| Month | Primary Report (QA) | Secondary Report (QA) |
+|---|---|---|
+| January | 56RA (3 days) | P-S (2 days) |
+| February | Locate (3 days) | P-S (2 days) |
+| March | P-S (5 days) |  |
+| April | 56RA (3 days) | P-S (2 days) |
+| May | Locate (3 days) | P-S (2 days) |
+| June | P-S (5 days) |  |
+| July | 56RA (3 days) | P-S (2 days) |
+| August | Locate (3 days) | P-S (2 days) |
+| September | P-S (5 days) |  |
+| October | 56RA (3 days) | P-S (2 days) |
+| November | Locate (3 days) | P-S (2 days) |
+| December | P-S (5 days) |  |
+
+If a report source cannot be detected or the frequency is not Monthly, the app uses a default due window.
+
+---
+
+### Supervisor
+
+**Purpose**: Manage your unit, assign caseloads to team members, and monitor team performance.
+
+**Who Uses This Role**: Supervisors use this role to manage their unit. Worker Self-Pull is available only to senior leadership (Director/Program Officer) and Support Officer **Team Leads**.
+
+#### Dashboard Features
+
+**👥 My Team & Assignments Tab**
+
+1. **Select Your Unit**: Choose your supervisor name from the dropdown
+2. **View Team**: See all team leads and support officers in your unit
+3. **View Assignments**: See which caseloads are assigned to each team member
+
+**Reassign Reports Within Unit**:
+- **From Worker**: Select the current assignee
+- **To Worker**: Select the new assignee
+- **Caseload to Move**: Choose the caseload
+- Click **"🔄 Move Caseload"** to reassign
+
 
 **Supervisor Self-Pull (Claim a Caseload):**
 
@@ -76,71 +350,26 @@ View and process reports by caseload:
    - File name
    - Key data fields
 3. **Edit Report Data**:
-   - Click inside the expandable report card
-   - Use the form to update field values
-   - Click **"💾 Update Report"** to save changes
+   - Click inside the expandable report card and use the provided fields to update values.
+   - Use the in-app **Update** control (when shown) to apply edits for a row; the app manages session state while you work.
 4. **Action Buttons**:
-   - **📥 Download CSV**: Export report data
+   - **📥 Download CSV**: Export report data for offline review or archiving
    - **✅ Approve**: Mark report as approved
-   - **💾 Save**: Save progress
    - **📤 Submit**: Submit for review
 
 **📝 My Assigned Reports Tab**
 - View report queue for your assigned caseloads
 - Process one case line at a time (row-level workflow)
-
-**Report Processing — Step-by-Step (Command Center)**
-
-Follow these five universal steps for each case line to match Command Center behavior and ensure consistent narration and status updates:
-
-1. Open Assigned Work Queue
-   - From the sidebar: Dashboard → Assigned Reports → select the caseload or report you were assigned.
-   - Click the report card to expand the first unworked case line.
-
-2. Review Case Status and Sources
-   - Check all linked systems displayed in the panel: SFRC, PEGT, CTHS, ILSU, court dockets, and locate sources (BMV, SVES, etc.).
-   - Note any existing `Worker Status`, prior contact attempts, `ilsu_status`, `postal_verification`, and whether `gt_scheduled` or `ads_ready` are present in the row details.
-
-3. Process the Required Action
-   - Choose the appropriate next action from the context-aware dropdown (examples below):
-     - `Schedule GT` — when paternity/eligibility is confirmed and a GT appointment must be scheduled.
-     - `Prep ADS` — when documents are ready for Alternative Dispute Services.
-     - `Refer to Court` — when evidence meets referral criteria.
-     - `Issue Contact Letter` / `COBO` — when written contact or notice is required.
-     - `Postal Verification` — when address confirmation is required.
-     - `Complete Locate Efforts` — when NCP is found or locate sources are exhausted.
-     - `Close Case` — when the case meets closure criteria (UNL, NAS, or other SOP criteria).
-
-4. Update Command Center Fields
-   - `Date Action Taken`: set to today or the date the activity occurred.
-   - `Action Taken / Status`: select the new status (e.g., `In Progress`, `Ready for GT`, `Located`, `Completed`).
-   - `Case Narrated (Y/N)`: mark `Y` when narration is complete.
-   - `Comments`: add supporting details (optional) and link any external documents (OnBase reference or local filename).
-   - Click **"💾 Update Report"** or **"💾 Save Progress"** to persist changes (the UI shows your last saved timestamp).
-
-5. Complete Case Narration (Standard)
-   - Use the narration template fields to capture the essential elements:
-     - **Status of Case** — current state after your action (e.g., Ready for GT, Located, Pending Court Referral).
-     - **Systems Reviewed** — list systems checked: SFRC, PEGT, CTHS, ILSU, Court Dockets, Locate sources.
-     - **Action Completed** — short description of what you did (scheduled GT, issued postal verification, attempted contact, etc.).
-     - **Next Steps** — what should happen next and who is responsible.
-   - Example narration:
-     - "Command Center Review: Status verified in SFRC. Locate sources checked. Postal verification issued. Case pending next SOP action."
-
-**Conditional Submit & Guards**
-- The **"✅ Submit Caseload"** button validates that all assigned rows are `Completed`. If rows are `Pending` or `In Progress`, submission is blocked and a warning lists the incomplete rows.
-- The app enforces report-type guardrails and required dropdowns for 56RA, P-S, and Locate reports — required fields must be filled before marking a row `Completed`.
-
-**Where to file documents**
-- When you attach or reference supporting documents, record the OnBase or other repository reference in `Comments` or the `Document Reference` field so supervisors and auditors can locate the files.
-
-View KPI Tracker and Throughput (7-day / 30-day) summaries
+- **How to complete this report (checklist)**: Review the in-dashboard checklist (includes sample narration templates you can copy/paste)
+ - **Submission Rules**: Use the **Submit Caseload** control to finalize your caseload; submission will only succeed when all assigned rows are marked `Completed` and required fields are present.
+- **Report-type guardrails**: The app enforces report-specific dropdowns and required fields (see the 56RA / P-S / Locate sections below)
+- View KPI Tracker and Throughput (7-day / 30-day) summaries
 
 #### Alerts for Support Officers
 
 - The app shows a lightweight warning when you have **unfinished and/or unsaved work**.
 - The **Alerts (Escalation)** expander is also available. Worker alerts focus on the **1–3 day** window before escalation moves upward.
-- Clicking **💾 Save Progress** also acknowledges the report to reduce repeated alerts.
+- Progress is persisted to session state as you work; use the Submit control to finalize and acknowledge completion.
 
 **🆘 Support Tickets Tab**
 - View and manage support requests related to your caseloads
@@ -157,6 +386,22 @@ View KPI Tracker and Throughput (7-day / 30-day) summaries
 - **Use CSV Export**: Download data for offline analysis or archiving
 - **Update Status**: Use `Worker Status` (`Not Started`, `In Progress`, `Completed`) per case line
 - **Ask for Help**: Use Support Tickets if you encounter data issues
+
+### Report Completion: Use In-App Editing (Do Not Save Locally)
+
+For all report types (56RA, P-S, Locate) the Command Center enforces row-level validation and submission rules. Follow these steps to complete reports consistently:
+
+1. Use the in-app editor inside the report card — do not download, edit, and re-upload files from your local drive.
+2. Set **Case Row Filter** to **Pending / In Progress** and work rows one at a time.
+3. For **P-S** rows: ensure **Action Taken/Status**, **Case Narrated = Yes**, and **Comment** if Action Taken/Status = OTHER.
+4. For **56RA** rows: ensure **Date Report was Processed**, **Action Taken/Status**, **Case Narrated = Yes**, and **Comment** if Action Taken/Status = OTHER.
+5. For **Locate** rows: ensure **Date Case Reviewed**, **Results of Review**, **Case Narrated = Yes**, and **Comment** for closure or exceptional outcomes.
+6. Click **💾 Save Progress** frequently to persist your edits in-session.
+7. Use **✅ Submit Caseload as Complete** only when *all* assigned rows are marked **Completed** and all required fields are present; the app will block submission otherwise.
+
+Why this matters:
+- The in-app editor preserves row-level metadata and prevents synchronization issues introduced by local file edits.
+- Using the built-in **Save Progress** and **Submit** controls ensures auditability and prevents lost or conflicting updates.
 
 ---
 
@@ -332,52 +577,57 @@ Export note:
 1. Select **Support Officer** role
 2. Choose your name in "Act as Support Officer / Team Lead"
 3. Go to **📝 My Assigned Reports** tab
-4. Select a report from your queue and open a case row
-5. Update editable row fields (including `Worker Status`) using the inline controls; use the in-app **Update** control to apply changes when shown
-6. Repeat until all assigned rows are marked `Completed`
-7. Click **"✅ Submit Caseload as Complete"** to finalize and send to supervisor — the application validates that all assigned rows are `Completed` before allowing submission
+4. Select a report from your queue
+5. Choose a case-row filter and select one case row
+6. Update editable row fields (including `Worker Status`)
+7. Edits are applied immediately to the session
+8. Click **"💾 Save Progress"** to checkpoint your work
+9. Repeat until all assigned rows are marked `Completed`
+10. Click **"✅ Submit Caseload as Complete"** to finalize and send to supervisor
 
 #### Completion Checklist (What “Done” Means)
 
 Use this checklist to ensure your caseload is ready to submit:
 
-1. Open each remaining case row assigned to you
-2. Review/update the editable fields required for your report type
-3. Set **Worker Status** for that row:
+1. In **📝 My Assigned Reports**, set the filter to **Pending / In Progress**
+2. Open each remaining case row assigned to you
+3. Review/update the editable fields required for your report type
+4. Set **Worker Status** for that row:
    - **Not Started**: you have not begun work on the row
    - **In Progress**: you have started but are not finished
    - **Completed**: row is fully reviewed and ready for supervisor
-4. Use the in-app **Update** control (when available) to apply changes for each row
-5. Confirm there are no assigned rows remaining in `Not Started` or `In Progress`
-6. Click **✅ Submit Caseload as Complete** to finalize
+5. Click **💾 Save Progress** regularly (recommended after every few rows)
+6. Before submitting, switch the filter to **All** and verify there are **no** assigned rows left in **Not Started** or **In Progress**
+7. Click **✅ Submit Caseload as Complete**
 
-**Important:** The app validates completion and will block submission if any assigned rows are not marked **Completed**. This prevents partial or inconsistent submissions.
+**Important:** The app will block submission if any of your assigned rows are not marked **Completed**. This is intentional to prevent partial or inconsistent submissions.
 
 ---
+
 
 ## 56RA Report Spreadsheet Instructions (Support Officer)
 
 ### Background / Rationale (Summary)
 
-56RA helps identify cases where OCSS can still meet Service of Process (SOP) and move the case forward (establish an order, provide customer service, or close when appropriate). Data captured on the worksheet supports analysis of outcomes, success, bottlenecks, and process gaps.
+56RA helps identify cases where OCSS can still meet Service of Process (SOP) and move the case forward — establish an order, provide customer service, or close when appropriate. Data captured on the worksheet supports analysis of outcomes, success, bottlenecks, and process gaps.
 
-1. Open the Locate report in the Command Center application.
-2. Review each assigned case directly in the app.
-3. Clear the NCP in all relevant databases (BMV, SVES, court dockets, ODRC, Work Number, etc.).
-   - If there is an indication the NCP may be out of state, request a **CLEAR** search.
-4. Record all received information in the app fields for each case.
-   - Ensure the **Data received** field is blank if no new information.
-   - Consider **NAS** / **UNL** closures if criteria are met.
-5. Attempt contact with CP/CTR and/or PPF/NCP (if available) via phone, JFS7711, web portal, etc.
-   - Narrate what you requested and the deadline (if applicable).
-   - If the client provides address information, take the next appropriate action.
-6. If applicable, close the case using the appropriate closure code:
-   - **UNL**: locate 2+ years with SSN
-   - **NAS**: locate 6+ months with no SSN
-7. If the NCP is located, process the next appropriate action within **5 business days** (SOP clock starts when CIP1 is updated with a valid address).
-   - Review OnBase for any required documents (do not delay unless necessary documents are missing).
-8. Narrate every case directly in the app.
-9. Submit your completed Locate report in the app. Submission is blocked until all assigned cases are marked **Completed**.
+### Step-by-step
+
+- Save the spreadsheet to your P: drive or Desktop.
+- Filter the **Caseload** column to show only your caseload(s).
+- Review every case on your caseload.
+- Take real action (do not only narrate that action is needed): schedule GT, prep ADS, refer to court, close case, etc.
+- Complete these fields for each case:
+  - **Date Report was Processed** (in the app: **Date Action Taken**)
+  - **Action Taken/Status** (select from drop-down)
+  - **Case Narrated** (narration describing status, action taken, next steps)
+  - **Comment** (as needed; required if **Action Taken/Status = OTHER**)
+- Narrate every case (when applicable include status, action taken, and next steps/follow-up needed).
+- Email the completed spreadsheet to your Supervisor and Establishment PO3 at each deadline.
+
+### 56RA Action Taken/Status values
+
+- Scheduled GT
 - Pending GTU
 - Prepped ADS
 - Pending AHU
@@ -408,16 +658,13 @@ Process every case on the work list to meet SOP requirements, provide customer s
 
 ### Step-by-step
 
-1. Open the Paternity-Support Work List in the Command Center application.
-2. Work your assigned unit/caseload cases directly in the app and meet the monthly deadlines.
-3. Document actions for each case in **Action Taken/Status** (select from drop-down).
-4. Complete all required fields and narrate each case as appropriate.
-5. Submit your completed work list in the app. Submission is blocked until all assigned cases are marked **Completed**.
-6. Contact your Supervisor with questions or for review.
-4. Narrations must begin with **P-S Report.**
-5. Avoid unnecessary appointments; contact clients via phone, web portal, etc.
-6. Complete all actions and follow up (no “to be scheduled” narrations).
-7. Email the completed report to your Supervisor and Emily at each deadline.
+- Save the worksheet to your P: drive or Desktop.
+- Work your assigned unit/caseload cases and meet the monthly deadlines.
+- Document actions in **Action Taken/Status** (drop-down).
+- Narrations must begin with **P-S Report**.
+- Avoid unnecessary appointments; contact clients via phone, web portal, etc.
+- Complete all actions and follow up (no “to be scheduled” narrations).
+- Email the completed report to your Supervisor and Emily at each deadline.
 
 ### P-S Action Taken/Status values
 
@@ -449,21 +696,23 @@ The Locate report identifies cases where OCSS can still meet locate-effort requi
 
 ### Step-by-step
 
-1. 
-4. Clear the NCP in all relevant databases (BMV, SVES, court dockets, ODRC, Work Number, etc.).
-   - If there is an indication the NCP may be out of state, request a **CLEAR** search.
-5. Clear all received information on **ILSU**.
-   - Ensure the **Data received** column is blank.
-   - Consider **NAS** / **UNL** closures if criteria are met.
-6. Attempt contact with CP/CTR and/or PPF/NCP (if available) via phone, JFS7711, web portal, etc.
-   - Narrate what you requested and the deadline (if applicable).
-   - If the client provides address information, take the next appropriate action.
-7. If applicable, close the case using the appropriate closure code:
-   - **UNL**: locate 2+ years with SSN
-   - **NAS**: locate 6+ months with no SSN
-8. If the NCP is located, process the next appropriate action within **5 business days** (SOP clock starts when CIP1 is updated with a valid address).
-   - Review OnBase for any required documents (do not delay unless necessary documents are missing).
-9. Narrate every case that appears on the spreadsheet.
+- Save the spreadsheet to your Desktop or P: drive.
+- Filter the **Caseload** column to only your caseload(s).
+- Review each case on the spreadsheet.
+- Clear the NCP in all relevant databases (BMV, SVES, court dockets, ODRC, Work Number, etc.).
+  - If there is an indication the NCP may be out of state, request a **CLEAR** search.
+- Clear all received information on **ILSU**.
+  - Ensure the **Data received** column is blank.
+  - Consider **NAS / UNL** closures if criteria are met.
+- Attempt contact with CP/CTR and/or PPF/NCP (if available) via phone, JFS7711, web portal, etc.
+  - Narrate what you requested and the deadline (if applicable).
+  - If the client provides address information, take the next appropriate action.
+- If applicable, close the case using the appropriate closure code:
+  - **UNL**: locate 2+ years with SSN
+  - **NAS**: locate 6+ months with no SSN
+- If the NCP is located, process the next appropriate action within **5 business days** (SOP clock starts when CIP1 is updated with a valid address).
+  - Review OnBase for any required documents (do not delay unless necessary documents are missing).
+- Narrate every case that appears on the spreadsheet.
 
 ### Narration patterns (examples)
 
