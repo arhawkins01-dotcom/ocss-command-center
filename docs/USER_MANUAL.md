@@ -354,7 +354,7 @@ View and process reports by caseload:
    - Use the in-app **Update** control (when shown) to apply edits for a row; the app manages session state while you work.
 4. **Action Buttons**:
    - **📥 Download CSV**: Export report data for offline review or archiving
-   - **✅ Approve**: Mark report as approved
+   - **✅ Approve**: Mark report as approved. Approvals are persistent: when you approve a report the system records the reviewer and timestamp in the application database.
    - **📤 Submit**: Submit for review
 
 **📝 My Assigned Reports Tab**
@@ -377,6 +377,10 @@ View and process reports by caseload:
 **📚 Knowledge Base Tab**
 - Access documentation and guides
 - Search for solutions to common issues
+
+#### Knowledge Base (Admin note)
+
+- The Knowledge Base content is seeded from the repository `docs/` directory into the runtime `data/knowledge_base/` on application start. If administrators edit KB files via the in-app KB admin, those files are preserved and will not be overwritten by later repo seeds; the manifest `.seed_manifest.json` records this behavior. To force a repo-based reseed, remove the manifest entry or restart the app after ensuring the seed sources are present in `docs/`.
 
 #### Support Officer Best Practices
 

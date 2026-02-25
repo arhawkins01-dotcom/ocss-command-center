@@ -171,6 +171,28 @@ def update_report_status(report_id, new_status):
     conn.commit()
     conn.close()
 
+
+def approve_report(report_id, reviewer=None):
+    """Mark a report as Approved and record reviewer metadata.
+
+    This sets `status='Approved'`, `reviewed_by` and `reviewed_date`.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        now = datetime.utcnow().isoformat()
+        cursor.execute(
+            """
+            UPDATE reports
+            SET status = ?, reviewed_by = ?, reviewed_date = ?, last_updated = CURRENT_TIMESTAMP
+            WHERE report_id = ?
+            """,
+            ("Approved", reviewer or "", now, report_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
 def get_pending_reports_for_supervisor(supervisor_caseloads):
     conn = get_connection()
     if not supervisor_caseloads:

@@ -153,7 +153,17 @@ if __name__ == 'app':
 # NOTE: Keep a literal `CORE_APP_ROLES` assignment in this file for test
 # and static-analysis compatibility. The canonical list used by the UI
 # continues to reference this literal via `SUPPORTED_USER_ROLES`.
-CORE_APP_ROLES = ["Director", "Program Officer", "Supervisor", "Support Officer", "IT Administrator"]
+CORE_APP_ROLES = [
+    "Director",
+    "Deputy Director",
+    "Department Manager",
+    "Program Officer",
+    "Senior Administrative Officer",
+    "Supervisor",
+    "Team Lead",
+    "Support Officer",
+    "IT Administrator",
+]
 # UI-level roles reference the canonical `CORE_APP_ROLES` name so tests
 # can detect whether the supported roles mirror the canonical list.
 SUPPORTED_USER_ROLES = CORE_APP_ROLES
@@ -6340,9 +6350,9 @@ render_help_ticket_center(selected_role)
 
 # Footer
 st.markdown("---")
-st.markdown("""
+st.markdown(f"""
 <div style="text-align: center; color: #888; font-size: 0.9em;">
     <p>OCSS Establishment Command Center | Version 1.0.0</p>
-    <p>Last Updated: """ + datetime.now().strftime("%B %d, %Y at %I:%M %p") + """</p>
+    <p>Last Updated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}</p>
 </div>
 """, unsafe_allow_html=True)
