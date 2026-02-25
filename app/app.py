@@ -166,17 +166,17 @@ st.set_page_config(
 )
 
 # Custom styling
-st.markdown("""
-    <style>
-    .metric-card {
-        background-color: #f0f2f6;
-        padding: 20px;
-        border-radius: 8px;
-        text-align: center;
-        margin: 10px 0;
-    }
-    .header-title {
-        color: #1f77b4;
+                                          st.markdown(
+                                                f"""
+1. Set **Case Row Filter** to **Pending / In Progress**
+2. Open and update each row assigned to you using the in-app editor — do not download, edit, and re-upload files from your local drive.
+3. Use **Worker Status** consistently:
+    - **Not Started**: you have not begun
+    - **In Progress**: you are actively working the row
+    - **Completed**: row is fully reviewed and ready for supervisor
+4. When marking a row **Completed**, fill the report-type required fields:
+```"""
+                                          )
         font-size: 2.5em;
         margin-bottom: 10px;
     }
@@ -5559,7 +5559,7 @@ elif role == "Support Officer":
    - **Completed**: row is fully reviewed and ready for supervisor
 4. When marking a row **Completed**, fill the report-type required fields:
 {required_fields_text}
-5. Click **💾 Save Progress** regularly to persist edits to session state. Avoid editing files offline — use the in-app editor and **Save Progress**.
+5. Click **💾 Save Progress** frequently to persist edits to session state. Do not edit files offline; use the in-app editor and **Save Progress**.
 6. Submit only when **all** your assigned rows are **Completed** using the **✅ Submit Caseload as Complete** button.
 
 The app will block submission if any of your assigned rows are not marked **Completed**.
