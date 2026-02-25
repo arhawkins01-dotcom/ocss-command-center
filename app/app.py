@@ -132,6 +132,13 @@ except Exception:
         map_to_view_role,
         get_supported_roles,
     )
+    try:
+        from . import notify
+    except Exception:
+        try:
+            import notify
+        except Exception:
+            notify = None
 
 # Backwards-compatibility: when `app/app.py` is imported as the top-level
 # module named 'app' (pytest sometimes adds `app/` to `sys.path`), make sure
@@ -5337,12 +5344,48 @@ elif role == "Support Officer":
                     with col2:
                         if st.button("✅ Approve", key=f"approve_report_{selected_caseload}_{report_idx}", use_container_width=True):
                             st.success(f"✓ {report['id']} approved!")
+                            try:
+                                database.approve_report(report['id'], reviewer=st.session_state.get('current_user', ''))
+                            except Exception:
+                                pass
                     with col3:
                         if st.button("💾 Save", key=f"save_report_{selected_caseload}_{report_idx}", use_container_width=True):
                             st.success(f"✓ {report['id']} saved!")
                     with col4:
                         if st.button("📤 Submit", key=f"submit_report_{selected_caseload}_{report_idx}", use_container_width=True):
                             st.success(f"✓ {report['id']} submitted for review!")
+
+                        # Notify Supervisor action: present simple form to confirm recipient and send CSV
+                        notify_key = f"notify_report_{selected_caseload}_{report_idx}"
+                        if st.button("📣 Notify Supervisor", key=notify_key, use_container_width=True):
+                            # Show a lightweight dialog replacement: inputs then send
+                            recipient_default = st.text_input("Supervisor email", value="ashombia.hawkins@jfs.ohio.gov", key=f"{notify_key}_email")
+                            message = st.text_area("Message (optional)", value=f"Please find attached the report export for {report['id']}", key=f"{notify_key}_msg")
+                            if st.button("Send Notification", key=f"{notify_key}_send"):
+                                # Build CSV bytes from the current in-form edits for this report
+                                edits_key = f"report_edits_{report['id']}"
+                                edits = st.session_state.get(edits_key, {})
+                                csv_bytes = pd.DataFrame(list(edits.items()), columns=['Field', 'Value']).to_csv(index=False).encode('utf-8')
+                                result = None
+                                try:
+                                    if notify:
+                                        result = notify.send_notification_report_csv(report['id'], csv_bytes, subject=None, recipient=recipient_default)
+                                    else:
+                                        # fallback: save to exports
+                                        exports_dir = _get_repo_root_dir() / 'exports'
+                                        exports_dir.mkdir(parents=True, exist_ok=True)
+                                        out = exports_dir / f"notify_{report['id']}.csv"
+                                        out.write_bytes(csv_bytes)
+                                        result = {'sent': False, 'error': 'notify module missing; saved to disk', 'saved_to': str(out)}
+                                except Exception as exc:
+                                    result = {'sent': False, 'error': str(exc), 'saved_to': ''}
+
+                                if result.get('sent'):
+                                    st.success(f"Notification sent to {recipient_default}.")
+                                else:
+                                    if result.get('saved_to'):
+                                        st.info(f"Notification fallback: saved to {result.get('saved_to')}")
+                                    st.warning(f"Notify result: {result.get('error')}")
         
         st.divider()
         
