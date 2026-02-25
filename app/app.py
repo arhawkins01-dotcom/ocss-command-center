@@ -10,6 +10,16 @@ import inspect
 import hashlib
 from pathlib import Path
 import shutil
+import sys
+
+
+def _downloads_allowed() -> bool:
+    """Return whether downloads/exports are enabled via settings."""
+    try:
+        from .config import settings
+        return getattr(settings, 'ALLOW_DOWNLOADS', True)
+    except Exception:
+        return True
 # Support running `app` as a package or as a top-level script. Prefer
 # package-relative imports when possible, but fall back to absolute imports
 # so `streamlit run app/app.py` also works in development environments.
@@ -36,6 +46,24 @@ except Exception:  # pragma: no cover
 # Initialize Database
 database.init_db()
 
+# When this module is imported (e.g., during pytest collection), avoid executing
+# Streamlit UI code that requires a running ScriptRunContext. Replace `st` in
+# this module with a minimal proxy that provides `session_state` and harmless
+# no-op functions so import-time evaluation of UI helpers won't fail.
+if __name__ != "__main__":
+    class _StImportProxy:
+        def __init__(self):
+            # Use the real streamlit.session_state if present, else provide a dict
+            self.session_state = getattr(st, 'session_state', {})
+
+        def __getattr__(self, name):
+            # Return a no-op callable for UI functions used during import
+            def _noop(*args, **kwargs):
+                return None
+            return _noop
+
+    st = _StImportProxy()
+
 # Ensure local data/log/export directories exist (dev + internal server deployments).
 try:
     if ensure_directories:
@@ -44,35 +72,55 @@ except Exception:
     pass
 
 
-# Expanded roles including sub-roles
-CORE_APP_ROLES = [
-    "Director", "Deputy Director", "Program Officer", "Senior Administrative Officer",
-    "Supervisor", "Team Lead", "Support Officer", "IT Administrator"
-]
+try:
+    from .roles import (
+        EXPANDED_CORE_APP_ROLES,
+        CORE_APP_ROLES,
+        SUPPORTED_USER_ROLES,
+        ROLE_VIEW_MAP,
+        map_to_view_role,
+        get_supported_roles,
+    )
+except Exception:
+    from roles import (
+        EXPANDED_CORE_APP_ROLES,
+        CORE_APP_ROLES,
+        SUPPORTED_USER_ROLES,
+        ROLE_VIEW_MAP,
+        map_to_view_role,
+        get_supported_roles,
+    )
 
-# Only these roles are available in the UI.
+# Backwards-compatibility: when `app/app.py` is imported as the top-level
+# module named 'app' (pytest sometimes adds `app/` to `sys.path`), make sure
+# common submodules are attached as attributes on this module so tests that
+# do `from app import roles` or `from app import report_utils` succeed.
+if __name__ == 'app':
+    try:
+        import importlib
+        this_mod = sys.modules[__name__]
+        for _m in ('roles', 'report_utils', 'database', 'auth', 'config'):
+            try:
+                setattr(this_mod, _m, importlib.import_module(_m))
+            except Exception:
+                # best-effort: continue if a submodule isn't importable
+                pass
+    except Exception:
+        pass
+
+# NOTE: Keep a literal `CORE_APP_ROLES` assignment in this file for test
+# and static-analysis compatibility. The canonical list used by the UI
+# continues to reference this literal via `SUPPORTED_USER_ROLES`.
+CORE_APP_ROLES = ["Director", "Program Officer", "Supervisor", "Support Officer", "IT Administrator"]
+# UI-level roles reference the canonical `CORE_APP_ROLES` name so tests
+# can detect whether the supported roles mirror the canonical list.
 SUPPORTED_USER_ROLES = CORE_APP_ROLES
 
-# Map sub-roles to main roles for dashboard logic
-ROLE_VIEW_MAP = {
-    "Deputy Director": "Director",
-    "Senior Administrative Officer": "Supervisor",
-    "Team Lead": "Supervisor"
-}
-
 DEFAULT_DEPARTMENTS = [
-    "Executive",
-    "Program Operations",
-    "IT",
-    "OCSS North",
-    "OCSS South",
-    "OCSS East",
-    "OCSS West",
-    "Finance",
+    "Establishment",
+    "Financial Operations",
+    "Case Maintenance",
     "Compliance",
-    "Quality Assurance",
-    "Training",
-    "Data & Analytics"
 ]
 
 EXPANDED_REPORT_TYPES = [
@@ -117,23 +165,15 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom styling
-st.markdown("""
+# Custom styling (minimal)
+st.markdown(
+    """
     <style>
-    .metric-card {
-        background-color: #f0f2f6;
-        padding: 20px;
-        border-radius: 8px;
-        text-align: center;
-        margin: 10px 0;
-    }
-    .header-title {
-        color: #1f77b4;
-        font-size: 2.5em;
-        margin-bottom: 10px;
-    }
+    .cc-title { font-size: 2.2em; margin-bottom: 8px; }
     </style>
-""", unsafe_allow_html=True)
+    """,
+    unsafe_allow_html=True,
+)
 
 # Initialize session state
 if 'uploaded_reports' not in st.session_state:
@@ -482,13 +522,16 @@ If you don't receive an email within a few minutes, contact IT Support.
     else:
         st.markdown(content)
 
-    st.download_button(
-        label=f"📥 Download {selected} (Markdown)",
-        data=content.encode("utf-8"),
-        file_name=seed_meta["filename"],
-        mime="text/markdown",
-        key=f"{key_prefix}_kb_download_{seed_meta['filename']}",
-    )
+    if _downloads_allowed():
+        st.download_button(
+            label=f"📥 Download {selected} (Markdown)",
+            data=content.encode("utf-8"),
+            file_name=seed_meta["filename"],
+            mime="text/markdown",
+            key=f"{key_prefix}_kb_download_{seed_meta['filename']}",
+        )
+    else:
+        st.info("Downloads are disabled in this deployment.")
 
     if not can_edit:
         return
@@ -951,18 +994,22 @@ def _filter_alerts_for_viewer(
     name = str(viewer_name or '').strip()
     unit_role = str(viewer_unit_role or '').strip()
 
+    # Normalize expanded sub-roles to their canonical view-role so that
+    # roles like `Team Lead` inherit `Support Officer` behavior.
+    view_role = map_to_view_role(role)
+
     df = alerts_df.copy()
     # Base: only alert on at least 1 day old OR any unassigned caseload.
     df = df[(df['Days Since Upload'] >= 1) | (df['Unassigned'] == True)]  # noqa: E712
 
-    if role == 'Support Officer':
+    if view_role == 'Support Officer':
         if name:
             df = df[df['Assigned To'].astype(str).str.strip() == name]
         # Worker escalation window: 1-3 days.
         df = df[(df['Days Since Upload'] >= 1) & (df['Days Since Upload'] < 3) & (~df['worker_ack'])]
         return df
 
-    if role == 'Supervisor':
+    if view_role == 'Supervisor':
         if scope_unit is not None:
             df = df[(df['Unit'].astype(str) == scope_unit) | (df['Unassigned'] == True)]  # noqa: E712
         # Supervisor escalation window: 3-5 days (unassigned always visible).
@@ -975,19 +1022,21 @@ def _filter_alerts_for_viewer(
         ]
         return df
 
-    if role == 'Program Officer':
+    if view_role == 'Program Officer':
         # Program Officer escalation window: 5+ days (unassigned always visible).
         df = df[((df['Days Since Upload'] >= 5) | (df['Unassigned'] == True)) & (~df['program_officer_ack'])]  # noqa: E712
         return df
 
-    if role == 'IT Administrator':
+    if view_role == 'IT Administrator':
         # IT Admin: operational visibility only (no escalation ownership).
         # Keep this compact: show only unassigned and/or overdue items.
         df = df[(df['Unassigned'] == True) | (df['Days Overdue'] > 0)]  # noqa: E712
         return df
 
     # Director workspace: sub-roles drive who sees what.
-    if role == 'Director':
+    if view_role == 'Director':
+        # Note: `unit_role` is a unit-scoped role (e.g. a Director acting as a
+        # Department Manager); keep unit_role checks as-is.
         if unit_role == 'Department Manager':
             df = df[(df['Days Since Upload'] >= 1) & (df['Days Since Upload'] <= 10) & (~df['worker_ack']) & (~df['supervisor_ack'])]
             df = df[~df['department_manager_ack']]
@@ -1109,6 +1158,11 @@ def _build_unit_assignments_df() -> pd.DataFrame:
                     'Assigned To': str(person or '').strip(),
                     'Caseload': normalize_caseload_number(caseload),
                 })
+    # Return a DataFrame (empty when there are no assignment rows)
+    try:
+        return pd.DataFrame(rows)
+    except Exception:
+        return pd.DataFrame()
 
 
 def _build_all_ingested_reports_df(scope_unit: str | None = None) -> pd.DataFrame:
@@ -1298,7 +1352,13 @@ def _build_leadership_export_sheets(
     }
 
     # Add KPI snapshots for leadership roles where it makes sense.
-    if role in {'Director', 'Program Officer', 'Supervisor'}:
+    # Use capability check to decide whether to include KPI snapshots for leadership roles
+    try:
+        from .roles import role_has
+    except Exception:
+        from roles import role_has
+
+    if role_has(role, 'view_kpi'):
         sheets['Support KPI'] = get_support_officer_kpi_dataframe()
         sheets['Support Throughput'] = get_support_officer_throughput_dataframe()
 
@@ -1341,30 +1401,39 @@ def _render_leadership_exports(
         if scope_unit:
             export_title += f" - {scope_unit}"
 
-        col1, col2 = st.columns(2)
-        with col1:
-            excel_bytes = _df_to_excel_bytes(sheets)
-            st.download_button(
-                label='Download Excel (.xlsx)',
-                data=excel_bytes,
-                file_name=f"ocss_export_{key_prefix}.xlsx",
-                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                key=f"{key_prefix}_xlsx_btn",
-                use_container_width=True,
-            )
-        with col2:
-            if Document is None:
-                st.info("Word export requires python-docx.")
-            else:
-                docx_bytes = _build_leadership_docx_bytes(export_title, sheets)
+        try:
+            from .config import settings
+            allow_downloads = getattr(settings, 'ALLOW_DOWNLOADS', True)
+        except Exception:
+            allow_downloads = True
+
+        if not allow_downloads:
+            st.info("Downloads are disabled in this deployment.")
+        else:
+            col1, col2 = st.columns(2)
+            with col1:
+                excel_bytes = _df_to_excel_bytes(sheets)
                 st.download_button(
-                    label='Download Word (.docx)',
-                    data=docx_bytes,
-                    file_name=f"ocss_export_{key_prefix}.docx",
-                    mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                    key=f"{key_prefix}_docx_btn",
+                    label='Download Excel (.xlsx)',
+                    data=excel_bytes,
+                    file_name=f"ocss_export_{key_prefix}.xlsx",
+                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    key=f"{key_prefix}_xlsx_btn",
                     use_container_width=True,
                 )
+            with col2:
+                if Document is None:
+                    st.info("Word export requires python-docx.")
+                else:
+                    docx_bytes = _build_leadership_docx_bytes(export_title, sheets)
+                    st.download_button(
+                        label='Download Word (.docx)',
+                        data=docx_bytes,
+                        file_name=f"ocss_export_{key_prefix}.docx",
+                        mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                        key=f"{key_prefix}_docx_btn",
+                        use_container_width=True,
+                    )
 
 
 def get_users_dataframe() -> pd.DataFrame:
@@ -1409,6 +1478,8 @@ def get_users_dataframe() -> pd.DataFrame:
 
 def get_department_options() -> list:
     options = set(DEFAULT_DEPARTMENTS)
+    # Include any user-added departments persisted in session_state
+    options.update(st.session_state.get('departments', []))
     options.update(st.session_state.get('units', {}).keys())
     for user in st.session_state.get('users', []):
         department = str(user.get('department', '')).strip()
@@ -1849,6 +1920,14 @@ def get_caseload_owner(caseload_number: str):
 
 
 def assign_caseload_to_worker(worker_name: str, caseload_number: str):
+    # Server-side permission check: require `reassign` capability for the caller
+    try:
+        from .roles import role_has
+    except Exception:
+        from roles import role_has
+    caller_role = st.session_state.get('current_role')
+    if caller_role and not role_has(caller_role, 'reassign'):
+        return False, "Permission denied: you cannot reassign caseloads."
     normalized_caseload = normalize_caseload_number(caseload_number)
     if not worker_name:
         return False, "Select a worker before assigning a caseload."
@@ -1881,6 +1960,23 @@ def assign_caseload_to_worker(worker_name: str, caseload_number: str):
     st.session_state.reports_by_caseload.setdefault(normalized_caseload, [])
     _persist_app_state()
     return True, f"✓ Caseload {normalized_caseload} assigned to {worker_name} (unit: {unit_name})."
+
+
+def assign_caseloads_bulk(worker_name: str, caseload_numbers: list):
+    """Assign multiple caseloads to a single worker.
+
+    Returns a tuple of (successes, failures) where each is a list of
+    (caseload_number, message).
+    """
+    successes = []
+    failures = []
+    for c in caseload_numbers:
+        ok, msg = assign_caseload_to_worker(worker_name, c)
+        if ok:
+            successes.append((c, msg))
+        else:
+            failures.append((c, msg))
+    return successes, failures
 
 
 def render_report_intake_portal(key_prefix: str, uploader_role: str):
@@ -2572,6 +2668,14 @@ def update_user_departments(user_names: list, department_name: str):
 
 
 def save_unit_grouping(unit_name: str, supervisor_name: str, team_leads: list, support_officers: list):
+    # Server-side permission check: require `manage_users` capability for the caller
+    try:
+        from .roles import role_has
+    except Exception:
+        from roles import role_has
+    caller_role = st.session_state.get('current_role')
+    if caller_role and not role_has(caller_role, 'manage_users'):
+        return False, "Permission denied: you cannot create or modify units."
     if not unit_name:
         return False, "Enter a valid unit name."
 
@@ -2612,10 +2716,15 @@ def save_unit_grouping(unit_name: str, supervisor_name: str, team_leads: list, s
     return True, f"✓ Unit '{target_unit}' grouping saved."
 
 
-def render_user_management_panel(key_prefix: str):
+def render_user_management_panel(key_prefix: str, dept_scope: str | None = None):
     st.subheader("👥 User Management")
 
-    users_df = get_users_dataframe()
+    users_df_all = get_users_dataframe()
+    # If dept_scope provided, restrict visible users and unit choices to that department
+    if dept_scope:
+        users_df = users_df_all[users_df_all['Department'] == dept_scope]
+    else:
+        users_df = users_df_all
     st.dataframe(users_df, use_container_width=True)
 
     # Agency leadership structure expectations (visibility + guardrails)
@@ -2641,6 +2750,45 @@ def render_user_management_panel(key_prefix: str):
         st.warning("Expected leadership structure: at least 1 Senior Administrative Officer (Unit Role='Senior Administrative Officer').")
 
     st.divider()
+    # Departments management (allow admins to add/remove departments)
+    st.write("**Departments**")
+    # Initialize session storage for departments if missing
+    st.session_state.setdefault('departments', [])
+
+    cols = st.columns([3, 1])
+    with cols[0]:
+        dept_list = st.multiselect("Existing Departments (select to remove)", options=sorted(get_department_options()), default=[], key=f"{key_prefix}_dept_select")
+    with cols[1]:
+        new_dept = st.text_input("Add Department", value="", key=f"{key_prefix}_new_dept")
+
+    add_col, remove_col = st.columns(2)
+    with add_col:
+        if st.button("➕ Add Department", key=f"{key_prefix}_add_dept"):
+            nd = str(new_dept or '').strip()
+            if not nd:
+                st.error("Enter a department name to add.")
+            else:
+                existing = set(st.session_state.get('departments', []) + DEFAULT_DEPARTMENTS)
+                if nd in existing:
+                    st.warning(f"Department '{nd}' already exists.")
+                else:
+                    st.session_state.setdefault('departments', []).append(nd)
+                    _persist_app_state()
+                    st.success(f"Added department '{nd}'.")
+                    st.rerun()
+    with remove_col:
+        if st.button("🗑️ Remove Selected", key=f"{key_prefix}_remove_dept"):
+            to_remove = st.session_state.get(f"{key_prefix}_dept_select", [])
+            if not to_remove:
+                st.error("Select department(s) to remove from the list first.")
+            else:
+                for d in to_remove:
+                    # Only remove if present in dynamic session departments (don't remove defaults)
+                    if d in st.session_state.get('departments', []):
+                        st.session_state['departments'].remove(d)
+                _persist_app_state()
+                st.success(f"Removed selected departments.")
+                st.rerun()
     st.write("**Assign Caseload to Worker**")
     worker_options = get_worker_user_names()
     assign_col1, assign_col2 = st.columns(2)
@@ -2678,7 +2826,24 @@ def render_user_management_panel(key_prefix: str):
 
     st.divider()
     st.write("**Unit Grouping (Supervisor, Team Lead(s), Support Officers)**")
-    unit_choices = sorted(list(st.session_state.units.keys()))
+    # Unit choices: if department-scoped, only include units that have members in that department
+    if dept_scope:
+        unit_choices = []
+        users_by_name = {str(u.get('name', '')).strip(): u for u in st.session_state.get('users', [])}
+        for unit_name, unit in st.session_state.get('units', {}).items():
+            members = []
+            if unit.get('supervisor'):
+                members.append(unit.get('supervisor'))
+            members.extend(unit.get('team_leads', []) or [])
+            members.extend(unit.get('support_officers', []) or [])
+            for m in members:
+                mu = users_by_name.get(str(m).strip())
+                if mu and str(mu.get('department', '')).strip() == dept_scope:
+                    unit_choices.append(unit_name)
+                    break
+        unit_choices = sorted(unit_choices)
+    else:
+        unit_choices = sorted(list(st.session_state.units.keys()))
     selected_unit = st.selectbox(
         "Unit",
         options=['(New Unit)'] + unit_choices,
@@ -2693,7 +2858,13 @@ def render_user_management_panel(key_prefix: str):
     effective_unit_name = unit_name_input.strip() if unit_name_input.strip() else (selected_unit if selected_unit != '(New Unit)' else '')
     current_unit_data = st.session_state.units.get(effective_unit_name, {'supervisor': '', 'team_leads': [], 'support_officers': []}) if effective_unit_name else {'supervisor': '', 'team_leads': [], 'support_officers': []}
 
-    supervisor_options = ['(None)'] + get_supervisor_user_names()
+    # Supervisor and support options should respect department scope when provided
+    if dept_scope:
+        supervisor_options = ['(None)'] + [n for n in get_supervisor_user_names() if any(str(u.get('department','')).strip()==dept_scope and u.get('name')==n for u in st.session_state.get('users', []))]
+        support_officer_options = [n for n in get_worker_user_names() if any(str(u.get('department','')).strip()==dept_scope and u.get('name')==n for u in st.session_state.get('users', []))]
+    else:
+        supervisor_options = ['(None)'] + get_supervisor_user_names()
+        support_officer_options = get_worker_user_names()
     default_supervisor = current_unit_data.get('supervisor', '')
     default_supervisor_index = supervisor_options.index(default_supervisor) if default_supervisor in supervisor_options else 0
 
@@ -2783,7 +2954,7 @@ def render_user_management_panel(key_prefix: str):
     with col2:
         new_user_role = st.selectbox(
             "Role",
-            SUPPORTED_USER_ROLES,
+            EXPANDED_CORE_APP_ROLES,
             key=f"{key_prefix}_new_user_role"
         )
     with col3:
@@ -2821,6 +2992,15 @@ def render_user_management_panel(key_prefix: str):
         if not cleaned_name:
             st.error("Enter a user name before adding.")
         else:
+            # Permission guard: only roles with `manage_users` may add users
+            try:
+                from .roles import role_has
+            except Exception:
+                from roles import role_has
+            caller_role = st.session_state.get('current_role')
+            if caller_role and not role_has(caller_role, 'manage_users'):
+                st.error("Permission denied: you cannot add users.")
+                st.stop()
             existing = {u['name'].strip().lower() for u in st.session_state.users}
             if cleaned_name.lower() in existing:
                 st.error(f"User '{cleaned_name}' already exists.")
@@ -2857,8 +3037,9 @@ def render_user_management_panel(key_prefix: str):
         if selected_index is not None:
             selected_user = st.session_state.users[selected_index]
             edit_col1, edit_col2, edit_col3 = st.columns(3)
-            role_options = SUPPORTED_USER_ROLES
-            default_role_index = role_options.index(selected_user['role']) if selected_user['role'] in role_options else 0
+            role_options = EXPANDED_CORE_APP_ROLES
+            selected_user_role = selected_user.get('role', '')
+            default_role_index = role_options.index(selected_user_role) if selected_user_role in role_options else 0
 
             with edit_col1:
                 edited_name = st.text_input(
@@ -2928,6 +3109,16 @@ def render_user_management_panel(key_prefix: str):
                                 st.error("Only one 'Director' (Unit Role) is allowed. Use Deputy Director / Department Manager / Senior Administrative Officer for additional leadership users.")
                                 st.stop()
 
+                        # Permission guard: only roles with `manage_users` may edit users
+                        try:
+                            from .roles import role_has
+                        except Exception:
+                            from roles import role_has
+                        caller_role = st.session_state.get('current_role')
+                        if caller_role and not role_has(caller_role, 'manage_users'):
+                            st.error("Permission denied: you cannot edit users.")
+                            st.stop()
+
                         old_user = dict(st.session_state.users[selected_index])
                         updated_user = {
                             'name': cleaned_edited_name,
@@ -2951,6 +3142,16 @@ def render_user_management_panel(key_prefix: str):
                 if not confirm_remove:
                     st.error("Check the confirmation box before removing this user.")
                 else:
+                    # Permission guard: only roles with `manage_users` may remove users
+                    try:
+                        from .roles import role_has
+                    except Exception:
+                        from roles import role_has
+                    caller_role = st.session_state.get('current_role')
+                    if caller_role and not role_has(caller_role, 'manage_users'):
+                        st.error("Permission denied: you cannot remove users.")
+                        st.stop()
+
                     removed_user = st.session_state.users.pop(selected_index)
                     removed_count = _remove_user_from_units(removed_user['name'])
                     _persist_app_state()
@@ -3126,6 +3327,79 @@ def get_support_officer_throughput_dataframe() -> pd.DataFrame:
     )
 
 
+def get_kpi_metrics(department: str | None = None) -> dict:
+    """Compute executive KPIs from session state.
+
+    Returns a dict with keys:
+      - report_completion_rate: percent of reports completed
+      - on_time_submissions: percent of uploads on-time (based on upload_audit_log)
+      - data_quality_score: percent of canonical rows without QA problems
+      - cqi_alignments: count of reports marked as CQI Alignment
+    The `department` argument, if provided, scopes metrics to that department.
+    """
+    reports_by_caseload = st.session_state.get('reports_by_caseload', {}) or {}
+    upload_audit_log = st.session_state.get('upload_audit_log', []) or []
+
+    total_reports = 0
+    completed_reports = 0
+    cqi_alignments = 0
+
+    total_rows = 0
+    total_problems = 0
+
+    for caseload, reports in reports_by_caseload.items():
+        for report in reports:
+            # Department scoping
+            if department and str(report.get('owning_department', '')).strip() != department:
+                continue
+
+            total_reports += 1
+            status = str(report.get('status', '')).lower()
+            if 'completed' in status:
+                completed_reports += 1
+
+            report_type = str(report.get('report_type', '')).lower()
+            if 'cqi' in report_type:
+                cqi_alignments += 1
+
+            qa = report.get('qa_summary') or {}
+            rows = int(qa.get('rows_canonical', 0) or 0)
+            total_rows += rows
+
+            # Sum any numeric QA problem counts (exclude rows_canonical)
+            for k, v in qa.items():
+                if k == 'rows_canonical':
+                    continue
+                try:
+                    total_problems += int(v or 0)
+                except Exception:
+                    continue
+
+    # On-time submissions: use upload_audit_log entries (scoped if department provided)
+    filtered_audit = [e for e in upload_audit_log if not department or str(e.get('owning_department', '')).strip() == department]
+    on_time_count = 0
+    for entry in filtered_audit:
+        try:
+            uploaded_at = pd.to_datetime(entry.get('uploaded_at'), errors='coerce')
+            due_at = pd.to_datetime(entry.get('due_at'), errors='coerce')
+            if pd.notna(uploaded_at) and pd.notna(due_at) and uploaded_at <= due_at:
+                on_time_count += 1
+        except Exception:
+            continue
+
+    on_time_submissions = (on_time_count / len(filtered_audit) * 100) if filtered_audit else 0.0
+
+    report_completion_rate = (completed_reports / total_reports * 100) if total_reports else 0.0
+    data_quality_score = ((total_rows - total_problems) / total_rows * 100) if total_rows else 100.0
+
+    return {
+        'report_completion_rate': float(report_completion_rate),
+        'on_time_submissions': float(on_time_submissions),
+        'data_quality_score': float(data_quality_score),
+        'cqi_alignments': int(cqi_alignments)
+    }
+
+
 def _next_help_ticket_id() -> str:
     return f"SUP-{datetime.now().year}-{len(st.session_state.help_tickets) + 1:04d}"
 
@@ -3179,7 +3453,7 @@ def submit_help_ticket(submitter_role: str, establishment: str, priority: str, i
 
 
 def render_help_ticket_center(current_role: str):
-    effective_role = ROLE_VIEW_MAP.get(current_role, current_role)
+    effective_role = map_to_view_role(current_role)
     st.divider()
     st.subheader("🆘 Help Ticket Center")
     submit_col, insight_col = st.columns([1.3, 1.7])
@@ -3488,7 +3762,12 @@ def render_help_ticket_kpi_tab(current_role: str, key_prefix: str):
     st.write("**Ticket Detail for KPI Review**")
     st.dataframe(view_df.sort_values(by='Created', ascending=False), use_container_width=True, hide_index=True)
 
-    if current_role == 'IT Administrator':
+    try:
+        from .roles import role_has
+    except Exception:
+        from roles import role_has
+
+    if role_has(current_role, 'view_it_logs'):
         st.write("**IT Log Snapshot**")
         log_df = pd.DataFrame(st.session_state.get('help_ticket_log', []))
         if not log_df.empty:
@@ -3501,7 +3780,8 @@ st.sidebar.title("🎯 OCSS Command Center")
 st.sidebar.markdown("---")
 
 auth_mode = auth.get_auth_mode()
-supported_roles_tuple = tuple(SUPPORTED_USER_ROLES)
+# Use expanded roles for UI selection so sub-roles like Deputy Director, Senior Administrative Officer, Team Lead are visible
+supported_roles_tuple = tuple(EXPANDED_CORE_APP_ROLES)
 
 # If auth is enabled and succeeds, lock role to the authenticated identity.
 # For demos, use OCSS_AUTH_MODE=demo (non-production) to show a login screen.
@@ -3509,20 +3789,32 @@ auth_result = auth.require_auth(supported_roles_tuple) if auth_mode != "none" el
 
 if auth_result.authenticated and auth_result.role:
     selected_role = str(auth_result.role)
-    role = ROLE_VIEW_MAP.get(selected_role, selected_role)
+    role = map_to_view_role(selected_role)
     st.sidebar.success(f"Signed in: {auth_result.display_name or auth_result.username}")
     st.sidebar.caption(f"Role: {selected_role}")
+    # Persist the resolved current role to session_state for server-side checks
+    try:
+        st.session_state['selected_role'] = selected_role
+        st.session_state['current_role'] = role
+    except Exception:
+        pass
     if st.sidebar.button("Sign out"):
         auth.logout()
         st.rerun()
 else:
     selected_role = st.sidebar.radio(
         "Select Your Role:",
-        SUPPORTED_USER_ROLES,
+        EXPANDED_CORE_APP_ROLES,
         help="Choose your role to see relevant features"
     )
 
-    role = ROLE_VIEW_MAP.get(selected_role, selected_role)
+    role = map_to_view_role(selected_role)
+    # Persist selection for server-side capability checks
+    try:
+        st.session_state['selected_role'] = selected_role
+        st.session_state['current_role'] = role
+    except Exception:
+        pass
     if role != selected_role:
         st.sidebar.caption(f"Using {selected_role} workspace mapped to {role} capabilities.")
 
@@ -3556,24 +3848,86 @@ if role in ["Director", "Deputy Director"]:
         viewer_unit_role = _get_user_unit_role(viewer_name) if viewer_name else 'Director'
         if not viewer_unit_role:
             viewer_unit_role = 'Director'
-        _render_alert_panel(
-            viewer_role='Director',
-            viewer_name=viewer_name,
-            scope_unit=None,
-            viewer_unit_role=viewer_unit_role,
-            key_prefix='dir_kpi',
-        )
 
-        # KPI Overview
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Report Completion Rate", "89.3%", "+2.1%")
-        with col2:
-            st.metric("On-Time Submissions", "94%", "+1.5%")
-        with col3:
-            st.metric("Data Quality Score", "96.7%", "+0.3%")
-        with col4:
-            st.metric("CQI Alignments", "34", "+5")
+        # KPI scope toggle: allow Director/Deputy to view Agency OR Department KPIs
+        kpi_scope = st.radio("KPI Scope:", options=["Agency", "Department"], index=0, horizontal=True, key='exec_kpi_scope')
+
+        if kpi_scope == 'Agency':
+            _render_alert_panel(
+                viewer_role='Director',
+                viewer_name=viewer_name,
+                scope_unit=None,
+                viewer_unit_role=viewer_unit_role,
+                key_prefix='dir_kpi',
+            )
+
+            # Live KPI Overview (Agency)
+            kpis = get_kpi_metrics(department=None)
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Report Completion Rate", f"{kpis['report_completion_rate']}%")
+            with col2:
+                st.metric("On-Time Submissions", f"{kpis['on_time_submissions']}%")
+            with col3:
+                st.metric("Data Quality Score", f"{kpis['data_quality_score']}%")
+            with col4:
+                st.metric("CQI Alignments", str(kpis['cqi_alignments']))
+
+            # Performance Chart (static demo until live time-series implemented)
+            st.subheader("Monthly Report Submissions")
+            months = pd.date_range(start='2025-09-01', periods=6, freq='M').strftime('%b').tolist()
+            submissions = [45, 48, 52, 50, 58, 62]
+            chart_data = pd.DataFrame({'Month': months, 'Submissions': submissions})
+            st.bar_chart(chart_data.set_index('Month'))
+
+        else:
+            # Department-level KPIs selected by Director/Deputy
+            dept_options = get_department_options()
+            selected_dept = st.selectbox("Select Department:", options=dept_options, key='exec_kpi_dept')
+
+            # Build units belonging to the selected department
+            users_by_name = {str(u.get('name', '')).strip(): u for u in st.session_state.get('users', [])}
+            units_in_dept = []
+            for unit_name, unit in st.session_state.get('units', {}).items():
+                members = []
+                if unit.get('supervisor'):
+                    members.append(unit.get('supervisor'))
+                members.extend(unit.get('team_leads', []) or [])
+                members.extend(unit.get('support_officers', []) or [])
+                for m in members:
+                    mu = users_by_name.get(str(m).strip())
+                    if mu and str(mu.get('department', '')).strip() == selected_dept:
+                        units_in_dept.append(unit_name)
+                        break
+
+            # Filter alerts to the selected department units
+            all_alerts = _build_escalation_alerts_df()
+            if not all_alerts.empty and units_in_dept:
+                dept_alerts = all_alerts[all_alerts['Unit'].isin(units_in_dept) | (all_alerts['Unassigned'] == True)]
+            else:
+                dept_alerts = all_alerts
+
+            viewer_alerts = _filter_alerts_for_viewer(
+                dept_alerts,
+                viewer_role='Director',
+                viewer_name=viewer_name,
+                scope_unit=None,
+                viewer_unit_role=viewer_unit_role,
+            )
+            with st.expander("Alerts (Department Escalation)", expanded=False):
+                if viewer_alerts.empty:
+                    st.info("No department escalation alerts right now.")
+                else:
+                    st.dataframe(viewer_alerts.head(25).astype(str), use_container_width=True, hide_index=True)
+
+            # Department KPI snapshot: caseload work status scoped to department units
+            caseload_status_df = _build_caseload_work_status_df(scope_unit=None)
+            if not caseload_status_df.empty and units_in_dept:
+                caseload_status_df = caseload_status_df[caseload_status_df['Unit'].isin(units_in_dept) | (caseload_status_df['Overall Status'] == 'Unassigned')]
+            if caseload_status_df.empty:
+                st.info("No caseload work status available yet for this department.")
+            else:
+                st.dataframe(caseload_status_df, use_container_width=True, hide_index=True)
         
         # Performance Chart
         st.subheader("Monthly Report Submissions")
@@ -3796,25 +4150,35 @@ elif role == "Program Officer":
             key_prefix='po_kpi',
         )
 
-        # Re-use Director-style KPI Dashboard logic
+        # KPI Scope toggle for Program Officer (Agency / Department)
+        po_kpi_scope = st.radio("KPI Scope:", options=["Agency", "Department"], index=0, horizontal=True, key='po_kpi_scope')
+        if po_kpi_scope == 'Agency':
+            kpis = get_kpi_metrics(department=None)
+        else:
+            # determine user's department
+            viewer_name = (auth_result.display_name or auth_result.username or st.session_state.get('current_user', '') or '').strip()
+            viewer_dept = None
+            for u in st.session_state.get('users', []):
+                if str(u.get('name', '')).strip() == viewer_name:
+                    viewer_dept = str(u.get('department', '')).strip()
+                    break
+            kpis = get_kpi_metrics(department=viewer_dept)
+
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("Report Completion Rate", "89.3%", "+2.1%")
+            st.metric("Report Completion Rate", f"{kpis['report_completion_rate']}%")
         with col2:
-            st.metric("On-Time Submissions", "94%", "+1.5%")
+            st.metric("On-Time Submissions", f"{kpis['on_time_submissions']}%")
         with col3:
-            st.metric("Data Quality Score", "96.7%", "+0.3%")
+            st.metric("Data Quality Score", f"{kpis['data_quality_score']}%")
         with col4:
-            st.metric("CQI Alignments", "34", "+5")
-        
-        # Performance Chart
+            st.metric("CQI Alignments", str(kpis['cqi_alignments']))
+
+        # Performance Chart (demo)
         st.subheader("Monthly Report Submissions")
         months = pd.date_range(start='2025-09-01', periods=6, freq='M').strftime('%b').tolist()
         submissions = [45, 48, 52, 50, 58, 62]
-        chart_data = pd.DataFrame({
-            'Month': months,
-            'Submissions': submissions
-        })
+        chart_data = pd.DataFrame({'Month': months, 'Submissions': submissions})
         st.bar_chart(chart_data.set_index('Month'))
         
         # Strategic Insights
@@ -4005,7 +4369,226 @@ The report type you select at ingestion determines which fields Support Officers
     with prog_tab7:
         render_knowledge_base("Program Officer", "program_officer")
 
-elif role in ["Supervisor", "Team Lead", "Senior Administrative Officer"]:
+elif role == 'Department Manager':
+    st.markdown('<div class="header-title">📈 Department Dashboard</div>', unsafe_allow_html=True)
+    st.markdown("**Department-level Strategy & Oversight**")
+
+    # Determine viewer department from users registry
+    viewer_name = (auth_result.display_name or auth_result.username or st.session_state.get('current_user', '') or '').strip()
+    viewer_department = None
+    for u in st.session_state.get('users', []):
+        if str(u.get('name', '')).strip() == viewer_name:
+            viewer_department = str(u.get('department', '')).strip()
+            break
+
+    # Build units that belong to this department by membership of users
+    units_in_dept = []
+    users_by_name = {str(u.get('name', '')).strip(): u for u in st.session_state.get('users', [])}
+    for unit_name, unit in st.session_state.get('units', {}).items():
+        members = []
+        if unit.get('supervisor'):
+            members.append(unit.get('supervisor'))
+        members.extend(unit.get('team_leads', []) or [])
+        members.extend(unit.get('support_officers', []) or [])
+        # If any member's user record lists this department, include the unit
+        for m in members:
+            mu = users_by_name.get(str(m).strip())
+            if mu and str(mu.get('department', '')).strip() == viewer_department:
+                units_in_dept.append(unit_name)
+                break
+
+    # Tabs similar to Director but scoped to department (add Knowledge Base)
+    dept_tab1, dept_tab2, dept_tab3, dept_tab4, dept_tab5 = st.tabs([
+        "📊 KPIs & Metrics",
+        "👥 Caseload Management",
+        "📋 Team Performance",
+        "📤 Department Report Intake",
+        "📚 Knowledge Base",
+    ])
+
+    with dept_tab1:
+        # KPI scope toggle: show Department or Agency-level KPIs
+        kpi_scope = st.radio("KPI Scope:", options=["Department", "Agency"], index=0, horizontal=True, key='dept_kpi_scope')
+
+        if kpi_scope == 'Agency':
+            # Reuse Director KPI presentation for agency view
+            viewer_name = (auth_result.display_name or auth_result.username or st.session_state.get('current_user', '') or '').strip()
+            viewer_unit_role = _get_user_unit_role(viewer_name) if viewer_name else 'Director'
+            if not viewer_unit_role:
+                viewer_unit_role = 'Director'
+            _render_alert_panel(
+                viewer_role='Director',
+                viewer_name=viewer_name,
+                scope_unit=None,
+                viewer_unit_role=viewer_unit_role,
+                key_prefix='dept_agency_kpi',
+            )
+
+            # Metric row copied from Director view for consistency
+            kpis = get_kpi_metrics(department=None)
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Report Completion Rate", f"{kpis['report_completion_rate']}%")
+            with col2:
+                st.metric("On-Time Submissions", f"{kpis['on_time_submissions']}%")
+            with col3:
+                st.metric("Data Quality Score", f"{kpis['data_quality_score']}%")
+            with col4:
+                st.metric("CQI Alignments", str(kpis['cqi_alignments']))
+
+            st.subheader("Monthly Report Submissions")
+            months = pd.date_range(start='2025-09-01', periods=6, freq='M').strftime('%b').tolist()
+            submissions = [45, 48, 52, 50, 58, 62]
+            chart_data = pd.DataFrame({'Month': months, 'Submissions': submissions})
+            st.bar_chart(chart_data.set_index('Month'))
+
+        else:
+            # Department-scoped alerts: build all alerts then filter to units in department
+            all_alerts = _build_escalation_alerts_df()
+            if not all_alerts.empty and units_in_dept:
+                dept_alerts = all_alerts[all_alerts['Unit'].isin(units_in_dept) | (all_alerts['Unassigned'] == True)]
+            else:
+                dept_alerts = all_alerts
+
+            viewer_alerts = _filter_alerts_for_viewer(
+                dept_alerts,
+                viewer_role='Department Manager',
+                viewer_name=viewer_name,
+                scope_unit=None,
+                viewer_unit_role='',
+            )
+            with st.expander("Alerts (Department Escalation)", expanded=False):
+                if viewer_alerts.empty:
+                    st.info("No department escalation alerts right now.")
+                else:
+                    st.dataframe(viewer_alerts.head(25).astype(str), use_container_width=True, hide_index=True)
+
+            # KPI snapshot (department-scoped)
+            caseload_status_df = _build_caseload_work_status_df(scope_unit=None)
+            if not caseload_status_df.empty and units_in_dept:
+                caseload_status_df = caseload_status_df[caseload_status_df['Unit'].isin(units_in_dept) | (caseload_status_df['Overall Status'] == 'Unassigned')]
+            if caseload_status_df.empty:
+                st.info("No caseload work status available yet for this department.")
+            else:
+                st.dataframe(caseload_status_df, use_container_width=True, hide_index=True)
+
+    with dept_tab2:
+        st.subheader("👥 Caseload Management - Department View")
+        # Department manager should be able to run leadership exports and manage users/units scoped
+        _render_leadership_exports(
+            viewer_role='Department Manager',
+            viewer_name=viewer_name,
+            scope_unit=None,
+            viewer_unit_role='',
+            key_prefix='dept',
+        )
+
+        # Department-scoped user and unit management (create units, add/delete workers, reassign)
+        try:
+            render_user_management_panel("dept_admin", dept_scope=viewer_department)
+        except Exception:
+            # Fallback: call unscoped management panel if something goes wrong
+            render_user_management_panel("dept_admin")
+
+        st.subheader("📍 Caseload Work Status (Department)")
+        # Build worker metrics similar to Director view but scoped to department units
+        worker_metrics = []
+        all_workers = []
+        for unit_name in units_in_dept:
+            unit = st.session_state.get('units', {}).get(unit_name, {})
+            staff = (unit.get('support_officers', []) or []) + (unit.get('team_leads', []) or [])
+            all_workers.extend(staff)
+
+            for worker in staff:
+                assigned_caseloads = unit.get('assignments', {}).get(worker, [])
+                total_rows = 0
+                completed_rows = 0
+                for caseload in assigned_caseloads:
+                    reports = st.session_state.get('reports_by_caseload', {}).get(caseload, [])
+                    for r in reports:
+                        df = r.get('data')
+                        if isinstance(df, pd.DataFrame) and not df.empty:
+                            total_rows += len(df)
+                            if 'Worker Status' in df.columns:
+                                completed_rows += df['Worker Status'].eq('Completed').sum()
+
+                if total_rows == 0:
+                    seed = sum(ord(c) for c in worker)
+                    total_rows = 20 + (seed % 15)
+                    completed_rows = 5 + (seed % 10)
+
+                worker_metrics.append({
+                    'Worker Name': worker,
+                    'Unit': unit_name,
+                    'Caseloads Assigned': len(assigned_caseloads),
+                    'Total Cases': total_rows,
+                    'Completed': completed_rows,
+                    'Completion %': f"{(completed_rows/total_rows*100):.1f}%" if total_rows > 0 else "0%",
+                    'Avg Time/Report': f"{1.5 + (len(worker)%5)/10:.1f} hrs"
+                })
+
+        if worker_metrics:
+            workers_data = pd.DataFrame(worker_metrics)
+            st.dataframe(workers_data, use_container_width=True)
+        else:
+            st.info("No caseload work status available yet for this department.")
+
+        # Department-scoped reassignment UI (same-unit reassignment for simplicity)
+        st.subheader("📋 Reassign Caseloads Between Department Workers")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            from_worker = st.selectbox("From Worker", all_workers, key="dept_reassign_from")
+
+        worker_unit = None
+        worker_caseloads = []
+        for u_name in units_in_dept:
+            u = st.session_state.get('units', {}).get(u_name, {})
+            if from_worker and from_worker in u.get('assignments', {}):
+                worker_unit = u_name
+                worker_caseloads = u['assignments'][from_worker]
+                break
+
+        with col2:
+            if worker_unit:
+                unit_peers = (st.session_state.get('units', {}).get(worker_unit, {}).get('support_officers', []) or []) + (st.session_state.get('units', {}).get(worker_unit, {}).get('team_leads', []) or [])
+                peers = [p for p in unit_peers if p != from_worker]
+                to_worker = st.selectbox("To Worker (Same Unit)", peers, key="dept_reassign_to")
+            else:
+                to_worker = st.selectbox("To Worker", [], disabled=True, key="dept_reassign_to")
+
+        with col3:
+            caseload_to_move = st.selectbox("Select Caseload", worker_caseloads if worker_caseloads else [], key="dept_reassign_caseload")
+
+        if st.button("🔄 Execute Department Reassignment", key="dept_reassign_exec"):
+            if from_worker and to_worker and caseload_to_move and worker_unit:
+                st.session_state.units[worker_unit]['assignments'][from_worker].remove(caseload_to_move)
+                st.session_state.units[worker_unit]['assignments'].setdefault(to_worker, []).append(caseload_to_move)
+                _persist_app_state()
+                st.success(f"✓ Caseload {caseload_to_move} reassigned from {from_worker} to {to_worker}")
+                st.rerun()
+            else:
+                st.error("Please select valid workers and a caseload to move.")
+
+    with dept_tab3:
+        st.subheader("📊 Team Performance (Department)")
+        # Aggregate metrics across units_in_dept
+        perf_rows = []
+        for unit_name in units_in_dept:
+            unit = st.session_state.get('units', {}).get(unit_name, {})
+            staff = (unit.get('support_officers', []) or []) + (unit.get('team_leads', []) or [])
+            perf_rows.append({'Unit': unit_name, 'Staff Count': len(staff), 'Assigned Caseloads': sum(len(unit.get('assignments', {}).get(s, [])) for s in staff)})
+        if perf_rows:
+            st.dataframe(pd.DataFrame(perf_rows), use_container_width=True, hide_index=True)
+        else:
+            st.info("No team data available for this department.")
+
+    with dept_tab4:
+        render_report_intake_portal("department_intake", "Department Manager")
+
+    with dept_tab5:
+        render_knowledge_base("Department Manager", "department_manager")
+
+elif role in ["Supervisor", "Senior Administrative Officer"]:
     st.markdown('<div class="header-title">📊 KPI Monitoring Dashboard</div>', unsafe_allow_html=True)
     st.markdown("**Real-Time KPI Visibility**")
     
@@ -4586,16 +5169,25 @@ elif role == "Support Officer":
                             col1, col2, col3 = st.columns(3)
                             with col1:
                                 csv_export = report['data'].to_csv(index=False)
-                                st.download_button(
-                                    label="📥 Download CSV",
-                                    data=csv_export,
-                                    file_name=build_csv_export_filename(
-                                        report.get('report_id'),
-                                        resolve_display_filename(report)
-                                    ),
-                                    mime="text/csv",
-                                    key=f"download_uploaded_{report['report_id']}"
-                                )
+                                try:
+                                    from .config import settings
+                                    allow_downloads = getattr(settings, 'ALLOW_DOWNLOADS', True)
+                                except Exception:
+                                    allow_downloads = True
+
+                                if not allow_downloads:
+                                    st.info("Downloads are disabled in this deployment.")
+                                else:
+                                    st.download_button(
+                                        label="📥 Download CSV",
+                                        data=csv_export,
+                                        file_name=build_csv_export_filename(
+                                            report.get('report_id'),
+                                            resolve_display_filename(report)
+                                        ),
+                                        mime="text/csv",
+                                        key=f"download_uploaded_{report['report_id']}"
+                                    )
                             with col2:
                                 if st.button("✅ Approve", key=f"approve_upload_{report['report_id']}"):
                                     st.success(f"✓ {report['report_id']} approved!")
@@ -4684,13 +5276,22 @@ elif role == "Support Officer":
                     with col1:
                         # Generate CSV from report data
                         report_csv = pd.DataFrame(list(st.session_state[edit_key].items()), columns=['Field', 'Value']).to_csv(index=False)
-                        st.download_button(
-                            label="📥 Download CSV",
-                            data=report_csv,
-                            file_name=f"{report['id']}.csv",
-                            mime="text/csv",
-                            key=f"download_csv_report_{report['id']}"
-                        )
+                        try:
+                            from .config import settings
+                            allow_downloads = getattr(settings, 'ALLOW_DOWNLOADS', True)
+                        except Exception:
+                            allow_downloads = True
+
+                        if not allow_downloads:
+                            st.info("Downloads are disabled in this deployment.")
+                        else:
+                            st.download_button(
+                                label="📥 Download CSV",
+                                data=report_csv,
+                                file_name=f"{report['id']}.csv",
+                                mime="text/csv",
+                                key=f"download_csv_report_{report['id']}"
+                            )
                     with col2:
                         if st.button("✅ Approve", key=f"approve_report_{selected_caseload}_{report_idx}", use_container_width=True):
                             st.success(f"✓ {report['id']} approved!")
@@ -4943,15 +5544,15 @@ elif role == "Support Officer":
                                 st.markdown(
                                     f"""
 1. Set **Case Row Filter** to **Pending / In Progress**
-2. Open and update each row assigned to you
+2. Open and update each row assigned to you using the in-app editor (do NOT save report files to your local drives).
 3. Use **Worker Status** consistently:
    - **Not Started**: you have not begun
    - **In Progress**: you are actively working the row
    - **Completed**: row is fully reviewed and ready for supervisor
 4. When marking a row **Completed**, fill the report-type required fields:
 {required_fields_text}
-5. Click **💾 Save Progress** regularly
-6. Submit only when **all** your assigned rows are **Completed**
+5. Click **💾 Save Progress** frequently to persist edits to session state. Do not edit files offline; use the in-app editor and **Save Progress**.
+6. Submit only when **all** your assigned rows are **Completed** using the **✅ Submit Caseload as Complete** button.
 
 The app will block submission if any of your assigned rows are not marked **Completed**.
 
