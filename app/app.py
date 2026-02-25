@@ -5366,26 +5366,50 @@ elif role == "Support Officer":
                                 edits_key = f"report_edits_{report['id']}"
                                 edits = st.session_state.get(edits_key, {})
                                 csv_bytes = pd.DataFrame(list(edits.items()), columns=['Field', 'Value']).to_csv(index=False).encode('utf-8')
-                                result = None
-                                try:
-                                    if notify:
-                                        result = notify.send_notification_report_csv(report['id'], csv_bytes, subject=None, recipient=recipient_default)
-                                    else:
-                                        # fallback: save to exports
-                                        exports_dir = _get_repo_root_dir() / 'exports'
-                                        exports_dir.mkdir(parents=True, exist_ok=True)
-                                        out = exports_dir / f"notify_{report['id']}.csv"
-                                        out.write_bytes(csv_bytes)
-                                        result = {'sent': False, 'error': 'notify module missing; saved to disk', 'saved_to': str(out)}
-                                except Exception as exc:
-                                    result = {'sent': False, 'error': str(exc), 'saved_to': ''}
+                                # Store pending payload in session state and show confirmation UI
+                                st.session_state[f"{notify_key}_pending"] = {
+                                    'recipient': recipient_default,
+                                    'message': message,
+                                    'csv_bytes': csv_bytes,
+                                }
 
-                                if result.get('sent'):
-                                    st.success(f"Notification sent to {recipient_default}.")
-                                else:
-                                    if result.get('saved_to'):
-                                        st.info(f"Notification fallback: saved to {result.get('saved_to')}")
-                                    st.warning(f"Notify result: {result.get('error')}")
+                            pending = st.session_state.get(f"{notify_key}_pending")
+                            if pending:
+                                st.warning(f"Confirm sending notification to {pending.get('recipient')}")
+                                colc, cold = st.columns([3,1])
+                                with colc:
+                                    st.write(pending.get('message'))
+                                with cold:
+                                    if st.button("Confirm Send", key=f"{notify_key}_confirm"):
+                                        try:
+                                            if notify:
+                                                result = notify.send_notification_report_csv(report['id'], pending.get('csv_bytes'), subject=None, recipient=pending.get('recipient'))
+                                            else:
+                                                exports_dir = _get_repo_root_dir() / 'exports'
+                                                exports_dir.mkdir(parents=True, exist_ok=True)
+                                                out = exports_dir / f"notify_{report['id']}.csv"
+                                                out.write_bytes(pending.get('csv_bytes'))
+                                                result = {'sent': False, 'error': 'notify module missing; saved to disk', 'saved_to': str(out)}
+                                        except Exception as exc:
+                                            result = {'sent': False, 'error': str(exc), 'saved_to': ''}
+
+                                        # Clear pending
+                                        try:
+                                            del st.session_state[f"{notify_key}_pending"]
+                                        except Exception:
+                                            pass
+
+                                        if result.get('sent'):
+                                            st.success(f"Notification sent to {pending.get('recipient')}")
+                                        else:
+                                            if result.get('saved_to'):
+                                                st.info(f"Notification fallback: saved to {result.get('saved_to')}")
+                                            st.warning(f"Notify result: {result.get('error')}")
+                                    if st.button("Cancel", key=f"{notify_key}_cancel"):
+                                        try:
+                                            del st.session_state[f"{notify_key}_pending"]
+                                        except Exception:
+                                            pass
         
         st.divider()
         

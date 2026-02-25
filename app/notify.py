@@ -30,6 +30,21 @@ def send_notification_report_csv(report_id: str, csv_bytes: bytes, subject: Opti
     except Exception:
         smtp_config = {}
 
+    # Fallback: attempt to read .streamlit/secrets.toml directly (useful for local tests)
+    if not smtp_config:
+        try:
+            try:
+                import tomllib as _toml
+            except Exception:
+                import toml as _toml  # type: ignore
+            s_path = Path('.streamlit') / 'secrets.toml'
+            if s_path.exists():
+                with s_path.open('rb') as fh:
+                    data = _toml.load(fh)
+                smtp_config = data.get('email', {}) if isinstance(data, dict) else {}
+        except Exception:
+            smtp_config = smtp_config or {}
+
     subject = subject or f"OCSS Report Notification: {report_id}"
     recipient = recipient or smtp_config.get('recipient')
     sender = sender or smtp_config.get('sender_email') or f"noreply@{os.uname().nodename}"
