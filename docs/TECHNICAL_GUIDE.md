@@ -66,6 +66,14 @@ python-docx>=1.1.2
 
 ---
 
+## Recent Changes (Feb 2026)
+
+- Executive Reassign: Directors may optionally perform cross-unit reassignment of caseloads. The UI includes an "Allow cross-unit reassignment" checkbox; reassignment updates `st.session_state.units` and persists organizational configuration to `data/state/ocss_app_state.json`.
+- Supervisor bulk acknowledgement: Supervisors can acknowledge all visible alerts from the Alerts panel; acknowledgements are persisted and reduce alert noise.
+- Submit validation improvements: submit-time validation now reports a clear list of missing required fields when a caseload cannot be submitted.
+- Notify integration banner: when `app/notify.py` is absent or unconfigured, the app surfaces an admin banner in the sidebar and notification attempts fall back to saving CSVs into `exports/`.
+- Auto-refresh on reassignment: the app triggers an immediate Streamlit rerun after reassignment so leadership KPIs and caseload status tables reflect updates without manual refresh.
+
 ## 4. Data Flow Architecture
 
 ### 4.1 Report Processing Workflow
