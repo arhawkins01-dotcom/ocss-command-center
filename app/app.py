@@ -1164,9 +1164,10 @@ def _render_alert_panel(
             options=['(Select)'] + report_options,
             key=f"{key_prefix}_ack_select_{viewer_role}_{scope_unit or 'all'}_{viewer_unit_role or 'na'}",
         )
+
         if selected_report_id and selected_report_id != '(Select)':
-                                st.markdown(
-                                    f"""
+            st.markdown(
+                f"""
 1. Open and update each row assigned to you using the inline editor controls.
 2. Use **Worker Status** consistently:
    - **Not Started**: you have not begun
@@ -1189,8 +1190,21 @@ The app will block submission if any of your assigned rows are not marked **Comp
 - **Locate Report:** Cleared BMV/SVES/dockets/ODRC/Work Number; no info. Contacted CP; no new address. Case in locate 2+ years with SSN; closed UNL.
 - **Locate Report:** Cleared databases; no info. No response from CP. Case in locate 6+ months without SSN; closed NAS.
 - **P-S Report:** Contacted client via phone/web portal. Action taken: CONTACT LETTER. Next steps: follow up by __/__/____.
-                                    """
-                                )
+                """
+            )
+
+            # Bulk acknowledge visible alerts (useful for supervisors)
+            if str(viewer_role or '').strip() == 'Supervisor' and ack_key:
+                if st.button(
+                    "Acknowledge all visible",
+                    key=f"{key_prefix}_ack_all_{viewer_role}_{scope_unit or 'all'}_{viewer_unit_role or 'na'}",
+                ): 
+                    for rid in report_options:
+                        try:
+                            _set_alert_ack(rid, ack_key, str(viewer_name or '').strip() or 'Supervisor')
+                        except Exception:
+                            pass
+                    st.success("✓ Acknowledged visible alerts.")
     
 
 
@@ -3868,6 +3882,15 @@ else:
         st.sidebar.caption(f"Using {selected_role} workspace mapped to {role} capabilities.")
 
 st.sidebar.markdown("---")
+
+# Admin banner: warn when notify integration is not available so admins know
+# notifications will fallback to disk exports (exports/) instead of sending.
+try:
+    if 'notify' not in globals() or notify is None:
+        st.sidebar.warning("Notifications not configured: notification sending will fall back to saving CSVs under exports/. Configure `app/notify.py` for email/send functionality.")
+except Exception:
+    pass
+
 st.sidebar.markdown("""
 ### Quick Stats
 - **Units**: 45
@@ -4106,13 +4129,21 @@ if role in ["Director", "Deputy Director"]:
                 worker_caseloads = u['assignments'][from_worker]
                 break
         
+        # Option to allow cross-unit reassignment (requires explicit confirmation)
+        allow_cross = st.checkbox("Allow cross-unit reassignment", value=False, key="dir_reassign_crossunit")
         with col2:
-            # Filter 'To' workers to be in same unit for simplicity, or allow cross-unit? 
-            # Let's simple: same unit
-            if worker_unit:
+            if worker_unit and not allow_cross:
                 unit_peers = st.session_state.units[worker_unit]['support_officers'] + st.session_state.units[worker_unit]['team_leads']
                 peers = [p for p in unit_peers if p != from_worker]
                 to_worker = st.selectbox("To Worker (Same Unit)", peers, key="dir_reassign_to")
+            elif worker_unit and allow_cross:
+                # Allow selecting any worker across units (exclude the source worker)
+                all_peers = []
+                for u in st.session_state.units.values():
+                    all_peers.extend(u.get('support_officers', []) or [])
+                    all_peers.extend(u.get('team_leads', []) or [])
+                all_peers = [p for p in sorted(set(all_peers)) if p != from_worker]
+                to_worker = st.selectbox("To Worker (Any Unit)", all_peers, key="dir_reassign_to")
             else:
                 to_worker = st.selectbox("To Worker", [], disabled=True, key="dir_reassign_to")
 
@@ -4120,16 +4151,32 @@ if role in ["Director", "Deputy Director"]:
             caseload_to_move = st.selectbox("Select Caseload", worker_caseloads if worker_caseloads else [], key="dir_reassign_caseload")
         
         if st.button("🔄 Execute Reassignment", key="director_reassign"):
-            if from_worker and to_worker and caseload_to_move and worker_unit:
-                # Remove from source
-                st.session_state.units[worker_unit]['assignments'][from_worker].remove(caseload_to_move)
-                # Add to dest
-                st.session_state.units[worker_unit]['assignments'].setdefault(to_worker, []).append(caseload_to_move)
-                _persist_app_state()
-                st.success(f"✓ Caseload {caseload_to_move} reassigned from {from_worker} to {to_worker}")
-                st.rerun()
-            else:
+            if not (from_worker and to_worker and caseload_to_move and worker_unit):
                 st.error("Please select valid workers and a caseload to move.")
+            else:
+                # Remove from source unit assignments
+                try:
+                    st.session_state.units[worker_unit]['assignments'][from_worker].remove(caseload_to_move)
+                except Exception:
+                    pass
+
+                # Determine destination unit
+                dest_unit = None
+                for u_name, u in st.session_state.units.items():
+                    peers = (u.get('support_officers', []) or []) + (u.get('team_leads', []) or [])
+                    if to_worker in peers:
+                        dest_unit = u_name
+                        break
+
+                # Fallback: same unit
+                if dest_unit is None:
+                    dest_unit = worker_unit
+
+                st.session_state.units[dest_unit].setdefault('assignments', {})
+                st.session_state.units[dest_unit]['assignments'].setdefault(to_worker, []).append(caseload_to_move)
+                _persist_app_state()
+                st.success(f"✓ Caseload {caseload_to_move} reassigned from {from_worker} ({worker_unit}) to {to_worker} ({dest_unit})")
+                st.rerun()
     
     with dir_tab3:
         st.subheader("📊 Team Performance Analytics")
@@ -6012,7 +6059,12 @@ P-S Report: Contacted client via phone/web portal. Action taken: CONTACT LETTER.
                                                                 issues.append(f"{int(missing_closure_comments.sum())} completed row(s) closed UNL/NAS missing Comment")
 
                                             if issues:
-                                                st.warning("Cannot submit yet. Please fix the following before submitting:\n- " + "\n- ".join(issues))
+                                                st.error("Cannot submit yet. Please fix the following before submitting:")
+                                                for it in issues:
+                                                    try:
+                                                        st.markdown(f"- {it}")
+                                                    except Exception:
+                                                        st.write(f"- {it}")
                                                 st.stop()
 
                                             selected_report['status'] = 'Submitted for Review'
