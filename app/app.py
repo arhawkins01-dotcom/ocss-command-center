@@ -6305,8 +6305,14 @@ elif role == "IT Administrator":
                     if caseload_options:
                         remove_caseload = st.selectbox("Select Caseload to remove", options=caseload_options, key="remove_caseload_select")
                         if st.button("🗑️ Remove Assignment"):
-                            # Show a confirmation modal before removing
-                            with st.modal("Confirm Removal"):
+                            # Show a confirmation modal before removing (fallback to expander if modal unavailable)
+                            modal_fn = getattr(st, 'modal', None)
+                            if callable(modal_fn):
+                                ctx = modal_fn("Confirm Removal")
+                            else:
+                                ctx = st.expander("Confirm Removal", expanded=True)
+
+                            with ctx:
                                 st.warning(f"You are about to remove caseload **{remove_caseload}** from **{remove_person}** in unit **{remove_unit}**.")
                                 st.write("This action will delete the assignment from the in-memory configuration. An audit entry will be recorded in the session log.")
                                 col_c1, col_c2 = st.columns([1,1])
