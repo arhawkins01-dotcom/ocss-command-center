@@ -278,408 +278,80 @@ python-docx>=1.1.2
          │
          ▼
 ┌──────────────────────────────────┐
-│ Streamlit File Uploader          │
-│ - Reads Excel/CSV               │
-│ - Validates file format          │
-│ - Computes ingestion metadata     │
-│ - Scans duplicate period records  │
-│ - Stores in session state        │
-└────────┬─────────────────────────┘
-         │
-         ▼
-┌──────────────────────────────────┐
-│ Pandas DataFrame Creation        │
-│ - Parses file contents           │
-│ - Normalizes support report schema│
-│ - Routes rows by caseload/worker │
-│ - Prepares row-level work queue  │
-└────────┬─────────────────────────┘
-         │
-         ▼
-┌──────────────────────────────────┐
-│  Support Officer Assigned Reports │
-│ - Select queued report            │
-│ - Filter rows (Pending/All/Done)  │
-│ - Work one case row at a time     │
-└────────┬─────────────────────────┘
-         │
-         ▼
-┌──────────────────────────────────┐
-│ Row-Level Editing                │
-│ - Edit selected case row fields  │
-│ - Update Worker Status + notes   │
-│ - Save per-row updates           │
-│ - Mark report ready for review   │
-└────────┬─────────────────────────┘
-         │
-         ▼
-┌──────────────────────────────────┐
-│ Session State Update             │
-│ - Store row updates and timestamps│
-│ - Maintain KPI aggregates        │
-│ - Persist during user session    │
-└────────┬─────────────────────────┘
-         │
-    ┌────┴────┐
-    │          │
-    ▼          ▼
-  ┌──────────────┐ ┌──────────────┐
-  │ Submit to    │ │ CSV Export & │
-  │ Supervisor   │ │ Download     │
-  └──────────────┘ └──────────────┘
-```
+OCSS Command Center — Technical Guide
 
-### 4.2 Session State Management
-
-Streamlit uses in-memory session state for data persistence within a user session:
-
-```python
-st.session_state:
-├── selected_role: "Support Officer"
-├── report_edits_{report_id}: {field: value, ...}
-└── uploaded_caseload_files: {caseload_id: [...]}
-```
-
-**Session Lifetime:** Duration of user's browser session  
-**Data Loss:** Occurs on browser close or page refresh for report/work data (design limitation)  
-
-#### Mixed Persistence Model (Current)
-
-The app uses a mixed approach to persistence:
-- **Persisted to disk (survives Streamlit restarts):** organizational configuration (Users, Units, current user for audit, and alert acknowledgements)
-- **Session-based (does not survive restarts by design):** uploaded report data, row-level work queues, and most KPI aggregates
-
-**Persisted state file:** `data/state/ocss_app_state.json`
-
-Notes:
-- This state file is intentionally excluded from git so local configuration and audit context are not committed.
-- The Knowledge Base also persists to `data/knowledge_base/` for deployments with a writable filesystem.
-
-**Future Improvement:** Implement a database for report/work persistence
+Version: 1.1.0
+Last Updated: 2026-02-27
 
 ---
 
-## 7. Alerts, Due-Date Clocks, and Knowledge Base
+This file mirrors the new User Manual structure and documents implementation, runtime behavior, seeding rules, deployment options, and developer notes.
 
-### 7.1 Due-Date Clocks (Upload vs Due)
+Key locations:
+- App entry: `app/app.py`
+- KB seed sources: `docs/USER_MANUAL.md`, `docs/TECHNICAL_GUIDE.md`
+- KB targets: `data/knowledge_base/user_guide.md`, `data/knowledge_base/technical_guide.md`
+- Seed manifest: `data/knowledge_base/.seed_manifest.json`
 
-When a Program Officer uploads a report, the ingestion pipeline records:
-- `uploaded_at` (timestamp)
-- `report_source` (canonical source key when available)
-- `period_month` / period metadata
-- `due_days` and computed `due_at` (for Monthly QA sources)
-
-Monthly QA due windows are defined month-by-month for these sources:
-- **56RA** (`56`): typically 3 days in Jan/Apr/Jul/Oct
-- **P-S** (`PS`): 2 or 5 days depending on the month
-- **Locate** (`LOCATE`): typically 3 days in Feb/May/Aug/Nov
-
-This enables alert clocks and audit/registry reporting based on “uploaded vs due”.
-
-### 7.2 Escalation Alerts (Acknowledgements)
-
-The app computes a lightweight per-report alert table from `reports_by_caseload` and displays a compact **Alerts (Escalation)** panel across all roles.
-
-Escalation ladder (time since upload):
-- Support Officer: 1–3 days
-- Supervisor: 3–5 days
-- Program Officer: 5+ days
-- Department Manager: 1–10 days *only when Support Officer + Supervisor have not acknowledged*
-- Director / Deputy Director: 10+ days (last)
-
-Acknowledgements are stored per report ID and tier, and persisted in `data/state/ocss_app_state.json`.
-
-### 7.3 Knowledge Base Seeding and Refresh
-
-The Knowledge Base stores Markdown files on disk under `data/knowledge_base/`.
-
-Seeding behavior:
-- On first run, the app seeds `User Guide` and `Technical Guide` from `docs/USER_MANUAL.md` and `docs/TECHNICAL_GUIDE.md`.
-- On subsequent runs, seeded KB docs are automatically refreshed when the repo source docs change **as long as the KB doc was not edited via Knowledge Base Admin**.
-- If a Program Officer or IT Administrator edits a KB doc in-app, the app will not overwrite it automatically.
+### KB Admin behavior
+- In-app editing persists to `data/knowledge_base/*.md` and sets `edited_by_admin: true` in the manifest. The seeder will not overwrite such files.
 
 ---
 
-## 5. Security Considerations
+## Architecture & Data Flow (Developer View)
 
-### 5.1 Current Security Implementation
+- Streamlit UI (`app/app.py`) orchestrates role routing and tab layout.
+- Ingestion & parsing: `app/report_engine.py` and `app/report_utils.py` handle file parsing, normalization, and row mapping.
+- KB seeding: `_kb_seed_docs()`, `_ensure_kb_seeded()` in `app/app.py`.
+- Persistence: `data/state/ocss_app_state.json` (org config), session state for row work, `exports/` for CSVs.
 
-✅ **Session-level Data Isolation**
-- Each user session is independent
-- Data stored in Streamlit session state (in-memory)
-- Session data cleared on logout/browser close
+Report ingestion sequence (high level):
+1. File selected in `Upload & Processing` → `streamlit.file_uploader` reads bytes.
+2. `report_engine` normalizes into DataFrame and computes a content hash.
+3. Duplicate candidates found via `find_duplicate_candidates()`.
+4. Ingestion registry entry created with `ingestion_id` and stored in session for immediate processing and audit.
 
-✅ **Input Validation**
-- File upload type checking (xlsx, xls, csv only)
-- Pandas handles malformed Excel/CSV gracefully
-
-### 5.2 Security Gaps & Recommendations
-
-⚠️ **Authentication not enforced by default**
-- **Current (default):** Role selector with no login (`OCSS_AUTH_MODE=none`)
-- **Risk:** Any user can access any role
-- **Available options:**
-  - `OCSS_AUTH_MODE=demo` for management demos (non-production)
-  - `OCSS_AUTH_MODE=secrets` for a basic username/password model using `st.secrets`
-  - `OCSS_AUTH_MODE=header` for production deployments behind a reverse proxy/SSO gateway that injects identity headers
-- **Recommendation (production):** Use HTTPS + a reverse proxy/SSO gateway and enable `header` mode
-
-⚠️ **Data in Transit**
-- **Current:** HTTP (localhost development)
-- **Risk:** Credentials/data exposed over network
-- **Recommendation:** Deploy with HTTPS/TLS certificate
-
-⚠️ **Audit Persistence Gap**
-- **Current:** Upload routing and ticket actions are logged in session memory only
-- **Risk:** Audit history resets with session/server restart
-- **Recommendation:** Persist logs to database or append-only store
-
-⚠️ **No Data Encryption**
-- **Current:** Files stored in memory unencrypted
-- **Risk:** Sensitive data exposure if server compromised
-- **Recommendation:** Encrypt data at rest and in transit
-
-⚠️ **No Role Authorization**
-- **Current:** All fields editable by all users in a role
-- **Risk:** Unauthorized modifications
-- **Recommendation:** Implement field-level access control
-
-### 5.3 Recommended Security Roadmap
-
-**Phase 1 (Pre-Launch):**
-1. Implement HTTPS/TLS
-2. Deploy behind a reverse proxy / SSO gateway and enable header-based auth (`OCSS_AUTH_MODE=header`)
-3. Log all user actions
-
-**Phase 2 (3 Months):**
-1. Integrate with Active Directory/LDAP
-2. Implement audit trail to database
-3. Add data encryption
-
-**Phase 3 (6 Months):**
-1. Add role-based field-level permissions
-2. Implement API rate limiting
-3. Add comprehensive security logging
+Important helpers:
+- `_sha256_file(path)` — compute file hash used by manifest
+- `_read_text_file(path)` — robust file read used by KB rendering
+- `render_knowledge_base()` — presents KB and admin UI (download, upload, edit)
 
 ---
 
-## 6. Deployment Strategy
+## Due-Date Logic & Alerts
 
-### 6.1 Development Environment (Current)
+- Due-date clock is computed at ingestion time by `_compute_due_at()` using `period` and `MONTHLY_QA_DUE_DAYS_BY_MONTH`.
+- Alerts are derived from ingestion timestamps and `due_at`, and the escalation ladder maps ages to roles.
+- Acknowledgements persist to `data/state/ocss_app_state.json` so leadership views can filter acknowledged items.
 
-**Setup:**
+---
+
+## Deployment & Runtime
+
+Local development:
 ```bash
-# Clone repository
-git clone https://github.com/arhawkins01-dotcom/ocss-command-center.git
-cd ocss-command-center
-
-# Install dependencies
 pip install -r app/requirements.txt
-
-# Run application
-streamlit run app/app.py
+streamlit run app/app.py --server.enableCORS false --server.enableXsrfProtection false
 ```
 
-**Access:** http://localhost:8501
+Production recommendations:
+- Run behind TLS-terminating reverse proxy (Nginx) and enable `OCSS_AUTH_MODE=header` for SSO.
+- Containerize with Docker; mount `./data` for persisted KB and state.
 
-### 6.2 Staging Environment (Recommended)
-
-**Setup on Ubuntu Server:**
-```bash
-# Update system
-sudo apt update && sudo apt upgrade -y
-
-# Install Python 3.8+
-sudo apt install python3 python3-pip python3-venv
-
-# Clone repository to /opt
-sudo git clone https://github.com/arhawkins01-dotcom/ocss-command-center.git /opt/ocss-command-center
-
-# Create virtual environment
-cd /opt/ocss-command-center
-python3 -m venv venv
-source venv/bin/activate
-
-# Install dependencies
-pip install -r app/requirements.txt
-
-# Configure systemd service
-sudo cp deploy/systemd/ocss-command-center.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable ocss-command-center
-sudo systemctl start ocss-command-center
-```
-
-### 6.3 Production Deployment (Recommended - Docker)
-
-**Dockerfile:**
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements
-COPY app/requirements.txt .
-
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application
-COPY app/ .
-
-# Expose port
-EXPOSE 8501
-
-# Health check
-HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 1
-
-# Run Streamlit
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
-```
-
-**Docker Compose (Recommended for single server):**
-```yaml
-version: '3.8'
-services:
-  ocss-app:
-    build: .
-    ports:
-      - "8501:8501"
-    environment:
-      - STREAMLIT_SERVER_HEADLESS=true
-      - STREAMLIT_SERVER_PORT=8501
-    volumes:
-      - ./data:/app/data
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-```
-
-**Deployment:**
-```bash
-# Build image
-docker build -t ocss-command-center:1.0.0 .
-
-# Run container
-docker run -d \
-  -p 8501:8501 \
-  --name ocss-app \
-  --restart unless-stopped \
-  ocss-command-center:1.0.0
-
-# Access at http://your-server:8501
-```
-
-### 6.4 Reverse Proxy Configuration (Nginx)
-
-**For HTTPS/TLS access:**
-
-```nginx
-upstream streamlit {
-    server localhost:8501;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name ocss.yourdomain.com;
-
-    ssl_certificate /etc/ssl/certs/your-cert.crt;
-    ssl_certificate_key /etc/ssl/private/your-key.key;
-
-    location / {
-        proxy_pass http://streamlit;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-
-# Redirect HTTP to HTTPS
-server {
-    listen 80;
-    server_name ocss.yourdomain.com;
-    redirect 301 https://ocss.yourdomain.com$request_uri;
-}
-```
+Health & monitoring:
+- Streamlit health endpoint available at `/_stcore/health` in container setups.
+- Exported files and logs: `exports/` and `logs/` directories.
 
 ---
 
-## 7. Performance & Scalability
+## Developer & Maintenance Notes
 
-### 7.1 Current Performance Baseline
+- To reseed KB from repo sources: update/delete the KB target in `data/knowledge_base/` or clear `edited_by_admin` in `.seed_manifest.json`, then restart the app.
+- When updating `docs/` files, update the manifest `source_hash` if you need deterministic control; otherwise `_kb_seed_docs()` computes hashes automatically.
+- Run `pytest -q` after code changes; unit tests focus on `report_utils` and `action_logic`.
 
-| Metric | Value | Notes |
-|--------|-------|-------|
-| **Startup Time** | 2-3 seconds | Cold start, includes imports |
-| **Report Load Time** | <100ms | Display 3 caseloads with 5 reports |
-| **CSV Export** | <500ms | For 100-row reports |
-| **Concurrent Users** | 5-10 | Limited by single Streamlit instance |
-| **Memory Usage** | 200-400 MB | Per session depending on data |
+End of Technical Guide
 
-### 7.2 Scaling Limitations (Current)
-
-- **Single Streamlit Instance:** Can handle 5-10 concurrent users
-- **Session-Based Storage:** All data lost on reconnect
-- **No Database:** In-memory storage only
-- **File Upload Size:** Depends on server RAM (recommend <100MB)
-
-### 7.3 Scaling Recommendations
-
-**To support 50+ concurrent users:**
-
-1. **Implement Load Balancer**
-   - Use Nginx or HAProxy
-   - Route requests across multiple Streamlit instances
-   - Sticky sessions for user continuity
-
-2. **Add Persistent Database**
-   - PostgreSQL or MySQL for reports/data
-   - Redis for session caching
-   - Improved fault tolerance
-
-3. **Separate File Storage**
-   - S3 or MinIO for Excel uploads
-   - Reduces server memory pressure
-   - Enables large file handling
-
-4. **Caching Layer**
-   - Redis or Memcached
-   - Cache report data
-   - Reduce database queries
-
-**Recommended Architecture for 100+ Users:**
-```
-Load Balancer (Nginx)
-    ├── Streamlit Instance 1
-    ├── Streamlit Instance 2
-    ├── Streamlit Instance 3
-    ├── PostgreSQL Database
-    ├── Redis Cache
-    └── S3 File Storage
-```
-
-### 7.4 Database Migration Plan
-
-**Current:** In-memory session state  
-**Phase 1:** Add SQLite for development  
-**Phase 2:** Migrate to PostgreSQL for production
-
-```sql
--- Core tables needed
-CREATE TABLE users (
-    id SERIAL PRIMARY KEY,
     username VARCHAR(255) UNIQUE,
     role VARCHAR(50),
     email VARCHAR(255),

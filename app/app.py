@@ -295,6 +295,24 @@ def _kb_seed_docs() -> dict:
         },
     }
 
+def safe_st_dataframe(df, **kwargs):
+    """Display a DataFrame in Streamlit, with a fallback to string-casting if Arrow serialization fails.
+
+    Many Streamlit backends use pyarrow to serialize DataFrames; mixed-type columns can raise
+    ArrowInvalid. This helper tries the normal display first and falls back to `astype(str)`.
+    """
+    try:
+        st.dataframe(df, **kwargs)
+    except Exception:
+        try:
+            st.dataframe(df.astype(str), **kwargs)
+        except Exception:
+            # Last-resort: render as plain text table
+            try:
+                st.write(df.astype(str))
+            except Exception:
+                # swallow to avoid crashing the entire app UI
+                pass
 
 def _kb_manifest_path() -> Path:
     return _get_kb_dir() / ".seed_manifest.json"
@@ -554,7 +572,7 @@ If you don't receive an email within a few minutes, contact IT Support.
                 ],
             }
         )
-        st.dataframe(common_issues.astype(str), width='stretch')
+        safe_st_dataframe(common_issues.astype(str), width='stretch')
 
         return
 
@@ -1145,7 +1163,7 @@ def _render_alert_panel(
             'Status',
         ]
         existing_cols = [c for c in show_cols if c in viewer_alerts.columns]
-        st.dataframe(viewer_alerts[existing_cols].head(25).astype(str), width='stretch', hide_index=True)
+        safe_st_dataframe(viewer_alerts[existing_cols].head(25).astype(str), width='stretch', hide_index=True)
 
         # Minimal acknowledgement control to prevent alert fatigue.
         ack_role_map = {
@@ -2064,7 +2082,7 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
         warnings = _dedupe_preserve_order([str(w) for w in warnings])
         shown = warnings[:max_items]
         extra = len(warnings) - len(shown)
-        with st.expander(f"⚠️ {len(warnings)} warning(s) found during processing"):
+        with st.expander(f"⚠️ Warnings ({len(warnings)})"):
             if extra > 0:
                 shown = shown + [f"...and {extra} more warning(s) not shown."]
             st.warning("\n".join(shown))
@@ -2190,7 +2208,7 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
                 if qa_rows:
                     with st.expander("🧪 Import QA Summary (Excel Parity)"):
                         qa_df = pd.DataFrame(qa_rows)
-                        st.dataframe(qa_df, use_container_width=True, hide_index=True)
+                        safe_st_dataframe(qa_df, use_container_width=True, hide_index=True)
 
                         # Optional details: show unknown columns per caseload if present.
                         unknown_details = {
@@ -2634,7 +2652,7 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
             bulk_col1, bulk_col2 = st.columns(2)
             with bulk_col1:
                 if st.button(
-                    "Apply All Renames",
+                    "✏️ Update All Names",
                     key=f"{key_prefix}_update_all_names",
                     use_container_width=True
                 ):
@@ -2706,7 +2724,7 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
 
         st.caption(f"Final report names: {len(final_rows)}")
         with st.expander("Final report names"):
-            st.dataframe(pd.DataFrame(final_rows), use_container_width=True, hide_index=True)
+            safe_st_dataframe(pd.DataFrame(final_rows), use_container_width=True, hide_index=True)
     else:
         st.info("📝 No reports processed yet. Upload an establishment report above to begin.")
 
@@ -2788,7 +2806,7 @@ def render_user_management_panel(key_prefix: str, dept_scope: str | None = None)
         users_df = users_df_all[users_df_all['Department'] == dept_scope]
     else:
         users_df = users_df_all
-    st.dataframe(users_df, use_container_width=True)
+    safe_st_dataframe(users_df, use_container_width=True)
 
     # Agency leadership structure expectations (visibility + guardrails)
     leadership_df = users_df[users_df['Role'] == 'Director'] if not users_df.empty else pd.DataFrame()
@@ -2981,7 +2999,7 @@ def render_user_management_panel(key_prefix: str, dept_scope: str | None = None)
         })
 
     if unit_summary_rows:
-        st.dataframe(pd.DataFrame(unit_summary_rows), use_container_width=True, hide_index=True)
+        safe_st_dataframe(pd.DataFrame(unit_summary_rows), use_container_width=True, hide_index=True)
         st.caption("Expand a unit below to view members and caseload distribution.")
 
         for unit_name, unit_data in sorted(st.session_state.units.items()):
@@ -3004,7 +3022,7 @@ def render_user_management_panel(key_prefix: str, dept_scope: str | None = None)
                     })
 
                 if assignment_rows:
-                    st.dataframe(pd.DataFrame(assignment_rows), use_container_width=True, hide_index=True)
+                    safe_st_dataframe(pd.DataFrame(assignment_rows), use_container_width=True, hide_index=True)
                 else:
                     st.info("No caseload assignments configured for this unit.")
     else:
@@ -3593,7 +3611,7 @@ def render_help_ticket_center(current_role: str):
                     'resolution_confidence': 'Confidence',
                     'it_verified': 'IT Verified'
                 }, inplace=True)
-                st.dataframe(view_df.sort_values(by='Created', ascending=False), use_container_width=True, hide_index=True)
+                safe_st_dataframe(view_df.sort_values(by='Created', ascending=False), use_container_width=True, hide_index=True)
             else:
                 st.info("No help tickets submitted yet.")
         else:
@@ -3621,7 +3639,7 @@ def render_help_ticket_center(current_role: str):
 
         log_df = pd.DataFrame(st.session_state.get('help_ticket_log', []))
         if not log_df.empty:
-            st.dataframe(log_df.sort_values(by='timestamp', ascending=False), use_container_width=True, hide_index=True)
+            safe_st_dataframe(log_df.sort_values(by='timestamp', ascending=False), use_container_width=True, hide_index=True)
 
 
 def render_help_ticket_kpi_tab(current_role: str, key_prefix: str):
@@ -3800,11 +3818,11 @@ def render_help_ticket_kpi_tab(current_role: str, key_prefix: str):
     with left:
         by_category = ticket_df.groupby('issue_category').size().reset_index(name='Tickets')
         st.write("**Tickets by Category**")
-        st.dataframe(by_category.sort_values(by='Tickets', ascending=False), use_container_width=True, hide_index=True)
+        safe_st_dataframe(by_category.sort_values(by='Tickets', ascending=False), use_container_width=True, hide_index=True)
     with right:
         by_priority = ticket_df.groupby('priority').size().reset_index(name='Tickets')
         st.write("**Tickets by Priority**")
-        st.dataframe(by_priority.sort_values(by='Tickets', ascending=False), use_container_width=True, hide_index=True)
+        safe_st_dataframe(by_priority.sort_values(by='Tickets', ascending=False), use_container_width=True, hide_index=True)
 
     view_df = ticket_df[[
         'ticket_id', 'created_at', 'submitter_role', 'establishment', 'priority',
@@ -3823,7 +3841,7 @@ def render_help_ticket_kpi_tab(current_role: str, key_prefix: str):
         'resolution': 'Auto Resolution'
     }, inplace=True)
     st.write("**Ticket Detail for KPI Review**")
-    st.dataframe(view_df.sort_values(by='Created', ascending=False), use_container_width=True, hide_index=True)
+    safe_st_dataframe(view_df.sort_values(by='Created', ascending=False), use_container_width=True, hide_index=True)
 
     try:
         from .roles import role_has
@@ -3834,7 +3852,7 @@ def render_help_ticket_kpi_tab(current_role: str, key_prefix: str):
         st.write("**IT Log Snapshot**")
         log_df = pd.DataFrame(st.session_state.get('help_ticket_log', []))
         if not log_df.empty:
-            st.dataframe(log_df.sort_values(by='timestamp', ascending=False), use_container_width=True, hide_index=True)
+            safe_st_dataframe(log_df.sort_values(by='timestamp', ascending=False), use_container_width=True, hide_index=True)
         else:
             st.info("No IT ticket log entries yet.")
 
@@ -3990,7 +4008,7 @@ if role in ["Director", "Deputy Director"]:
                 if viewer_alerts.empty:
                     st.info("No department escalation alerts right now.")
                 else:
-                    st.dataframe(viewer_alerts.head(25).astype(str), use_container_width=True, hide_index=True)
+                    safe_st_dataframe(viewer_alerts.head(25).astype(str), use_container_width=True, hide_index=True)
 
             # Department KPI snapshot: caseload work status scoped to department units
             caseload_status_df = _build_caseload_work_status_df(scope_unit=None)
@@ -3999,7 +4017,7 @@ if role in ["Director", "Deputy Director"]:
             if caseload_status_df.empty:
                 st.info("No caseload work status available yet for this department.")
             else:
-                st.dataframe(caseload_status_df, use_container_width=True, hide_index=True)
+                safe_st_dataframe(caseload_status_df, use_container_width=True, hide_index=True)
         
         # Performance Chart
         st.subheader("Monthly Report Submissions")
