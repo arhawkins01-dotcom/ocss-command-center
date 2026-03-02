@@ -48,7 +48,13 @@ def assign_caseloads_bulk(worker_name: str, caseload_numbers: list):
         # find unit for worker
         unit_found = None
         for unit_name, unit in st.session_state.get('units', {}).items():
-            if worker_name in (unit.get('support_officers') or []) or worker_name in (unit.get('team_leads') or []):
+            unit_workers = set(unit.get('support_officers') or []) | set(unit.get('team_leads') or [])
+            # Allow optional specialist lists if present in the unit model.
+            unit_workers |= set(unit.get('client_info_specialists') or [])
+            unit_workers |= set(unit.get('client_info_team_leads') or [])
+            unit_workers |= set(unit.get('case_info_specialists') or [])
+            unit_workers |= set(unit.get('case_info_team_leads') or [])
+            if worker_name in unit_workers:
                 unit_found = unit_name
                 break
 
@@ -56,7 +62,8 @@ def assign_caseloads_bulk(worker_name: str, caseload_numbers: list):
             # try to infer unit from users list
             for u in st.session_state.get('users', []):
                 if str(u.get('name', '')).strip() == str(worker_name).strip():
-                    unit_found = str(u.get('department', '')).strip() or None
+                    # New schema: prefer explicit unit field. Legacy schema: unit stored in department.
+                    unit_found = str(u.get('unit', '')).strip() or str(u.get('department', '')).strip() or None
                     break
 
         if not unit_found:
