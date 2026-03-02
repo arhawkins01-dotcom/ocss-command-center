@@ -24,11 +24,19 @@ def _downloads_allowed() -> bool:
 # package-relative imports when possible, but fall back to absolute imports
 # so `streamlit run app/app.py` also works in development environments.
 try:
-    from .report_utils import SupportReportIngestionService, canonical_to_workflow_dataframe
+    from .report_utils import (
+        SupportReportIngestionService,
+        canonical_to_workflow_dataframe,
+        validate_support_workflow_row_completion,
+    )
     from . import database
     from . import auth
 except Exception:
-    from report_utils import SupportReportIngestionService, canonical_to_workflow_dataframe
+    from report_utils import (
+        SupportReportIngestionService,
+        canonical_to_workflow_dataframe,
+        validate_support_workflow_row_completion,
+    )
     import database
     import auth
 
@@ -2096,7 +2104,8 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
     col1, col2 = st.columns([2, 1])
 
     with col1:
-        st.subheader("Upload Establishment Report")
+        st.subheader("Step 1 — Upload Establishment Report")
+        st.caption("Upload an Excel/CSV file, confirm caseloads, set period metadata, then process.")
 
         caseload_labels = {
             '181000': 'Downtown Elementary',
@@ -2107,7 +2116,7 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
         existing_caseloads = sorted(list(st.session_state.reports_by_caseload.keys()))
         available_caseloads = existing_caseloads if existing_caseloads else ['181000', '181001', '181002']
         selected_caseload = st.selectbox(
-            "Select Caseload for Upload",
+            "Default caseload (used only if the file contains none)",
             available_caseloads,
             format_func=lambda caseload: f"{caseload} - {caseload_labels.get(caseload, 'Assigned Caseload')}",
             key=f"{key_prefix}_selected_caseload"
@@ -2136,7 +2145,7 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
         selected_caseloads = []
 
         if uploaded_file:
-            st.success(f"✅ File uploaded: {uploaded_file.name}")
+            st.success(f"✓ File ready: {uploaded_file.name}")
             read_result = ingestion_service.read_uploaded_file(uploaded_file)
             if not read_result.get('success'):
                 st.error(f"Error reading file: {read_result.get('error', 'Unknown error')}")
@@ -2145,7 +2154,15 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
                 caseload_data = read_result.get('caseload_data', [])
                 all_caseloads = read_result.get('all_caseloads', [])
                 preview = read_result.get('preview', {})
-                st.info(f"Detected caseloads: {', '.join(all_caseloads)}")
+                if all_caseloads:
+                    shown = ", ".join([str(c) for c in all_caseloads[:10]])
+                    more = len(all_caseloads) - min(len(all_caseloads), 10)
+                    st.info(f"Detected caseloads: {shown}{' ...' if more > 0 else ''}")
+                    if more > 0:
+                        st.caption(f"(+{more} more detected)")
+                    st.caption("Default caseload selection is ignored when the file contains caseloads.")
+                else:
+                    st.warning("No caseloads were detected in the file; the default caseload will be used.")
                 st.caption(f"Preview (rows, columns) per caseload: {preview}")
 
                 # Pre-compute per-caseload header analysis once (used later for routing + KPI display).
@@ -2317,238 +2334,283 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
                     key=f"{key_prefix}_allow_duplicate"
                 )
 
-            if st.button("Process Report", key=f"{key_prefix}_process_report"):
+                st.subheader("Step 2 — Process")
+                st.caption("Processing creates caseload work queues and makes the report available to workers.")
+
+            can_process = bool(uploaded_file and caseload_data and selected_caseloads)
+            if st.button(
+                "Process Report",
+                key=f"{key_prefix}_process_report",
+                disabled=not can_process,
+                help=None if can_process else "Upload a file and select at least one caseload to enable processing.",
+            ):
                 warnings = []
+                processed_caseloads_all: list[str] = []
+                processed_ingestion_ids: list[str] = []
+                assignment_success_total = 0
+                assignment_failure_total = 0
+                duplicate_blocked_total = 0
+                duplicate_matches_total = 0
                 # Only process if at least one caseload is selected and data exists
                 if not caseload_data or not selected_caseloads:
                     warnings.append("Upload a valid Excel/CSV report and select at least one caseload before processing.")
                 else:
                     # Iterate over selected caseloads and process each
-                    for item in caseload_data:
-                        if isinstance(item, (tuple, list)) and len(item) == 2:
-                            caseload, base_df = item
-                            sheet_name = ''
-                        else:
-                            caseload = item.get('caseload') if isinstance(item, dict) else None
-                            base_df = item.get('df') if isinstance(item, dict) else None
-                            sheet_name = item.get('sheet_name', '') if isinstance(item, dict) else ''
+                    with st.spinner("Processing report intake..."):
+                        for item in caseload_data:
+                            if isinstance(item, (tuple, list)) and len(item) == 2:
+                                caseload, base_df = item
+                                sheet_name = ''
+                            else:
+                                caseload = item.get('caseload') if isinstance(item, dict) else None
+                                base_df = item.get('df') if isinstance(item, dict) else None
+                                sheet_name = item.get('sheet_name', '') if isinstance(item, dict) else ''
 
-                        if not caseload or not isinstance(base_df, pd.DataFrame):
-                            continue
-
-                        if caseload not in selected_caseloads:
-                            continue
-                        period_key = ingestion_service.build_period_key(report_frequency, int(period_year), period_value)
-
-                        analysis = analysis_by_caseload.get(caseload)
-                        if analysis:
-                            recognized_header_count = int(analysis.get('recognized_headers', 0) or 0)
-                            missing_upload_headers = list(analysis.get('missing_headers') or [])
-                        else:
-                            recognized_header_count = 0
-                            missing_upload_headers = []
-
-                        normalized_for_hash = base_df.copy() if isinstance(base_df, pd.DataFrame) else pd.DataFrame()
-                        normalized_for_hash, _, _ = normalize_support_report_dataframe(normalized_for_hash, caseload)
-                        caseload_candidates = []
-                        if not normalized_for_hash.empty and 'Caseload' in normalized_for_hash.columns:
-                            caseload_candidates = sorted(list({
-                                normalize_caseload_number(v)
-                                for v in normalized_for_hash['Caseload'].astype(str).tolist()
-                                if normalize_caseload_number(v)
-                            }))
-                        if not caseload_candidates:
-                            caseload_candidates = [normalize_caseload_number(caseload)]
-
-                        dataframe_hash = ingestion_service.compute_dataframe_hash(normalized_for_hash)
-                        duplicate_candidates = ingestion_service.find_duplicate_candidates(
-                            registry_rows=st.session_state.get('report_ingestion_registry', []),
-                            report_type=report_type,
-                            owning_department=owning_department,
-                            report_frequency=report_frequency,
-                            period_key=period_key,
-                            caseloads=caseload_candidates,
-                            dataframe_hash=dataframe_hash
-                        )
-
-                        if duplicate_candidates and not allow_duplicate_ingestion:
-                            existing_ids = ', '.join(sorted(list({d.get('report_id', '') for d in duplicate_candidates if d.get('report_id')})))
-                            warnings.append(
-                                f"Duplicate period ingestion detected for caseload {caseload}. "
-                                f"Existing report(s): {existing_ids or 'existing records found'}. "
-                                "Check 'Allow ingestion...' to proceed intentionally."
-                            )
-                            continue
-
-                        ingestion_id = f"ING-{datetime.now().strftime('%Y%m%d%H%M%S')}-{len(st.session_state.report_ingestion_registry)+1:04d}"
-                        imported_at = datetime.now()
-                        ingestion_kwargs = {
-                            'source_filename': uploaded_file.name,
-                            'uploader_role': uploader_role,
-                            'normalized_df': base_df,
-                            'resolved_caseload': caseload,
-                            'assigned_worker_choice': assigned_worker_choice,
-                            'recognized_headers': recognized_header_count,
-                            'missing_headers': missing_upload_headers,
-                            'existing_reports_by_caseload': st.session_state.reports_by_caseload,
-                            'caseload_owner_resolver': get_caseload_owner,
-                            'report_type': report_type,
-                            'report_frequency': report_frequency,
-                            'period_label': f"{period_year}-{period_value}",
-                            'period_key': period_key,
-                            'ingestion_id': ingestion_id,
-                            'duplicate_detected': len(duplicate_candidates) > 0,
-                            'duplicate_count': len(duplicate_candidates),
-                        }
-                        if supports_sheet_name:
-                            ingestion_kwargs['sheet_name'] = sheet_name
-
-                        ingest_result = ingestion_service.build_ingestion_records(**ingestion_kwargs)
-
-                        created_reports = ingest_result.get('created_reports', [])
-
-                        # Attach upload/due clock metadata for escalation alerts.
-                        # This is intentionally report-level (not per-row) to stay lightweight.
-                        due_days_by_report_id: dict[str, dict] = {}
-                        for report_entry in created_reports or []:
-                            if not isinstance(report_entry, dict):
-                                continue
-                            rid = str(report_entry.get('report_id') or '').strip()
-                            if not rid:
+                            if not caseload or not isinstance(base_df, pd.DataFrame):
                                 continue
 
-                            report_source = _resolve_report_source(report_entry)
-                            report_entry['report_source'] = report_source
+                            if caseload not in selected_caseloads:
+                                continue
+                            period_key = ingestion_service.build_period_key(report_frequency, int(period_year), period_value)
 
-                            uploaded_at = _parse_dt(report_entry.get('timestamp')) or imported_at
-                            report_entry['uploaded_at'] = uploaded_at.isoformat(timespec='seconds')
+                            analysis = analysis_by_caseload.get(caseload)
+                            if analysis:
+                                recognized_header_count = int(analysis.get('recognized_headers', 0) or 0)
+                                missing_upload_headers = list(analysis.get('missing_headers') or [])
+                            else:
+                                recognized_header_count = 0
+                                missing_upload_headers = []
 
-                            # Persist month value for schedules (monthly only).
-                            report_entry['period_month'] = str(period_value) if str(report_frequency) == 'Monthly' else ''
+                            normalized_for_hash = base_df.copy() if isinstance(base_df, pd.DataFrame) else pd.DataFrame()
+                            normalized_for_hash, _, _ = normalize_support_report_dataframe(normalized_for_hash, caseload)
+                            caseload_candidates = []
+                            if not normalized_for_hash.empty and 'Caseload' in normalized_for_hash.columns:
+                                caseload_candidates = sorted(list({
+                                    normalize_caseload_number(v)
+                                    for v in normalized_for_hash['Caseload'].astype(str).tolist()
+                                    if normalize_caseload_number(v)
+                                }))
+                            if not caseload_candidates:
+                                caseload_candidates = [normalize_caseload_number(caseload)]
 
-                            due_days, due_at = _compute_due_at(
-                                report_source=report_source,
+                            dataframe_hash = ingestion_service.compute_dataframe_hash(normalized_for_hash)
+                            duplicate_candidates = ingestion_service.find_duplicate_candidates(
+                                registry_rows=st.session_state.get('report_ingestion_registry', []),
+                                report_type=report_type,
+                                owning_department=owning_department,
                                 report_frequency=report_frequency,
-                                period_value=str(period_value),
-                                uploaded_at=uploaded_at,
+                                period_key=period_key,
+                                caseloads=caseload_candidates,
+                                dataframe_hash=dataframe_hash
                             )
-                            report_entry['due_days'] = due_days
-                            report_entry['due_at'] = due_at.isoformat(timespec='seconds') if due_at else ''
-                            due_days_by_report_id[rid] = {
-                                'due_days': due_days,
-                                'due_at': report_entry.get('due_at', ''),
-                                'uploaded_at': report_entry.get('uploaded_at', ''),
-                                'report_source': report_source,
-                                'period_month': report_entry.get('period_month', ''),
-                            }
-                        processed_caseloads_for_event = sorted(list({
-                            normalize_caseload_number(r.get('caseload', ''))
-                            for r in (created_reports or [])
-                            if normalize_caseload_number(r.get('caseload', ''))
-                        }))
-                        group_summary_for_event, group_count_for_event = _format_caseload_group_ranges(processed_caseloads_for_event)
-                        for report_entry in created_reports:
-                            caseload_key = normalize_caseload_number(report_entry.get('caseload', ''))
-                            if not caseload_key:
+
+                            if duplicate_candidates and not allow_duplicate_ingestion:
+                                existing_ids = ', '.join(sorted(list({d.get('report_id', '') for d in duplicate_candidates if d.get('report_id')})))
+                                warnings.append(
+                                    f"Duplicate period ingestion detected for caseload {caseload}. "
+                                    f"Existing report(s): {existing_ids or 'existing records found'}. "
+                                    "Check 'Allow ingestion...' to proceed intentionally."
+                                )
+                                duplicate_blocked_total += 1
                                 continue
-                            st.session_state.reports_by_caseload.setdefault(caseload_key, [])
-                            st.session_state.reports_by_caseload[caseload_key].append(report_entry)
 
-                        st.session_state.uploaded_reports.extend(ingest_result.get('uploaded_rows', []))
-
-                        # Enrich audit rows with due metadata for downstream alert display.
-                        enriched_audit_rows = []
-                        for audit_row in ingest_result.get('audit_rows', []) or []:
-                            if not isinstance(audit_row, dict):
-                                continue
-                            rid = str(audit_row.get('report_id') or '').strip()
-                            if rid and rid in due_days_by_report_id:
-                                audit_row.update(due_days_by_report_id[rid])
-                            enriched_audit_rows.append(audit_row)
-                        st.session_state.upload_audit_log.extend(enriched_audit_rows)
-
-                        # DEBUG: Log confirmation rows for troubleshooting
-                        debug_rows = [
-                            {
-                                'ingestion_id': row.get('ingestion_id'),
-                                'caseload': row.get('caseload'),
-                                'report_type': row.get('report_type'),
-                                'period_key': row.get('period_key'),
-                                'status': row.get('status'),
-                            }
-                            for row in ingest_result.get('uploaded_rows', [])
-                        ]
-                        if st.session_state.get('debug_ingestion'):
-                            st.info(f"[DEBUG] Confirmation rows for caseload {caseload}: {debug_rows}")
-
-                        for report_entry in created_reports:
-                            st.session_state.report_ingestion_registry.append({
+                            ingestion_id = f"ING-{datetime.now().strftime('%Y%m%d%H%M%S')}-{len(st.session_state.report_ingestion_registry)+1:04d}"
+                            imported_at = datetime.now()
+                            ingestion_kwargs = {
+                                'source_filename': uploaded_file.name,
+                                'uploader_role': uploader_role,
+                                'normalized_df': base_df,
+                                'resolved_caseload': caseload,
+                                'assigned_worker_choice': assigned_worker_choice,
+                                'recognized_headers': recognized_header_count,
+                                'missing_headers': missing_upload_headers,
+                                'existing_reports_by_caseload': st.session_state.reports_by_caseload,
+                                'caseload_owner_resolver': get_caseload_owner,
+                                'report_type': report_type,
+                                'report_frequency': report_frequency,
+                                'period_label': f"{period_year}-{period_value}",
+                                'period_key': period_key,
                                 'ingestion_id': ingestion_id,
-                                'report_id': report_entry.get('report_id'),
-                                'filename': uploaded_file.name,
-                                'uploaded_by': uploader_role,
+                                'duplicate_detected': len(duplicate_candidates) > 0,
+                                'duplicate_count': len(duplicate_candidates),
+                            }
+                            if supports_sheet_name:
+                                ingestion_kwargs['sheet_name'] = sheet_name
+
+                            ingest_result = ingestion_service.build_ingestion_records(**ingestion_kwargs)
+
+                            created_reports = ingest_result.get('created_reports', [])
+
+                            # Attach upload/due clock metadata for escalation alerts.
+                            # This is intentionally report-level (not per-row) to stay lightweight.
+                            due_days_by_report_id: dict[str, dict] = {}
+                            for report_entry in created_reports or []:
+                                if not isinstance(report_entry, dict):
+                                    continue
+                                rid = str(report_entry.get('report_id') or '').strip()
+                                if not rid:
+                                    continue
+
+                                report_source = _resolve_report_source(report_entry)
+                                report_entry['report_source'] = report_source
+
+                                uploaded_at = _parse_dt(report_entry.get('timestamp')) or imported_at
+                                report_entry['uploaded_at'] = uploaded_at.isoformat(timespec='seconds')
+
+                                # Persist month value for schedules (monthly only).
+                                report_entry['period_month'] = str(period_value) if str(report_frequency) == 'Monthly' else ''
+
+                                due_days, due_at = _compute_due_at(
+                                    report_source=report_source,
+                                    report_frequency=report_frequency,
+                                    period_value=str(period_value),
+                                    uploaded_at=uploaded_at,
+                                )
+                                report_entry['due_days'] = due_days
+                                report_entry['due_at'] = due_at.isoformat(timespec='seconds') if due_at else ''
+                                due_days_by_report_id[rid] = {
+                                    'due_days': due_days,
+                                    'due_at': report_entry.get('due_at', ''),
+                                    'uploaded_at': report_entry.get('uploaded_at', ''),
+                                    'report_source': report_source,
+                                    'period_month': report_entry.get('period_month', ''),
+                                }
+
+                            processed_caseloads_for_event = sorted(list({
+                                normalize_caseload_number(r.get('caseload', ''))
+                                for r in (created_reports or [])
+                                if normalize_caseload_number(r.get('caseload', ''))
+                            }))
+                            processed_caseloads_all.extend(processed_caseloads_for_event)
+                            group_summary_for_event, group_count_for_event = _format_caseload_group_ranges(processed_caseloads_for_event)
+                            for report_entry in created_reports:
+                                caseload_key = normalize_caseload_number(report_entry.get('caseload', ''))
+                                if not caseload_key:
+                                    continue
+                                st.session_state.reports_by_caseload.setdefault(caseload_key, [])
+                                st.session_state.reports_by_caseload[caseload_key].append(report_entry)
+
+                            st.session_state.uploaded_reports.extend(ingest_result.get('uploaded_rows', []))
+
+                            # Enrich audit rows with due metadata for downstream alert display.
+                            enriched_audit_rows = []
+                            for audit_row in ingest_result.get('audit_rows', []) or []:
+                                if not isinstance(audit_row, dict):
+                                    continue
+                                rid = str(audit_row.get('report_id') or '').strip()
+                                if rid and rid in due_days_by_report_id:
+                                    audit_row.update(due_days_by_report_id[rid])
+                                enriched_audit_rows.append(audit_row)
+                            st.session_state.upload_audit_log.extend(enriched_audit_rows)
+
+                            # DEBUG: Log confirmation rows for troubleshooting
+                            debug_rows = [
+                                {
+                                    'ingestion_id': row.get('ingestion_id'),
+                                    'caseload': row.get('caseload'),
+                                    'report_type': row.get('report_type'),
+                                    'period_key': row.get('period_key'),
+                                    'status': row.get('status'),
+                                }
+                                for row in ingest_result.get('uploaded_rows', [])
+                            ]
+                            if st.session_state.get('debug_ingestion'):
+                                st.info(f"[DEBUG] Confirmation rows for caseload {caseload}: {debug_rows}")
+
+                            processed_ingestion_ids.append(ingestion_id)
+
+                            for report_entry in created_reports:
+                                st.session_state.report_ingestion_registry.append({
+                                    'ingestion_id': ingestion_id,
+                                    'report_id': report_entry.get('report_id'),
+                                    'filename': uploaded_file.name,
+                                    'uploaded_by': uploader_role,
+                                    'timestamp': datetime.now().isoformat(),
+                                    'report_type': report_type,
+                                    'owning_department': owning_department,
+                                    'report_frequency': report_frequency,
+                                    'period_key': period_key,
+                                    'period_label': f"{period_year}-{period_value}",
+                                    'period_month': str(period_value) if str(report_frequency) == 'Monthly' else '',
+                                    'caseload': report_entry.get('caseload'),
+                                    'dataframe_hash': dataframe_hash,
+                                    'duplicate_detected': len(duplicate_candidates) > 0,
+                                    'report_source': report_entry.get('report_source', ''),
+                                    'uploaded_at': report_entry.get('uploaded_at', ''),
+                                    'due_at': report_entry.get('due_at', ''),
+                                    'due_days': report_entry.get('due_days', 0),
+                                })
+
+                            st.session_state.report_ingestion_events.append({
+                                'ingestion_id': ingestion_id,
                                 'timestamp': datetime.now().isoformat(),
+                                'filename': uploaded_file.name,
                                 'report_type': report_type,
                                 'owning_department': owning_department,
                                 'report_frequency': report_frequency,
-                                'period_key': period_key,
                                 'period_label': f"{period_year}-{period_value}",
-                                'period_month': str(period_value) if str(report_frequency) == 'Monthly' else '',
-                                'caseload': report_entry.get('caseload'),
-                                'dataframe_hash': dataframe_hash,
                                 'duplicate_detected': len(duplicate_candidates) > 0,
-                                'report_source': report_entry.get('report_source', ''),
-                                'uploaded_at': report_entry.get('uploaded_at', ''),
-                                'due_at': report_entry.get('due_at', ''),
-                                'due_days': report_entry.get('due_days', 0),
+                                'duplicate_count': len(duplicate_candidates),
+                                'caseload_count': len(created_reports),
+                                'caseload_group_count': group_count_for_event,
+                                'caseload_group_summary': group_summary_for_event,
+                                'caseloads': processed_caseloads_for_event,
                             })
 
-                        st.session_state.report_ingestion_events.append({
-                            'ingestion_id': ingestion_id,
-                            'timestamp': datetime.now().isoformat(),
-                            'filename': uploaded_file.name,
-                            'report_type': report_type,
-                            'owning_department': owning_department,
-                            'report_frequency': report_frequency,
-                            'period_label': f"{period_year}-{period_value}",
-                            'duplicate_detected': len(duplicate_candidates) > 0,
-                            'duplicate_count': len(duplicate_candidates),
-                            'caseload_count': len(created_reports),
-                            'caseload_group_count': group_count_for_event,
-                            'caseload_group_summary': group_summary_for_event,
-                            'caseloads': processed_caseloads_for_event,
-                        })
+                            assignment_success_count = 0
+                            assignment_failure_count = 0
+                            for report_entry in created_reports:
+                                final_assigned_worker = report_entry.get('assigned_worker')
+                                caseload_value = normalize_caseload_number(report_entry.get('caseload', ''))
+                                if final_assigned_worker and caseload_value:
+                                    success, message = assign_caseload_to_worker(final_assigned_worker, caseload_value)
+                                    if success:
+                                        assignment_success_count += 1
+                                    else:
+                                        assignment_failure_count += 1
+                                        warnings.append(message)
 
-                        assignment_success_count = 0
-                        assignment_failure_count = 0
-                        for report_entry in created_reports:
-                            final_assigned_worker = report_entry.get('assigned_worker')
-                            caseload_value = normalize_caseload_number(report_entry.get('caseload', ''))
-                            if final_assigned_worker and caseload_value:
-                                success, message = assign_caseload_to_worker(final_assigned_worker, caseload_value)
-                                if success:
-                                    assignment_success_count += 1
-                                else:
-                                    assignment_failure_count += 1
-                                    warnings.append(message)
+                            assignment_success_total += assignment_success_count
+                            assignment_failure_total += assignment_failure_count
 
-                        if assignment_success_count:
-                            st.caption(f"Auto-assigned {assignment_success_count} caseload(s) to workers.")
+                            if duplicate_candidates:
+                                duplicate_matches_total += len(duplicate_candidates)
+                            # Avoid celebratory animations in an executive workflow.
 
-                        processed_caseloads = processed_caseloads_for_event
-                        caseload_summary, group_count = _format_caseload_group_ranges(processed_caseloads)
+                    processed_caseloads_all = _dedupe_preserve_order([
+                        c for c in [normalize_caseload_number(v) for v in processed_caseloads_all]
+                        if c
+                    ])
+
+                    if processed_caseloads_all:
+                        caseload_summary, group_count = _format_caseload_group_ranges(sorted(processed_caseloads_all))
                         group_label = "Caseload group" if group_count == 1 else "Caseload groups"
                         st.success(
-                            f"✓ {group_label} ({group_count}): {caseload_summary}" if caseload_summary else f"✓ {group_label} ({group_count}) processed"
+                            f"✓ {group_label} ({group_count}): {caseload_summary}"
+                            if caseload_summary
+                            else f"✓ {group_label} ({group_count}) processed"
                         )
-                        st.caption(f"Source file: {uploaded_file.name}")
-                        if st.session_state.get('debug_ingestion'):
-                            st.caption(f"[DEBUG] ingestion_id={ingestion_id}")
-                        if duplicate_candidates:
-                            warnings.append(
-                                f"Duplicate scan: {len(duplicate_candidates)} matching historical record(s) were found for this period."
+                        st.caption(
+                            f"Source file: {uploaded_file.name} | {report_frequency} {period_year}-{period_value} | "
+                            f"{owning_department} | {report_type}"
+                        )
+                        if assignment_success_total:
+                            st.caption(f"Auto-assigned {assignment_success_total} caseload(s) to workers.")
+                        if st.session_state.get('debug_ingestion') and processed_ingestion_ids:
+                            shown_ingestions = ", ".join(processed_ingestion_ids[-3:])
+                            extra = len(processed_ingestion_ids) - min(len(processed_ingestion_ids), 3)
+                            st.caption(
+                                f"[DEBUG] ingestion_id(s): {shown_ingestions}{' ...' if extra > 0 else ''}"
                             )
-                        st.balloons()
+                    elif duplicate_blocked_total > 0:
+                        st.warning("No caseloads were processed because duplicates were blocked. Enable 'Allow ingestion...' to override intentionally.")
+                    else:
+                        st.warning("No caseloads were processed. Confirm the upload contains caseloads and that at least one caseload is selected.")
+
+                    if duplicate_matches_total:
+                        warnings.append(
+                            f"Duplicate scan: {duplicate_matches_total} matching historical record(s) were found for this period across selected caseload(s)."
+                        )
                 
                 # Show warnings in a dedicated section (deduped + capped to avoid huge UI spam)
                 _render_processing_warnings(warnings)
@@ -2647,6 +2709,7 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
 
     if st.session_state.uploaded_reports:
         st.subheader("📤 Reports Successfully Processed")
+        st.caption("Rename and review details in the expanders below.")
 
         with st.expander("Bulk actions"):
             bulk_col1, bulk_col2 = st.columns(2)
@@ -2679,42 +2742,40 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
                     st.rerun()
 
         display_groups = _group_uploaded_reports_for_display(st.session_state.uploaded_reports)
-        for group_idx, group in enumerate(display_groups):
-            col1, col2, col3, col4 = st.columns([2, 2, 1.5, 1.5])
-            with col1:
-                st.write(f"**Original:** {group.get('filename', '')}")
-                group_label = str(group.get('caseload_group') or '').strip()
-                if group_label:
-                    st.caption(f"Caseload group: {group_label}")
-            with col2:
-                new_name = st.text_input(
-                    "Rename to",
-                    value=str(group.get('renamed_to') or group.get('filename') or ''),
-                    key=f"{key_prefix}_rename_group_{group_idx}",
-                    placeholder="Edit report name..."
-                )
-            with col3:
-                ts = group.get('timestamp')
-                if ts:
-                    try:
-                        st.caption(f"Processed: {ts.strftime('%b %d, %I:%M %p')}")
-                    except Exception:
-                        st.caption("Processed: (timestamp unavailable)")
-                st.caption(f"Assigned: {group.get('assigned_worker', 'Unassigned')}")
-            with col4:
-                if st.button("✏️ Update", key=f"{key_prefix}_update_name_group_{group_idx}", use_container_width=True):
-                    new_value = str(new_name or '').strip()
-                    if not new_value:
-                        st.error("Enter a name before updating.")
-                    else:
-                        for row_idx in group.get('indices', []):
-                            if 0 <= int(row_idx) < len(st.session_state.uploaded_reports):
-                                st.session_state.uploaded_reports[int(row_idx)]['renamed_to'] = new_value
-                        st.success(f"✓ Renamed to: {new_value}")
-
-        st.divider()
+        with st.expander("Rename processed reports", expanded=False):
+            for group_idx, group in enumerate(display_groups):
+                col1, col2, col3, col4 = st.columns([2, 2, 1.5, 1.5])
+                with col1:
+                    st.write(f"**Original:** {group.get('filename', '')}")
+                    group_label = str(group.get('caseload_group') or '').strip()
+                    if group_label:
+                        st.caption(f"Caseload group: {group_label}")
+                with col2:
+                    new_name = st.text_input(
+                        "Rename to",
+                        value=str(group.get('renamed_to') or group.get('filename') or ''),
+                        key=f"{key_prefix}_rename_group_{group_idx}",
+                        placeholder="Edit report name..."
+                    )
+                with col3:
+                    ts = group.get('timestamp')
+                    if ts:
+                        try:
+                            st.caption(f"Processed: {ts.strftime('%b %d, %I:%M %p')}")
+                        except Exception:
+                            st.caption("Processed: (timestamp unavailable)")
+                    st.caption(f"Assigned: {group.get('assigned_worker', 'Unassigned')}")
+                with col4:
+                    if st.button("✏️ Update", key=f"{key_prefix}_update_name_group_{group_idx}", use_container_width=True):
+                        new_value = str(new_name or '').strip()
+                        if not new_value:
+                            st.error("Enter a name before updating.")
+                        else:
+                            for row_idx in group.get('indices', []):
+                                if 0 <= int(row_idx) < len(st.session_state.uploaded_reports):
+                                    st.session_state.uploaded_reports[int(row_idx)]['renamed_to'] = new_value
+                            st.success(f"✓ Renamed to: {new_value}")
         final_rows = []
-        display_groups = _group_uploaded_reports_for_display(st.session_state.uploaded_reports)
         for group in display_groups:
             final_rows.append({
                 'Report Name': group.get('renamed_to', group.get('filename', '')),
@@ -2722,8 +2783,7 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
                 'Assigned': group.get('assigned_worker', 'Unassigned')
             })
 
-        st.caption(f"Final report names: {len(final_rows)}")
-        with st.expander("Final report names"):
+        with st.expander(f"Final report names ({len(final_rows)})", expanded=False):
             safe_st_dataframe(pd.DataFrame(final_rows), use_container_width=True, hide_index=True)
     else:
         st.info("📝 No reports processed yet. Upload an establishment report above to begin.")
@@ -5381,6 +5441,13 @@ elif role == "Support Officer":
                     # Display current data summary
                     st.subheader("📊 Current Values")
                     summary_df = pd.DataFrame(list(st.session_state[edit_key].items()), columns=['Field', 'Value'])
+                    # Streamlit uses Arrow conversion under the hood; mixed dtypes in a column
+                    # can crash rendering. Ensure the Value column is consistently string.
+                    if 'Value' in summary_df.columns:
+                        try:
+                            summary_df['Value'] = summary_df['Value'].astype(str)
+                        except Exception:
+                            pass
                     st.dataframe(summary_df, use_container_width=True, hide_index=True)
                     
                     st.divider()
@@ -5682,6 +5749,11 @@ elif role == "Support Officer":
                             selected_report['data'] = working_df
                         else:
                             st.markdown("**Work Report Rows (one case line at a time)**")
+                            st.caption(
+                                f"Report: {selected_report.get('report_id', 'N/A')} | "
+                                f"Caseload: {selected_ref['caseload']} | "
+                                f"Assigned Worker: {acting_so}"
+                            )
 
                             # Determine report source early so the completion checklist can reflect
                             # the exact required fields enforced at submit-time.
@@ -5750,6 +5822,12 @@ The app will block submission if any of your assigned rows are not marked **Comp
                             )
 
                             if row_filter == "Pending / In Progress":
+                                st.caption(
+                                    "Tip: when you set a row's Worker Status to Completed, it will disappear from this view. "
+                                    "Switch to 'Completed Rows' to review what you finished."
+                                )
+
+                            if row_filter == "Pending / In Progress":
                                 candidate_rows = worker_rows[worker_rows['Worker Status'] != 'Completed'].copy()
                             elif row_filter == "Completed Rows":
                                 candidate_rows = worker_rows[worker_rows['Worker Status'] == 'Completed'].copy()
@@ -5787,12 +5865,43 @@ The app will block submission if any of your assigned rows are not marked **Comp
                                     editable_columns |= {'Date Case Reviewed', 'Results of Review', 'Case Closure Code', 'Case Narrated', 'Comment'}
 
                                 sheet_df = candidate_rows.copy()
+
+                                # Bring the fields the worker must touch to the front of the sheet.
+                                if report_source_value == 'PS':
+                                    editor_order = ['Worker Status', 'Action Taken/Status', 'Case Narrated', 'Comment']
+                                elif report_source_value == '56':
+                                    editor_order = ['Worker Status', 'Date Action Taken', 'Action Taken/Status', 'Case Narrated', 'Comment']
+                                else:
+                                    editor_order = ['Worker Status', 'Date Case Reviewed', 'Results of Review', 'Case Closure Code', 'Case Narrated', 'Comment']
+
+                                preferred_front = []
+                                for c in ['Case Number', 'Case Type', 'Case Mode']:
+                                    if c in sheet_df.columns and c not in preferred_front:
+                                        preferred_front.append(c)
+                                for c in editor_order:
+                                    if c in sheet_df.columns and c not in preferred_front:
+                                        preferred_front.append(c)
+                                for c in ['Assigned Worker']:
+                                    if c in sheet_df.columns and c not in preferred_front:
+                                        preferred_front.append(c)
+                                remaining_cols = [c for c in sheet_df.columns if c not in preferred_front]
+
+                                # De-emphasize internal/tracking columns by pushing them to the far right.
+                                tail_cols = [c for c in ['Report Source', 'Case Row ID'] if c in remaining_cols]
+                                remaining_cols = [c for c in remaining_cols if c not in tail_cols] + tail_cols
+                                sheet_df = sheet_df[preferred_front + remaining_cols]
+
                                 disabled_columns = [col for col in sheet_df.columns if col not in editable_columns]
+
+                                st.info(
+                                    "To mark a row complete: click the cell under 'Worker Status' and choose 'Completed'. "
+                                    "If it switches back, fill the required fields for this report type (see the checklist above)."
+                                )
 
                                 column_config = {
                                     'Worker Status': st.column_config.SelectboxColumn(
-                                        'Worker Status',
-                                        options=['Not Started', 'In Progress', 'Completed']
+                                        'Worker Status (set to Completed when done)',
+                                        options=['Not Started', 'In Progress', 'Completed'],
                                     ),
                                     'Case Narrated': st.column_config.SelectboxColumn(
                                         'Case Narrated',
@@ -5949,33 +6058,22 @@ P-S Report: Contacted client via phone/web portal. Action taken: CONTACT LETTER.
                                             # If worker marked this row Completed, validate required fields for the report type.
                                             try:
                                                 if col == 'Worker Status' and str(after).strip().lower() == 'completed':
-                                                    row = working_df.loc[idx].astype(str).fillna('')
-                                                    row_issues: list[str] = []
-                                                    if 'Case Narrated' in row.index:
-                                                        if row.get('Case Narrated', '').strip().lower() != 'yes':
-                                                            row_issues.append('Case Narrated must be Yes')
-                                                    if report_source_value == 'Locate':
-                                                        if 'Date Case Reviewed' in row.index and row.get('Date Case Reviewed', '').strip() == '':
-                                                            row_issues.append('Date Case Reviewed is required for Locate')
-                                                        if 'Results of Review' in row.index and row.get('Results of Review', '').strip() == '':
-                                                            row_issues.append('Results of Review is required for Locate')
-                                                        else:
-                                                            rr = row.get('Results of Review', '').strip().lower()
-                                                            if ('closed' in rr or 'unl' in rr or 'nas' in rr) and 'Comment' in row.index and row.get('Comment', '').strip() == '':
-                                                                row_issues.append('Comment required for closure outcomes')
-                                                    if report_source_value in {'PS', '56'}:
-                                                        if 'Action Taken/Status' in row.index and row.get('Action Taken/Status', '').strip() == '':
-                                                            row_issues.append('Action Taken/Status is required for PS/56 when Completed')
-                                                        if report_source_value == '56' and 'Date Action Taken' in row.index and row.get('Date Action Taken', '').strip() == '':
-                                                            row_issues.append('Date Action Taken is required for 56 when Completed')
-                                                    if 'Action Taken/Status' in row.index and row.get('Action Taken/Status', '').strip().upper() == 'OTHER':
-                                                        if 'Comment' in row.index and row.get('Comment', '').strip() == '':
-                                                            row_issues.append('Comment required when Action Taken/Status = OTHER')
-                                                    if row_issues:
+                                                    issues = validate_support_workflow_row_completion(
+                                                        report_source_value,
+                                                        working_df.loc[idx] if idx in working_df.index else {},
+                                                    )
+                                                    if issues:
                                                         working_df.at[idx, col] = before
                                                         if idx in edited_sheet_df.index and col in edited_sheet_df.columns:
                                                             edited_sheet_df.at[idx, col] = before
-                                                        st.warning(f"Row {idx}: cannot mark Completed — " + "; ".join(row_issues))
+
+                                                        row_label = str(idx)
+                                                        try:
+                                                            if 'Case Row ID' in working_df.columns:
+                                                                row_label = str(working_df.at[idx, 'Case Row ID'] or idx)
+                                                        except Exception:
+                                                            row_label = str(idx)
+                                                        st.warning(f"{row_label}: cannot mark Completed — " + "; ".join(issues))
                                             except Exception:
                                                 pass
 
@@ -5985,6 +6083,7 @@ P-S Report: Contacted client via phone/web portal. Action taken: CONTACT LETTER.
                                 pending_rows = worker_rows[worker_rows['Worker Status'] != 'Completed']
 
                                 with action_col1:
+                                    st.caption("Edits apply immediately; use Save Progress as a checkpoint.")
                                     if st.button("💾 Save Progress", key=f"so_save_{selected_queue_key}"):
                                         now_dt = datetime.now()
                                         st.session_state[f"so_last_saved_{selected_queue_key}"] = now_dt.strftime("%Y-%m-%d %I:%M %p")
@@ -5996,7 +6095,7 @@ P-S Report: Contacted client via phone/web portal. Action taken: CONTACT LETTER.
                                             'worker_ack',
                                             str(acting_so),
                                         )
-                                        st.success("✓ Progress saved to session.")
+                                        st.success("✓ Checkpoint saved.")
 
                                     last_saved = st.session_state.get(f"so_last_saved_{selected_queue_key}")
                                     if last_saved:
@@ -6014,75 +6113,21 @@ P-S Report: Contacted client via phone/web portal. Action taken: CONTACT LETTER.
                                             completed_mask = validation_rows['Worker Status'].astype(str).str.strip() == 'Completed'
                                             completed_rows = validation_rows[completed_mask].copy()
 
-                                            issues = []
+                                            from collections import Counter
+                                            issue_counts: Counter[str] = Counter()
                                             if not completed_rows.empty:
-                                                # PS/56: completed rows should include an Action Taken/Status.
-                                                if report_source_value in {'PS', '56'} and 'Action Taken/Status' in completed_rows.columns:
-                                                    ats = completed_rows['Action Taken/Status'].astype(str).str.strip()
-                                                    missing_ats = ats == ''
-                                                    if missing_ats.any():
-                                                        issues.append(f"{int(missing_ats.sum())} completed row(s) missing Action Taken/Status")
+                                                for _, row in completed_rows.iterrows():
+                                                    row_issues = validate_support_workflow_row_completion(report_source_value, row)
+                                                    for issue in set(row_issues):
+                                                        issue_counts[issue] += 1
 
-                                                # Completed rows should be narrated.
-                                                if 'Case Narrated' in completed_rows.columns:
-                                                    narrated_ok = completed_rows['Case Narrated'].astype(str).str.strip().str.lower() == 'yes'
-                                                    missing_narr = completed_rows[~narrated_ok]
-                                                    if not missing_narr.empty:
-                                                        issues.append(f"{len(missing_narr)} completed row(s) missing Case Narrated = Yes")
-
-                                                # OTHER requires Comment.
-                                                if 'Action Taken/Status' in completed_rows.columns and 'Comment' in completed_rows.columns:
-                                                    other_mask = completed_rows['Action Taken/Status'].astype(str).str.strip().str.upper() == 'OTHER'
-                                                    if other_mask.any():
-                                                        comments = completed_rows.loc[other_mask, 'Comment'].astype(str).str.strip()
-                                                        missing_comments = comments[comments == '']
-                                                        if len(missing_comments) > 0:
-                                                            issues.append(f"{len(missing_comments)} completed row(s) with Action Taken/Status = OTHER missing Comment")
-
-                                                # 56RA: completed rows should include Date Action Taken.
-                                                if report_source_value == '56' and 'Date Action Taken' in completed_rows.columns:
-                                                    dt = completed_rows['Date Action Taken']
-                                                    missing_dt = dt.isna() | (dt.astype(str).str.strip() == '')
-                                                    if missing_dt.any():
-                                                        issues.append(f"{int(missing_dt.sum())} completed row(s) missing Date Report was Processed")
-
-                                                # LOCATE: completed rows should include Date Case Reviewed + Results of Review.
-                                                if report_source_value not in {'PS', '56'}:
-                                                    if 'Date Case Reviewed' in completed_rows.columns:
-                                                        dcr = completed_rows['Date Case Reviewed']
-                                                        missing_dcr = dcr.isna() | (dcr.astype(str).str.strip() == '')
-                                                        if missing_dcr.any():
-                                                            issues.append(f"{int(missing_dcr.sum())} completed row(s) missing Date Case Reviewed")
-
-                                                    if 'Results of Review' in completed_rows.columns:
-                                                        ror = completed_rows['Results of Review'].astype(str).str.strip()
-                                                        missing_ror = ror == ''
-                                                        if missing_ror.any():
-                                                            issues.append(f"{int(missing_ror.sum())} completed row(s) missing Results of Review")
-
-                                                        other_ror = ror.str.upper() == 'OTHER'
-                                                        if other_ror.any() and 'Comment' in completed_rows.columns:
-                                                            comments = completed_rows.loc[other_ror, 'Comment'].astype(str).str.strip()
-                                                            missing_comments = comments == ''
-                                                            if missing_comments.any():
-                                                                issues.append(f"{int(missing_comments.sum())} completed row(s) with Results of Review = OTHER missing Comment")
-
-                                                    if 'Case Closure Code' in completed_rows.columns and 'Comment' in completed_rows.columns:
-                                                        closure = completed_rows['Case Closure Code'].astype(str).str.strip().str.upper()
-                                                        closure_needs_comment = closure.isin(['UNL', 'NAS'])
-                                                        if closure_needs_comment.any():
-                                                            closure_comments = completed_rows.loc[closure_needs_comment, 'Comment'].astype(str).str.strip()
-                                                            missing_closure_comments = closure_comments == ''
-                                                            if missing_closure_comments.any():
-                                                                issues.append(f"{int(missing_closure_comments.sum())} completed row(s) closed UNL/NAS missing Comment")
-
-                                            if issues:
+                                            if issue_counts:
                                                 st.error("Cannot submit yet. Please fix the following before submitting:")
-                                                for it in issues:
+                                                for issue, count in issue_counts.most_common():
                                                     try:
-                                                        st.markdown(f"- {it}")
+                                                        st.markdown(f"- {count} row(s): {issue}")
                                                     except Exception:
-                                                        st.write(f"- {it}")
+                                                        st.write(f"- {count} row(s): {issue}")
                                                 st.stop()
 
                                             selected_report['status'] = 'Submitted for Review'

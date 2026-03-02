@@ -837,18 +837,18 @@ The Locate report identifies cases where OCSS can still meet locate-effort requi
 ### Report data not saving (Support Officer)
 
 **Possible Causes**:
-- Forgot to click the **"💾 Update Report"** button inside the form
-- Session expired or server restarted
-- Browser was closed before data was saved
+- Changes were made but the page did not refresh/apply the edit
+- Browser session ended (tab closed, logout) before you finished
+- Server restarted or session expired
 
 **Solution**:
-1. Ensure you clicked **"💾 Update Report"** inside the form (not just editing fields)
-2. Look for the success message (green checkmark: "✓ Report data updated!")
-3. **Important**: Session-based storage means data resets if:
+1. In the Support Officer sheet editor, edits apply immediately when you change a cell (the app may briefly refresh).
+2. Use **💾 Save Progress** to record a clear checkpoint and look for the "Last saved" timestamp.
+3. **Important**: Session-based storage means data can reset if:
    - Server restarts
    - Browser session ends
    - You clear browser cache
-4. **Best Practice**: Always **📥 Download CSV** after making important edits to create a backup
+4. If you still don't see changes, refresh the page and re-open the same report/caseload.
 
 ### I cannot submit report to supervisor
 

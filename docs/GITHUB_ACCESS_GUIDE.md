@@ -40,6 +40,7 @@ streamlit run app/app.py
 #### **Step 4: Open in Browser**
 
 - **Local (your machine):** `http://localhost:8501`
+
 - **From network:** `http://[your-ip]:8501`
 
 ---

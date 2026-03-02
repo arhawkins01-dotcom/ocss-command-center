@@ -30,6 +30,89 @@ logger = logging.getLogger(__name__)
 EXCEL_PARITY_REPORT_SOURCES = ('56', 'PS', 'LOCATE')
 
 
+def normalize_support_report_source(value: Any) -> str:
+    """Normalize report source used in Support Officer workflow UI.
+
+    Returns one of: 56 / PS / LOCATE / UNKNOWN.
+    """
+    src = _upper_clean(value)
+    if src in {'56', 'PS', 'LOCATE'}:
+        return src
+    if src in {'RA56', '56RA'}:
+        return '56'
+    if src in {'P-S', 'P S', 'P_S'}:
+        return 'PS'
+    if src in {'LOC', 'LOCATES'}:
+        return 'LOCATE'
+    return src or 'UNKNOWN'
+
+
+def validate_support_workflow_row_completion(report_source: Any, row: Any) -> List[str]:
+    """Validate whether a workflow (Support Officer UI) row can be marked Completed.
+
+    This validator is intentionally based on the workflow column names used in
+    the Streamlit editor (e.g., 'Case Narrated', 'Results of Review').
+
+    Returns a list of human-readable issues. Empty list => OK to complete.
+    """
+    src = normalize_support_report_source(report_source)
+    if src == 'UNKNOWN':
+        # Default to LOCATE-like strictness rather than allowing bypass.
+        src = 'LOCATE'
+
+    if isinstance(row, pd.Series):
+        data = row.to_dict()
+    elif isinstance(row, dict):
+        data = row
+    else:
+        data = {}
+
+    def _get(col: str) -> str:
+        return _as_clean_str(data.get(col))
+
+    issues: List[str] = []
+
+    # Always require narration confirmation when completing a row.
+    narrated = _get('Case Narrated').lower()
+    if narrated != 'yes':
+        issues.append('Case Narrated must be Yes')
+
+    comment = _get('Comment')
+
+    if src in {'PS', '56'}:
+        action = _get('Action Taken/Status')
+        if not action:
+            issues.append('Action Taken/Status is required for PS/56 when Completed')
+
+        if src == '56':
+            if not _get('Date Action Taken'):
+                issues.append('Date Action Taken is required for 56 when Completed')
+
+        if action.strip().upper() == 'OTHER' and not comment:
+            issues.append('Comment required when Action Taken/Status = OTHER')
+
+        return issues
+
+    # LOCATE
+    if not _get('Date Case Reviewed'):
+        issues.append('Date Case Reviewed is required for Locate')
+    results = _get('Results of Review')
+    if not results:
+        issues.append('Results of Review is required for Locate')
+    else:
+        results_lower = results.strip().lower()
+        if results.strip().upper() == 'OTHER' and not comment:
+            issues.append('Comment required when Results of Review = OTHER')
+        if ('closed' in results_lower or 'unl' in results_lower or 'nas' in results_lower) and not comment:
+            issues.append('Comment required for closure outcomes')
+
+    closure = _get('Case Closure Code').strip().upper()
+    if closure in {'UNL', 'NAS'} and not comment:
+        issues.append('Comment required when closing UNL/NAS')
+
+    return issues
+
+
 def _as_clean_str(value: Any) -> str:
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return ''
