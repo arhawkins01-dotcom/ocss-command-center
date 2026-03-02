@@ -1,14 +1,19 @@
-# OCSS Command Center - Technical Guide
+# OCSS Command Center — Technical Guide
+
+Last Updated: 2026-03-02
+
+---
 
 ## Executive Summary
 
-The OCSS Command Center is a role-based web application designed to streamline establishment report processing and caseload management. Built on the Streamlit framework with Python, it provides an integrated dashboard system for five distinct user roles with real-time data processing and export capabilities.
+The OCSS Command Center is a role-based web application designed to streamline establishment report processing and caseload management. Built on the Streamlit framework with Python, it provides an integrated dashboard system for multiple user roles with real-time data processing and export capabilities.
 
 Key operational features implemented in Feb 2026 include:
 - Escalation alerts with role-based timing windows and acknowledgements
 - Report due-date clocks computed at upload time for monthly QA sources (56RA / P-S / Locate)
 - Senior leadership exports in Excel and Word formats
-- Mixed persistence model: organizational configuration persisted on disk; report/work data remains session-based
+- Help Ticket Center workflow with auto-routing/assignment and ticket KPI views
+- Mixed persistence model: organizational configuration + help tickets persisted on disk; report/work data remains session-based
 
 **Project Status:** Production-Ready (v1.0.0)  
 **Framework:** Streamlit 1.x with Python 3.8+  
@@ -86,12 +91,15 @@ Key operational features implemented in Feb 2026 include:
 
 ### 2.1 Role-Based Access Control
 
-The application supports **5 distinct user roles** with specialized interfaces:
+The application supports multiple roles with specialized interfaces. The UI may display expanded leadership and sub-role names (for example: Deputy Director, Department Manager, Senior Administrative Officer, Team Lead) which map to a smaller set of capability-backed views.
 
-The role selector in the sidebar presents only these five roles:
-- Director
+Roles commonly used in the UI:
+- Director / Deputy Director
+- Department Manager
+- Senior Administrative Officer
 - Program Officer
 - Supervisor
+- Team Lead
 - Support Officer
 - IT Administrator
 
@@ -102,7 +110,7 @@ The app keeps the sidebar role list to these five roles, but User Management sup
 - Department Manager
 - Senior Administrative Officer
 
-Operational note: Senior Administrative Officer (SAO), Supervisor, and Program Officer often have similar operational needs (workload visibility, alerts, exports). SAO is implemented as a Director **Unit Role** subtype (not a separate sidebar role), so SAO visibility is controlled by Director-role logic plus Unit Role.
+Operational note: Senior Administrative Officer (SAO), Supervisor, and Program Officer often have similar operational needs (workload visibility, alerts, exports). The app supports both explicit roles and leadership titles (Unit Role) depending on deployment mode.
 
 #### 1. **Director** 
 - **Dashboard Tabs:** KPIs, Caseload Management, Team Performance, Report Intake, Ticket KPIs, Manage Users
@@ -303,7 +311,7 @@ Key locations:
 - Streamlit UI (`app/app.py`) orchestrates role routing and tab layout.
 - Ingestion & parsing: `app/report_engine.py` and `app/report_utils.py` handle file parsing, normalization, and row mapping.
 - KB seeding: `_kb_seed_docs()`, `_ensure_kb_seeded()` in `app/app.py`.
-- Persistence: `data/state/ocss_app_state.json` (org config), session state for row work, `exports/` for CSVs.
+- Persistence: `data/state/ocss_app_state.json` (org config + help tickets), session state for row work, `exports/` for CSVs.
 
 Report ingestion sequence (high level):
 1. File selected in `Upload & Processing` → `streamlit.file_uploader` reads bytes.
@@ -351,36 +359,6 @@ Health & monitoring:
 - Run `pytest -q` after code changes; unit tests focus on `report_utils` and `action_logic`.
 
 End of Technical Guide
-
-    username VARCHAR(255) UNIQUE,
-    role VARCHAR(50),
-    email VARCHAR(255),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE reports (
-    id SERIAL PRIMARY KEY,
-    report_id VARCHAR(50) UNIQUE,
-    caseload_id VARCHAR(10),
-    filename VARCHAR(255),
-    data JSONB,
-    status VARCHAR(50),
-    created_by INT REFERENCES users(id),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE audit_log (
-    id SERIAL PRIMARY KEY,
-    user_id INT REFERENCES users(id),
-    action VARCHAR(255),
-    table_name VARCHAR(100),
-    record_id INT,
-    old_values JSONB,
-    new_values JSONB,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
 
 ---
 

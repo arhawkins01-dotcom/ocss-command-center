@@ -227,6 +227,40 @@ st.markdown(
     """
     <style>
     .cc-title { font-size: 2.2em; margin-bottom: 8px; }
+
+    /* Knowledge Base: typography + spacing using Streamlit theme variables */
+    .ocss-kb-doc {
+        max-width: 980px;
+        margin: 0 auto;
+        line-height: 1.6;
+    }
+    .ocss-kb-doc h1 { margin-top: 0.25rem; }
+    .ocss-kb-doc h2 { margin-top: 1.25rem; padding-top: 0.25rem; }
+    .ocss-kb-doc h3 { margin-top: 1rem; }
+    .ocss-kb-doc hr { margin: 1rem 0; }
+    .ocss-kb-doc pre {
+        background: var(--secondary-background-color, rgba(0,0,0,0.04));
+        padding: 0.75rem 0.9rem;
+        border-radius: 0.6rem;
+        overflow-x: auto;
+    }
+    .ocss-kb-doc code {
+        background: var(--secondary-background-color, rgba(0,0,0,0.04));
+        padding: 0.12rem 0.3rem;
+        border-radius: 0.4rem;
+    }
+    .ocss-kb-doc blockquote {
+        border-left: 0.25rem solid var(--primary-color, currentColor);
+        padding: 0.1rem 0 0.1rem 0.9rem;
+        margin: 0.9rem 0;
+    }
+    .ocss-kb-doc table { width: 100%; border-collapse: collapse; }
+    .ocss-kb-doc table th,
+    .ocss-kb-doc table td {
+        padding: 0.35rem 0.5rem;
+        vertical-align: top;
+        border-bottom: 1px solid currentColor;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -299,7 +333,7 @@ def _kb_seed_docs() -> dict:
         },
         "Technical Guide": {
             "filename": "technical_guide.md",
-            "seed_source": repo_root / "docs" / "TECHNICAL_GUIDE.md",
+            "seed_source": repo_root / "data" / "knowledge_base" / "technical_guide.md",
         },
     }
 
@@ -595,7 +629,9 @@ If you don't receive an email within a few minutes, contact IT Support.
     if not content.strip():
         st.warning("This Knowledge Base document is empty.")
     else:
+        st.markdown('<div class="ocss-kb-doc">', unsafe_allow_html=True)
         st.markdown(content)
+        st.markdown("</div>", unsafe_allow_html=True)
 
     if _downloads_allowed():
         st.download_button(
@@ -771,6 +807,29 @@ def _load_persisted_state() -> dict:
 def _persist_app_state() -> None:
     """Persist current org configuration to disk (best-effort)."""
     path = _get_persisted_state_path()
+
+    def _json_safe_value(value):
+        if isinstance(value, datetime):
+            return value.isoformat()
+        return value
+
+    def _json_safe_records(rows, *, max_items: int | None = None):
+        if not rows:
+            return []
+        try:
+            items = list(rows)
+        except Exception:
+            return []
+        if max_items is not None and len(items) > max_items:
+            items = items[-max_items:]
+
+        safe = []
+        for row in items:
+            if not isinstance(row, dict):
+                continue
+            safe.append({k: _json_safe_value(v) for k, v in row.items()})
+        return safe
+
     payload = {
         "version": 2,
         "saved_at": datetime.now().isoformat(),
@@ -779,6 +838,9 @@ def _persist_app_state() -> None:
         "current_user": st.session_state.get("current_user", ""),
         # Acknowledgements for alert escalation (best-effort persistence).
         "alert_acks": st.session_state.get("alert_acks", {}),
+        # Help ticket workflow persistence (best-effort).
+        "help_tickets": _json_safe_records(st.session_state.get("help_tickets", []), max_items=500),
+        "help_ticket_log": _json_safe_records(st.session_state.get("help_ticket_log", []), max_items=1000),
     }
 
     try:
@@ -795,6 +857,17 @@ if 'reports_by_caseload' not in st.session_state:
 
 # Load persisted org configuration (users + units) once per session.
 _persisted_state = _load_persisted_state() if 'units' not in st.session_state or 'users' not in st.session_state else {}
+
+# Load persisted help tickets/logs once per session (if present).
+try:
+    loaded_tickets = (_persisted_state or {}).get('help_tickets', [])
+    if isinstance(loaded_tickets, list) and loaded_tickets and not st.session_state.get('help_tickets'):
+        st.session_state.help_tickets = loaded_tickets
+    loaded_ticket_log = (_persisted_state or {}).get('help_ticket_log', [])
+    if isinstance(loaded_ticket_log, list) and loaded_ticket_log and not st.session_state.get('help_ticket_log'):
+        st.session_state.help_ticket_log = loaded_ticket_log
+except Exception:
+    pass
 
 # Organizational units: supervisors, team leads, support officers and caseload assignments
 if 'units' not in st.session_state:
@@ -3542,7 +3615,22 @@ def get_kpi_metrics(department: str | None = None) -> dict:
 
 
 def _next_help_ticket_id() -> str:
-    return f"SUP-{datetime.now().year}-{len(st.session_state.help_tickets) + 1:04d}"
+    year = datetime.now().year
+    prefix = f"SUP-{year}-"
+    max_n = 0
+    for t in st.session_state.get('help_tickets', []) or []:
+        try:
+            tid = str(t.get('ticket_id') or '')
+        except Exception:
+            continue
+        if not tid.startswith(prefix):
+            continue
+        tail = tid.replace(prefix, "", 1)
+        try:
+            max_n = max(max_n, int(tail))
+        except Exception:
+            continue
+    return f"{prefix}{max_n + 1:04d}"
 
 
 def _auto_resolve_ticket(issue_category: str, description: str) -> dict:
@@ -3557,149 +3645,356 @@ def _auto_resolve_ticket(issue_category: str, description: str) -> dict:
     resolution_text = category_map.get(issue_category, category_map['Other'])
     confidence = 'High' if issue_category in ['File Upload', 'Authentication', 'Data Validation'] else 'Medium'
     return {
-        'status': 'Auto-Resolved',
-        'resolution': resolution_text,
+        'suggested_resolution': resolution_text,
         'confidence': confidence,
         'description_snapshot': description
     }
 
 
-def submit_help_ticket(submitter_role: str, establishment: str, priority: str, issue_category: str, description: str):
+def _list_it_admin_users() -> list[str]:
+    names = []
+    for u in (st.session_state.get('users', []) or []):
+        try:
+            if str(u.get('role') or '').strip() != 'IT Administrator':
+                continue
+            name = str(u.get('name') or '').strip()
+            if name:
+                names.append(name)
+        except Exception:
+            continue
+    # De-dup while preserving stable order
+    seen = set()
+    ordered = []
+    for n in names:
+        key = n.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered.append(n)
+    return ordered
+
+
+def _auto_assign_ticket(issue_category: str, ticket_id: str) -> tuple[str, str]:
+    """Return (assigned_to, routed_reason). Empty assigned_to means unassigned."""
+    category = str(issue_category or '').strip()
+    it_users = _list_it_admin_users()
+    if not it_users:
+        return '', 'No IT Administrator users available for assignment.'
+
+    # Minimal routing: all categories go to IT for now.
+    # Deterministic "round-robin" based on ticket id so re-runs are stable.
+    try:
+        seed = sum(ord(c) for c in str(ticket_id or ''))
+    except Exception:
+        seed = 0
+    idx = seed % len(it_users)
+    assignee = it_users[idx]
+    return assignee, f"Routed '{category or 'Other'}' ticket to IT Administrator: {assignee}."
+
+
+def _append_help_ticket_log(ticket_id: str, action: str, actor_role: str, actor_name: str, detail: str):
+    st.session_state.help_ticket_log.append({
+        'timestamp': datetime.now().isoformat(),
+        'ticket_id': str(ticket_id or ''),
+        'action': str(action or ''),
+        'actor_role': str(actor_role or ''),
+        'actor_name': str(actor_name or ''),
+        'detail': str(detail or ''),
+    })
+
+
+def _find_ticket(ticket_id: str) -> dict | None:
+    ticket_id = str(ticket_id or '').strip()
+    for t in st.session_state.get('help_tickets', []) or []:
+        try:
+            if str(t.get('ticket_id') or '').strip() == ticket_id:
+                return t
+        except Exception:
+            continue
+    return None
+
+
+def submit_help_ticket(
+    submitter_role: str,
+    submitter_name: str,
+    establishment: str,
+    priority: str,
+    issue_category: str,
+    description: str,
+):
     ticket_id = _next_help_ticket_id()
-    created_at = datetime.now()
+    created_at = datetime.now().isoformat()
+    submitter_name = str(submitter_name or '').strip() or 'Unknown'
     auto_resolution = _auto_resolve_ticket(issue_category, description)
+
+    assigned_to, routed_reason = _auto_assign_ticket(issue_category, ticket_id)
+    initial_status = 'Assigned' if assigned_to else 'Open'
     ticket_row = {
         'ticket_id': ticket_id,
         'created_at': created_at,
         'submitter_role': submitter_role,
+        'submitter_name': submitter_name,
         'establishment': establishment,
         'priority': priority,
         'issue_category': issue_category,
         'description': description,
-        'status': auto_resolution['status'],
-        'resolution': auto_resolution['resolution'],
-        'resolution_confidence': auto_resolution['confidence'],
-        'resolved_at': datetime.now(),
-        'it_verified': False
+        'status': initial_status,
+        'assigned_to': assigned_to,
+        'suggested_resolution': auto_resolution.get('suggested_resolution', ''),
+        'resolution_confidence': auto_resolution.get('confidence', ''),
+        'resolution': '',
+        'resolved_at': None,
+        'it_verified': False,
     }
     st.session_state.help_tickets.append(ticket_row)
-    st.session_state.help_ticket_log.append({
-        'timestamp': datetime.now().isoformat(),
-        'ticket_id': ticket_id,
-        'action': 'auto_resolved',
-        'actor_role': 'System Logic',
-        'detail': auto_resolution['resolution']
-    })
+    _append_help_ticket_log(ticket_id, 'created', submitter_role, submitter_name, f"Created ticket ({issue_category}).")
+    if routed_reason:
+        _append_help_ticket_log(ticket_id, 'routed', 'System Logic', 'System', routed_reason)
+    if ticket_row.get('suggested_resolution'):
+        _append_help_ticket_log(ticket_id, 'suggested_resolution', 'System Logic', 'System', str(ticket_row.get('suggested_resolution')))
+    try:
+        _persist_app_state()
+    except Exception:
+        pass
     return ticket_row
 
 
-def render_help_ticket_center(current_role: str):
+def render_help_ticket_center(current_role: str, submitter_name: str | None = None, key_prefix: str = 'ticket_center'):
     effective_role = map_to_view_role(current_role)
     st.divider()
     st.subheader("🆘 Help Ticket Center")
-    submit_col, insight_col = st.columns([1.3, 1.7])
+    submit_col, queue_col = st.columns([1.3, 1.7])
+
+    ticket_statuses = ['Open', 'Assigned', 'In Progress', 'Waiting on Submitter', 'Resolved', 'Closed']
+
+    # Shared actor identity for logs/comments.
+    actor_name = (submitter_name or '').strip() or (st.session_state.get('current_user') or '').strip()
+    if not actor_name:
+        actor_name = 'Unknown'
 
     with submit_col:
         st.write("**Submit Ticket**")
+        # Determine who is submitting.
+        submitter_default = (submitter_name or '').strip() or (st.session_state.get('current_user') or '').strip()
+        if not submitter_default:
+            submitter_default = 'Unknown'
+        submitter_identity = st.text_input(
+            "Your name",
+            value=submitter_default,
+            key=f"{key_prefix}_submitter_{current_role}",
+        )
         establishment = st.selectbox(
             "Establishment",
             ['Lincoln Elementary', 'Grant Middle School', 'Jefferson HS', 'Adams Preschool', 'Madison Elementary'],
-            key=f"ticket_est_{current_role}"
+            key=f"{key_prefix}_est_{current_role}"
         )
-        priority = st.selectbox("Priority", ["🟢 Low", "🟡 Medium", "🔴 High"], key=f"ticket_pri_{current_role}")
+        priority = st.selectbox("Priority", ["🟢 Low", "🟡 Medium", "🔴 High"], key=f"{key_prefix}_pri_{current_role}")
         issue_type = st.selectbox(
             "Issue Category",
             ["File Upload", "Authentication", "Data Validation", "Performance", "Technical", "Other"],
-            key=f"ticket_type_{current_role}"
+            key=f"{key_prefix}_type_{current_role}"
         )
         description = st.text_area(
             "Issue Description",
             placeholder="Describe the issue...",
-            key=f"ticket_desc_{current_role}"
+            key=f"{key_prefix}_desc_{current_role}"
         )
 
-        if st.button("Submit Help Ticket", key=f"ticket_submit_{current_role}"):
+        if st.button("Submit Help Ticket", key=f"{key_prefix}_submit_{current_role}"):
             if not description.strip():
                 st.error("Enter an issue description before submitting.")
             else:
-                created = submit_help_ticket(current_role, establishment, priority, issue_type, description.strip())
-                st.success(f"Ticket {created['ticket_id']} submitted and auto-resolved by application logic.")
+                created = submit_help_ticket(
+                    submitter_role=str(effective_role),
+                    submitter_name=submitter_identity.strip(),
+                    establishment=str(establishment),
+                    priority=str(priority),
+                    issue_category=str(issue_type),
+                    description=description.strip(),
+                )
+                st.success(f"Ticket {created['ticket_id']} submitted.")
+                st.caption("Tip: check the Suggested Resolution in the ticket detail while IT reviews.")
+                st.rerun()
 
-    with insight_col:
-        authorized_roles = {'Director', 'Program Officer', 'Supervisor', 'IT Administrator'}
-        if effective_role in authorized_roles:
-            tickets = st.session_state.get('help_tickets', [])
-            ticket_df = pd.DataFrame(tickets)
+    with queue_col:
+        tickets = st.session_state.get('help_tickets', []) or []
+        if not tickets:
+            st.info("No tickets yet.")
+            return
 
-            total = len(tickets)
-            resolved = sum(1 for t in tickets if t.get('status') == 'Auto-Resolved')
-            verified = sum(1 for t in tickets if t.get('it_verified'))
-            avg_resolution_minutes = 0
-            if tickets:
-                deltas = []
-                for ticket in tickets:
-                    created_at = ticket.get('created_at')
-                    resolved_at = ticket.get('resolved_at')
-                    if isinstance(created_at, datetime) and isinstance(resolved_at, datetime):
-                        deltas.append((resolved_at - created_at).total_seconds() / 60)
-                if deltas:
-                    avg_resolution_minutes = int(sum(deltas) / len(deltas))
+        # Determine scope: submitters see their own tickets by default.
+        actor_name = (submitter_name or '').strip() or (st.session_state.get('current_user') or '').strip()
+        is_it = effective_role == 'IT Administrator'
+        is_leadership = effective_role in {'Director', 'Program Officer', 'Supervisor'}
 
+        default_scope = 'All Tickets' if (is_it or is_leadership) else 'My Tickets'
+        scope = st.selectbox(
+            "View",
+            options=['My Tickets', 'All Tickets'],
+            index=0 if default_scope == 'My Tickets' else 1,
+            key=f"{key_prefix}_scope_{current_role}",
+        )
+
+        filtered = list(tickets)
+        if scope == 'My Tickets':
+            if actor_name:
+                filtered = [t for t in filtered if str(t.get('submitter_name') or '').strip() == actor_name]
+            else:
+                filtered = [t for t in filtered if str(t.get('submitter_role') or '').strip() == str(effective_role)]
+
+        status_filter = st.selectbox(
+            "Status",
+            options=['(All)'] + ticket_statuses,
+            key=f"{key_prefix}_status_{current_role}",
+        )
+        if status_filter != '(All)':
+            filtered = [t for t in filtered if str(t.get('status') or '').strip() == status_filter]
+
+        # Ticket picker
+        ticket_options = [str(t.get('ticket_id') or '') for t in filtered if t.get('ticket_id')]
+        ticket_options = [t for t in ticket_options if t]
+        if not ticket_options:
+            st.info("No tickets match the current view/filter.")
+            return
+
+        selected_ticket_id = st.selectbox(
+            "Select Ticket",
+            options=ticket_options,
+            key=f"{key_prefix}_selected_{current_role}",
+        )
+        ticket = _find_ticket(selected_ticket_id)
+        if not ticket:
+            st.error("Ticket not found.")
+            return
+
+        created_dt = pd.to_datetime(ticket.get('created_at'), errors='coerce')
+        resolved_dt = pd.to_datetime(ticket.get('resolved_at'), errors='coerce')
+        age_days = None
+        try:
+            if pd.notna(created_dt):
+                age_days = int((pd.Timestamp.now() - created_dt).total_seconds() // 86400)
+        except Exception:
+            age_days = None
+
+        with st.expander(f"Ticket {ticket.get('ticket_id')} details", expanded=True):
             c1, c2, c3, c4 = st.columns(4)
             with c1:
-                st.metric("Total Tickets", total)
+                st.write("**Status**")
+                st.write(str(ticket.get('status') or ''))
             with c2:
-                st.metric("Auto-Resolved", resolved)
+                st.write("**Priority**")
+                st.write(str(ticket.get('priority') or ''))
             with c3:
-                st.metric("IT Verified", verified)
+                st.write("**Submitted By**")
+                st.write(str(ticket.get('submitter_name') or ticket.get('submitter_role') or ''))
             with c4:
-                st.metric("Avg Resolution", f"{avg_resolution_minutes} min")
+                st.write("**Age**")
+                st.write(f"{age_days} day(s)" if age_days is not None else '-')
 
-            if not ticket_df.empty:
-                view_df = ticket_df[[
-                    'ticket_id', 'created_at', 'submitter_role', 'establishment', 'priority',
-                    'issue_category', 'status', 'resolution_confidence', 'it_verified'
-                ]].copy()
-                view_df.rename(columns={
-                    'ticket_id': 'Ticket ID',
-                    'created_at': 'Created',
-                    'submitter_role': 'Role',
-                    'establishment': 'Establishment',
-                    'priority': 'Priority',
-                    'issue_category': 'Category',
-                    'status': 'Status',
-                    'resolution_confidence': 'Confidence',
-                    'it_verified': 'IT Verified'
-                }, inplace=True)
-                safe_st_dataframe(view_df.sort_values(by='Created', ascending=False), use_container_width=True, hide_index=True)
+            st.write("**Establishment / Category**")
+            st.write(f"{ticket.get('establishment')} — {ticket.get('issue_category')}")
+            st.write("**Description**")
+            st.write(str(ticket.get('description') or ''))
+
+            if ticket.get('suggested_resolution'):
+                st.info(f"Suggested resolution: {ticket.get('suggested_resolution')}")
+
+            if ticket.get('resolution'):
+                st.success(f"Resolution: {ticket.get('resolution')}")
+
+            if pd.notna(resolved_dt):
+                st.caption(f"Resolved at: {resolved_dt}")
+
+            st.divider()
+            st.write("**Activity Log**")
+            logs = [
+                l for l in (st.session_state.get('help_ticket_log', []) or [])
+                if str(l.get('ticket_id') or '').strip() == str(ticket.get('ticket_id') or '').strip()
+            ]
+            if logs:
+                log_df = pd.DataFrame(logs)
+                safe_st_dataframe(log_df.sort_values(by='timestamp', ascending=False), use_container_width=True, hide_index=True)
             else:
-                st.info("No help tickets submitted yet.")
-        else:
-            st.caption("Ticket analytics are available to Director, Program Officer, Supervisor, and IT Administrator.")
+                st.caption("No log entries yet.")
 
-    if effective_role == 'IT Administrator':
-        st.write("**IT Ticket Log Maintenance**")
-        tickets = st.session_state.get('help_tickets', [])
-        if tickets:
-            ticket_options = [t['ticket_id'] for t in tickets]
-            selected_ticket_id = st.selectbox("Select Ticket", ticket_options, key="it_log_ticket")
-            note = st.text_input("Maintenance Log Note", value="", key="it_log_note")
-            if st.button("Add IT Log Entry", key="it_log_add"):
-                st.session_state.help_ticket_log.append({
-                    'timestamp': datetime.now().isoformat(),
-                    'ticket_id': selected_ticket_id,
-                    'action': 'it_maintenance_note',
-                    'actor_role': 'IT Administrator',
-                    'detail': note.strip() or 'No additional note provided.'
-                })
-                for ticket in st.session_state.help_tickets:
-                    if ticket['ticket_id'] == selected_ticket_id:
-                        ticket['it_verified'] = True
-                st.success(f"IT log updated for {selected_ticket_id}.")
+        # Submitter comment box (everyone can add a comment tied to their identity).
+        comment = st.text_area(
+            "Add comment",
+            placeholder="Add any extra context, screenshots described, or troubleshooting steps you already tried...",
+            key=f"{key_prefix}_comment_{current_role}",
+        )
+        if st.button("Add Comment", key=f"{key_prefix}_comment_btn_{current_role}"):
+            submitter_identity = (st.session_state.get(f"{key_prefix}_submitter_{current_role}") or '').strip()
+            who = (actor_name or submitter_identity).strip() or 'Unknown'
+            _append_help_ticket_log(ticket.get('ticket_id'), 'comment', str(effective_role), who, comment.strip() or '(no comment)')
+            try:
+                _persist_app_state()
+            except Exception:
+                pass
+            st.success("Comment added.")
+            st.rerun()
 
-        log_df = pd.DataFrame(st.session_state.get('help_ticket_log', []))
-        if not log_df.empty:
-            safe_st_dataframe(log_df.sort_values(by='timestamp', ascending=False), use_container_width=True, hide_index=True)
+        # IT actions
+        if is_it:
+            st.divider()
+            st.write("**IT Actions**")
+
+            it_users = [
+                str(u.get('name') or '').strip()
+                for u in (st.session_state.get('users', []) or [])
+                if str(u.get('role') or '').strip() == 'IT Administrator'
+            ]
+            it_users = sorted([u for u in set(it_users) if u])
+            default_assignee = str(ticket.get('assigned_to') or '').strip()
+            assignee = st.selectbox(
+                "Assign To",
+                options=['(Unassigned)'] + it_users,
+                index=(1 + it_users.index(default_assignee)) if default_assignee in it_users else 0,
+                key=f"{key_prefix}_assign_{current_role}",
+            )
+
+            new_status = st.selectbox(
+                "Update Status",
+                options=ticket_statuses,
+                index=ticket_statuses.index(str(ticket.get('status') or 'Open')) if str(ticket.get('status') or 'Open') in ticket_statuses else 0,
+                key=f"{key_prefix}_status_update_{current_role}",
+            )
+            resolution_text = st.text_area(
+                "Resolution (required for Resolved/Closed)",
+                value=str(ticket.get('resolution') or ''),
+                key=f"{key_prefix}_resolution_{current_role}",
+            )
+            verify_it = st.checkbox(
+                "Mark IT Verified",
+                value=bool(ticket.get('it_verified')),
+                key=f"{key_prefix}_verify_{current_role}",
+            )
+
+            if st.button("Save IT Updates", key=f"{key_prefix}_save_it_{current_role}"):
+                if new_status in {'Resolved', 'Closed'} and not resolution_text.strip():
+                    st.error("Enter a resolution before marking Resolved/Closed.")
+                else:
+                    ticket['assigned_to'] = '' if assignee == '(Unassigned)' else str(assignee)
+                    ticket['status'] = str(new_status)
+                    ticket['it_verified'] = bool(verify_it)
+                    ticket['resolution'] = resolution_text.strip()
+                    if new_status in {'Resolved', 'Closed'}:
+                        ticket['resolved_at'] = datetime.now().isoformat()
+                    else:
+                        ticket['resolved_at'] = None
+                    _append_help_ticket_log(
+                        ticket.get('ticket_id'),
+                        'it_update',
+                        'IT Administrator',
+                        (actor_name or 'IT Administrator'),
+                        f"Assigned: {ticket.get('assigned_to') or '(Unassigned)'} | Status: {ticket.get('status')} | Verified: {ticket.get('it_verified')}",
+                    )
+                    try:
+                        _persist_app_state()
+                    except Exception:
+                        pass
+                    st.success("Ticket updated.")
+                    st.rerun()
 
 
 def render_help_ticket_kpi_tab(current_role: str, key_prefix: str):
@@ -3840,7 +4135,7 @@ def render_help_ticket_kpi_tab(current_role: str, key_prefix: str):
     st.caption(f"Showing {len(filtered_tickets)} of {len(tickets)} total ticket(s) for KPI analysis.")
 
     total = len(filtered_tickets)
-    resolved = sum(1 for t in filtered_tickets if t.get('status') == 'Auto-Resolved')
+    resolved = sum(1 for t in filtered_tickets if str(t.get('status') or '').strip() in {'Resolved', 'Closed'})
     verified = sum(1 for t in filtered_tickets if t.get('it_verified'))
     unresolved = max(total - resolved, 0)
 
@@ -3848,10 +4143,13 @@ def render_help_ticket_kpi_tab(current_role: str, key_prefix: str):
     if filtered_tickets:
         deltas = []
         for ticket in filtered_tickets:
-            created_at = ticket.get('created_at')
-            resolved_at = ticket.get('resolved_at')
-            if isinstance(created_at, datetime) and isinstance(resolved_at, datetime):
-                deltas.append((resolved_at - created_at).total_seconds() / 60)
+            created_at = pd.to_datetime(ticket.get('created_at'), errors='coerce')
+            resolved_at = pd.to_datetime(ticket.get('resolved_at'), errors='coerce')
+            if pd.notna(created_at) and pd.notna(resolved_at):
+                try:
+                    deltas.append((resolved_at - created_at).total_seconds() / 60)
+                except Exception:
+                    continue
         if deltas:
             avg_resolution_minutes = int(sum(deltas) / len(deltas))
 
@@ -3871,8 +4169,8 @@ def render_help_ticket_kpi_tab(current_role: str, key_prefix: str):
         st.info("No ticket KPI data yet. Submit tickets to populate metrics.")
         return
 
-    ticket_df['created_at'] = pd.to_datetime(ticket_df['created_at'])
-    ticket_df['resolved_at'] = pd.to_datetime(ticket_df['resolved_at'])
+    ticket_df['created_at'] = pd.to_datetime(ticket_df['created_at'], errors='coerce')
+    ticket_df['resolved_at'] = pd.to_datetime(ticket_df['resolved_at'], errors='coerce')
 
     left, right = st.columns(2)
     with left:
@@ -3884,21 +4182,23 @@ def render_help_ticket_kpi_tab(current_role: str, key_prefix: str):
         st.write("**Tickets by Priority**")
         safe_st_dataframe(by_priority.sort_values(by='Tickets', ascending=False), use_container_width=True, hide_index=True)
 
-    view_df = ticket_df[[
-        'ticket_id', 'created_at', 'submitter_role', 'establishment', 'priority',
-        'issue_category', 'status', 'resolution_confidence', 'it_verified', 'resolution'
-    ]].copy()
+    view_df = ticket_df.reindex(columns=[
+        'ticket_id', 'created_at', 'submitter_role', 'submitter_name', 'establishment', 'priority',
+        'issue_category', 'status', 'assigned_to', 'resolution_confidence', 'it_verified', 'resolution'
+    ]).copy()
     view_df.rename(columns={
         'ticket_id': 'Ticket ID',
         'created_at': 'Created',
         'submitter_role': 'Role',
+        'submitter_name': 'Submitter',
         'establishment': 'Establishment',
         'priority': 'Priority',
         'issue_category': 'Category',
         'status': 'Status',
+        'assigned_to': 'Assigned To',
         'resolution_confidence': 'Confidence',
         'it_verified': 'IT Verified',
-        'resolution': 'Auto Resolution'
+        'resolution': 'Resolution'
     }, inplace=True)
     st.write("**Ticket Detail for KPI Review**")
     safe_st_dataframe(view_df.sort_values(by='Created', ascending=False), use_container_width=True, hide_index=True)
@@ -4293,6 +4593,11 @@ if role in ["Director", "Deputy Director"]:
 
     with dir_tab5:
         render_help_ticket_kpi_tab("Director", "director")
+        render_help_ticket_center(
+            "Director",
+            submitter_name=(auth_result.display_name or auth_result.username or st.session_state.get('current_user', '') or '').strip(),
+            key_prefix='director_ticket_center',
+        )
 
     with dir_tab6:
         render_user_management_panel("director")
@@ -4536,6 +4841,11 @@ The report type you select at ingestion determines which fields Support Officers
 
     with prog_tab5:
         render_help_ticket_kpi_tab("Program Officer", "program_officer")
+        render_help_ticket_center(
+            "Program Officer",
+            submitter_name=(auth_result.display_name or auth_result.username or st.session_state.get('current_user', '') or '').strip(),
+            key_prefix='po_ticket_center',
+        )
 
     with prog_tab6:
         render_user_management_panel("program_officer")
@@ -5179,6 +5489,11 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
 
     with sup_tab5:
         render_help_ticket_kpi_tab("Supervisor", "supervisor")
+        render_help_ticket_center(
+            "Supervisor",
+            submitter_name=(auth_result.display_name or auth_result.username or st.session_state.get('current_user', '') or '').strip(),
+            key_prefix='sup_ticket_center',
+        )
 
     with sup_tab6:
         render_user_management_panel("supervisor")
@@ -6142,49 +6457,30 @@ P-S Report: Contacted client via phone/web portal. Action taken: CONTACT LETTER.
     
     # TAB 3: Support Tickets
     with tab3:
-        # Support Metrics
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Open Tickets", "8", "-2")
-        with col2:
-            st.metric("Avg Response Time", "1.2 hrs", "-0.3 hrs")
-        with col3:
-            st.metric("Resolution Rate", "94%", "+3%")
-        with col4:
-            st.metric("User Satisfaction", "4.7/5.0", "+0.2")
-        
-        # Support Tickets
-        st.subheader("Active Support Tickets")
-        tickets = pd.DataFrame({
-            'Ticket ID': ['SUP-2026-001', 'SUP-2026-002', 'SUP-2026-003', 'SUP-2026-004'],
-            'Establishment': ['Lincoln Elementary', 'Grant Middle School', 'Jefferson HS', 'Adams Preschool'],
-            'Issue': [
-                'Excel upload format error',
-                'Login credentials not working',
-                'Report submission timeout',
-                'Data validation failure'
-            ],
-            'Priority': ['🔴 High', '🟡 Medium', '🔴 High', '🟡 Medium'],
-            'Status': ['In Progress', 'Assigned', 'Waiting', 'In Progress']
-        })
-        st.dataframe(tickets, use_container_width=True)
-        
-        # Create new support ticket
-        st.subheader("Open New Support Ticket")
-        col1, col2 = st.columns(2)
-        with col1:
-            establishment = st.selectbox("Select Establishment", 
-                ['Lincoln Elementary', 'Grant Middle School', 'Jefferson HS', 'Adams Preschool', 'Madison Elementary'],
-                key="support_ticket_establishment")
-            priority = st.radio("Priority Level", ["🟢 Low", "🟡 Medium", "🔴 High"], key="support_priority")
-        with col2:
-            issue_type = st.selectbox("Issue Category",
-                ["File Upload", "Authentication", "Data Validation", "Performance", "Technical", "Other"],
-                key="support_issue_type")
-            description = st.text_area("Issue Description", placeholder="Describe the problem...", key="support_description")
-        
-        if st.button("📝 Create Ticket", key="create_support_ticket"):
-            st.success(f"✓ Ticket created for {establishment} - {priority}")
+        if not acting_so or acting_so == '(Select)':
+            st.info("Select yourself at the top of the page to submit and track tickets.")
+        else:
+            # Lightweight metrics for the current worker
+            my_tickets = [
+                t for t in (st.session_state.get('help_tickets', []) or [])
+                if str(t.get('submitter_name') or '').strip() == str(acting_so).strip()
+            ]
+            open_statuses = {'Open', 'Assigned', 'In Progress', 'Waiting on Submitter'}
+            my_open = sum(1 for t in my_tickets if str(t.get('status') or '').strip() in open_statuses)
+            my_resolved = sum(1 for t in my_tickets if str(t.get('status') or '').strip() in {'Resolved', 'Closed'})
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("My Open Tickets", my_open)
+            with col2:
+                st.metric("My Resolved", my_resolved)
+            with col3:
+                st.metric("My Total", len(my_tickets))
+
+            render_help_ticket_center(
+                "Support Officer",
+                submitter_name=str(acting_so),
+                key_prefix='so_ticket_center',
+            )
     
     # TAB 4: Knowledge Base
     with tab4:
@@ -6520,11 +6816,12 @@ elif role == "IT Administrator":
 
     with it_tab4:
         render_help_ticket_kpi_tab("IT Administrator", "it_admin")
+        render_help_ticket_center("IT Administrator", submitter_name=(auth_result.display_name or auth_result.username or st.session_state.get('current_user', '') or '').strip(), key_prefix='it_ticket_center')
 
     with it_tab5:
         render_knowledge_base("IT Administrator", "it_admin")
 
-render_help_ticket_center(selected_role)
+
 
 # Footer
 st.markdown("---")

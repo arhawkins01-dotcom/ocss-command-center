@@ -1,56 +1,28 @@
-
-**Supervisor Self-Pull (Claim a Caseload):**
-
-Supervisors can now claim unassigned caseloads directly from their dashboard.
-
-**How it works:**
-1. Select **Supervisor** role in the sidebar
-2. Choose your supervisor's name from the dropdown
-3. In the "Unassigned Caseloads" section, select a caseload from the dropdown
-4. Click **"Pull Selected Caseload to Myself"** to assign it to yourself
-5. The system will confirm the assignment and update the dashboard
-
-**Access:**
-- Allowed: Supervisors, Director, Deputy Director, Senior Administrative Officer, Program Officer, Team Leads
-- Not allowed: Regular Support Officers (non-Team Leads)
-
-2. **Availability Hints**:
-   - Green info box: Caseload already assigned to you
-   - Orange warning: Caseload assigned to someone else (pull blocked)
-   - No message: Caseload is available for claiming
-
-3. **Self-Only Rule**: Workers can only pull caseloads for themselves, not for others
-```markdown
-
 # OCSS Command Center — User Manual
 
-Version: 1.1.0
-Last Updated: 2026-02-27
+Version: 1.2.0
+Last Updated: 2026-03-02
 
 ---
 
 ## Change Log
 - 2026-02-27 — Consolidated manual, clarified role workflows, standardized UI label `💾 Save Progress` across instructions.
+- 2026-03-02 — Documented Help Ticket Center workflow (auto-routing/assignment, statuses, IT actions) and updated instructions for Executive Intake step flow + Support Officer completion UX.
 
 ## Table of Contents
 
-1. [System Overview](#system-overview)
-2. [Getting Started](#getting-started)
-3. [Roles & Dashboards](#roles--dashboards)
-   - [Director / Deputy Director](#director--deputy-director)
-   - [Department Manager / Senior Administrative Officer](#department-manager--senior-administrative-officer)
-   - [Program Officer](#program-officer)
-   - [Supervisor](#supervisor)
-   - [Support Officer / Team Lead](#support-officer--team-lead)
-   - [IT Administrator](#it-administrator)
-4. [KPIs & Metrics Dashboards](#kpis--metrics-dashboards)
-5. [Report Intake & Processing — Step-by-step](#report-intake--processing---step-by-step)
-6. [Caseload Management & Assignment Flows](#caseload-management--assignment-flows)
-7. [Knowledge Base & Documentation Workflow](#knowledge-base--documentation-workflow)
-8. [Operational Notes & Troubleshooting](#operational-notes--troubleshooting)
-9. [Screenshots & Training Aids](#screenshots--training-aids)
-10. [Appendix: Report Types & Field Rules](#appendix-report-types--field-rules)
-11. [Glossary & Contact](#glossary--contact)
+1. System Overview
+2. Getting Started
+3. Roles & Dashboards
+4. KPIs & Metrics Dashboards
+5. Report Intake & Processing — Step-by-step
+6. Caseload Management & Assignment Flows
+7. Knowledge Base & Documentation Workflow
+8. Help Ticket Center Workflow
+9. Operational Notes & Troubleshooting
+10. Screenshots & Training Aids
+11. Appendix: Report Types & Field Rules
+12. Glossary & Contact
 
 ---
 
@@ -82,32 +54,32 @@ Quick tips:
 
 Each role has a tailored view and permission set. Below are concise responsibilities and common tasks.
 
-Director / Deputy Director
+### Director / Deputy Director
 - Purpose: Strategic oversight, leadership exports, escalation decisions
 - Key views: Organization-level KPIs, Caseload Work Status, Leadership Exports
 - Common tasks: Review escalated items, download briefing packet, set priorities
 
-Department Manager / Senior Administrative Officer
+### Department Manager / Senior Administrative Officer
 - Purpose: Operational oversight for units or regions
 - Key views: Unit KPIs, Reassignments, Team Performance
 - Common tasks: Reassign caseloads, validate unit structure, review monthly throughput
 
-Program Officer
+### Program Officer
 - Purpose: Upload and seed reports, validate ingestion, and monitor program-level throughput
 - Key views: Upload & Processing, Ingestion Registry, Program KPIs
 - Common tasks: Upload reports, fix ingestion preview issues, run exports for program reporting
 
-Supervisor
+### Supervisor
 - Purpose: Team-level assignment, approve caseload submissions, and monitor team alerts
 - Key views: My Team & Assignments, Worker Self-Pull, Team Performance
 - Common tasks: Assign/reassign caseloads, acknowledge alerts, approve completed caseloads
 
-Support Officer / Team Lead
+### Support Officer / Team Lead
 - Purpose: Row-level processing of reports (case lines), narration, and completion
 - Key views: My Assigned Reports, Caseload Dashboard, Knowledge Base
 - Common tasks: Process case rows, add narration, save progress, submit caseload when done
 
-IT Administrator
+### IT Administrator
 - Purpose: User and unit management, audit logs, system health, backups
 - Key views: User & Caseload Management, System Status, Maintenance & Logs
 - Common tasks: Add/remove users, create units, run diagnostics, back up logs
@@ -132,40 +104,49 @@ Leadership exports produce Excel and Word briefing packets with pre-formatted su
 
 This section covers the canonical workflow from upload to caseload submission.
 
-Uploading & Preview (Program Officer)
+### Uploading & Preview (Program Officer)
 1. Role: select `Program Officer`.
 2. Open `Upload & Processing` and choose a target caseload.
 3. Click `Browse files`, select `.xlsx` or `.csv` and confirm.
 4. Review the ingest preview; fix column mapping if needed.
-5. Set metadata (report type, frequency, period year/value) and click `Process Report`.
-6. Copy the ingestion ID for audit and future reference.
+5. Set metadata (report type, frequency, period year/value).
+6. Click `Process Report` (disabled until required fields are set).
+7. Copy the ingestion ID for audit and future reference.
 
-Duplicate Detection & QA
+Notes:
+- The intake UI follows a step flow (Upload → Process) to reduce accidental processing.
+- Non-critical ingestion warnings are grouped in a collapsible warnings section.
+
+### Duplicate Detection & QA
 - The system uses a combination of metadata and content hashing to detect duplicate-period or near-duplicate uploads. If a duplicate is detected, you may:
   - Cancel if accidental
   - Proceed by enabling `Allow ingestion even if duplicate period report is detected` (use sparingly)
 
-Processing Rows (Support Officer)
+### Processing Rows (Support Officer)
 Follow this per-row checklist for reliable narration and consistent status:
 1. Open your `My Assigned Reports` queue and expand the next unworked row.
 2. Review data sources (linked systems shown in the UI) and prior actions.
 3. Select `Action Taken / Status` from the context menu (Schedule GT, Prep ADS, Postal Verification, Refer to Court, Close Case, etc.).
 4. Enter `Date Action Taken`, mark `Case Narrated (Y/N)` to `Y` when complete, and add `Comments`.
-5. Click `💾 Save Progress` to persist edits.
+5. Set `Worker Status` to `Completed` when the row is fully done. If required fields are missing for the report type, the app will revert the status and show what’s missing.
+6. Click `💾 Save Progress` to persist edits.
 
-Conditional Submit
+Tip:
+- If you are viewing `Pending / In Progress` rows, completed rows will be hidden by the filter.
+
+### Conditional Submit
 - When all rows assigned to the Support Officer are `Completed`, the Supervisor-level `✅ Submit Caseload as Complete` button becomes available. The app validates required fields for specific report types (56RA, P-S, Locate) and blocks submission until rules are satisfied.
 
 ---
 
 ## Caseload Management & Assignment Flows
 
-Assigning & Reassigning (Supervisor / IT)
+### Assigning & Reassigning (Supervisor / IT)
 1. Select `Supervisor` role and your supervisor name.
 2. Open `My Team & Assignments` and choose the desired unit.
 3. Use `Assign/Move Caseload` to move work between team members; confirm in modal.
 
-Worker Self-Pull (Supervisor view — Team Leads)
+### Worker Self-Pull (Supervisor view — Team Leads)
 - Team Leads and designated roles may claim unassigned caseloads by using the `Worker Self-Pull` control. Ensure `Simulate Current Worker` and `Pull As` match exactly.
 
 How it works:
@@ -181,15 +162,16 @@ Availability hints:
 
 Access: Supervisors, Director, Deputy Director, Senior Administrative Officer, Program Officer, Team Leads. Regular Support Officers (non-Team Leads) cannot claim via this control.
 
-Audit Trail & Logs
+### Audit Trail & Logs
 - All assignment and removal actions are logged. IT Admins can filter `Recent System Activity` to review changes by user and timestamp.
 
 ---
 
 ## Knowledge Base & Documentation Workflow
 
-- The canonical manual is `docs/USER_MANUAL.md` in this repository.
-- On first seed the application copies it to `data/knowledge_base/user_guide.md` and records the seed in `.seed_manifest.json`.
+- The canonical User Manual is `docs/USER_MANUAL.md` in this repository.
+- The Technical Guide is maintained in `data/knowledge_base/technical_guide.md` (used as the seed source for the in-app Technical Guide).
+- On first seed the application copies the sources into the Knowledge Base folder and records the seed in `.seed_manifest.json`.
 - If a document is edited through the in-app Knowledge Base Admin, the seeder will not overwrite it unless `edited_by_admin` is cleared.
 
 Authoring notes:
@@ -198,7 +180,42 @@ Authoring notes:
 
 ---
 
-Operational Notes & Troubleshooting
+## Help Ticket Center Workflow
+
+The Help Ticket Center is the single workflow for reporting issues (upload problems, authentication, validation, performance, etc.) and tracking resolution.
+
+### Where to find it
+- **Support Officer**: `🆘 Support Tickets` tab
+- **Director / Program Officer / Supervisor**: `🆘 Ticket KPIs` tab (includes both KPI view and the Ticket Center)
+- **IT Administrator**: `🆘 Ticket KPIs` tab (includes IT actions)
+
+### Submitting a ticket
+1. Enter your name and pick an Establishment, Priority, and Issue Category.
+2. Describe the issue and click `Submit Help Ticket`.
+3. The system adds a **Suggested resolution** to speed triage.
+4. **Auto-routing / auto-assign:** if one or more IT Administrators exist in User Management, the ticket is auto-assigned to an IT Administrator and starts in `Assigned` status.
+
+### Statuses (meaning)
+- `Open`: created but not assigned
+- `Assigned`: assigned to an IT Administrator
+- `In Progress`: actively being worked
+- `Waiting on Submitter`: needs additional info from the submitter
+- `Resolved`: fixed (resolution recorded)
+- `Closed`: resolved + closed (resolution recorded)
+
+### Comments and audit trail
+- Use `Add Comment` to add context; every comment and IT update is recorded in the Ticket Activity Log.
+
+### IT actions
+- IT can change `Assigned To`, update `Status`, mark `IT Verified`, and record `Resolution`.
+- `Resolution` is required for `Resolved` and `Closed`.
+
+### Persistence
+- Tickets and their activity log persist in the app state file under `data/state/ocss_app_state.json` (best-effort persistence).
+
+---
+
+## Operational Notes & Troubleshooting
 
 Common issues and quick fixes:
 
@@ -207,6 +224,8 @@ Common issues and quick fixes:
 - Duplicate ingestion blocked: confirm metadata and enable `Allow ingestion` if intentional.
 - Can't pull a caseload: ensure you have permission and that `Simulate Current Worker` matches `Pull As`.
 - Report not saving: click `💾 Save Progress`, check for session expiration, and export CSV as backup.
+- I can't find my ticket: verify your name matches the ticket submitter name exactly; in the Ticket Center choose `View: My Tickets` or switch to `All Tickets` (leadership/IT).
+- Ticket stuck in Assigned: IT must update status to `In Progress`/`Resolved` and record a resolution when complete.
 
 If the page won't load:
 1. Check network and server (Streamlit) status.
@@ -257,5 +276,4 @@ For enhancement requests: route through IT Admin and Director as described in-ap
 End of User Manual
 
 For repository-based KB updates: edit `docs/USER_MANUAL.md` and then copy to `data/knowledge_base/user_guide.md` (the app seeds the KB on next startup if not edited in-app).
-
-```
+For enhancement requests: route through IT Admin and Director as described in-app
