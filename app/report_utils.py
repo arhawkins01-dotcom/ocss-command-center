@@ -30,6 +30,40 @@ logger = logging.getLogger(__name__)
 EXCEL_PARITY_REPORT_SOURCES = ('56', 'PS', 'LOCATE')
 
 
+CASE_CLOSURE_WORKFLOW_SOURCE = 'CASE_CLOSURE'
+
+# Case Maintenance: Case Closure workflow template
+CASE_CLOSURE_PREPOPULATED_COLUMNS = [
+    'Assigned Worker',
+    'Caseload',
+    'Case Number',
+    'Order Number',
+    'Case Type',
+    'Total Arrears',
+    'Total Monthly Obligation',
+    'Last Charge Date',
+    'Last Payment Amount',
+    'Last Payment Date',
+]
+
+CASE_CLOSURE_YN_COLUMNS = [
+    'All F&Rs filed?',
+    'Termination of Support needed?',
+    'Minor child still exists?',
+    'SETS updated?',
+    'Unallocated Hold on PHAS?',
+    'Hold release request to Post app?',
+    'Did you propose closure?',
+]
+
+CASE_CLOSURE_FREE_TEXT_COLUMNS = ['Initials', 'Comments']
+
+
+def is_case_closure_report_type(report_type: Any) -> bool:
+    text = str(report_type or '').strip().lower()
+    return 'case closure' in text
+
+
 def normalize_support_report_source(value: Any) -> str:
     """Normalize report source used in Support Officer workflow UI.
 
@@ -72,7 +106,24 @@ def validate_support_workflow_row_completion(report_source: Any, row: Any) -> Li
 
     issues: List[str] = []
 
-    # Always require narration confirmation when completing a row.
+    if src == CASE_CLOSURE_WORKFLOW_SOURCE:
+        def _yn(col: str) -> str:
+            return _get(col).strip().upper()
+
+        for col in CASE_CLOSURE_YN_COLUMNS:
+            if _yn(col) not in {'Y', 'N'}:
+                issues.append(f"{col} must be Y or N")
+
+        if not _get('Initials'):
+            issues.append('Initials is required')
+
+        # If closure is NOT proposed, require a reason.
+        if _yn('Did you propose closure?') == 'N' and not _get('Comments'):
+            issues.append('Comments required when closure is not proposed')
+
+        return issues
+
+    # Always require narration confirmation when completing a row (non-Case Closure workflows).
     narrated = _get('Case Narrated').lower()
     if narrated != 'yes':
         issues.append('Case Narrated must be Yes')
@@ -541,7 +592,36 @@ SUPPORT_REPORT_HEADER_ALIASES = {
     'casenarrated': 'Case Narrated',
     'narrated': 'Case Narrated',
     'comment': 'Comment',
-    'comments': 'Comment'
+    'comments': 'Comment',
+
+    # Case Maintenance - Case Closure template (prepopulated fields)
+    'assigned': 'Assigned Worker',
+    'assignedworker': 'Assigned Worker',
+    'ordernumber': 'Order Number',
+    'totalarrears': 'Total Arrears',
+    'totalmonthlyobligation': 'Total Monthly Obligation',
+    'lastchargedate': 'Last Charge Date',
+    'lastpaymentamount': 'Last Payment Amount',
+    'lastpaymentdate': 'Last Payment Date',
+
+    # Case Maintenance - Case Closure (Y/N fields + free text)
+    'allfrsfiledyn': 'All F&Rs filed?',
+    'allfrsfiled': 'All F&Rs filed?',
+    'terminationofsupportneededyn': 'Termination of Support needed?',
+    'terminationofsupportneeded': 'Termination of Support needed?',
+    'minorchildstillexistsyn': 'Minor child still exists?',
+    'minorchildstillexists': 'Minor child still exists?',
+    'setsupdated': 'SETS updated?',
+    'unallocatedholdonphasyn': 'Unallocated Hold on PHAS?',
+    'unallocatedholdonphas': 'Unallocated Hold on PHAS?',
+    'holdreleaserequesttopostappyn': 'Hold release request to Post app?',
+    'holdreleaserequesttopostapp': 'Hold release request to Post app?',
+    'didyouproposeclosureyn': 'Did you propose closure?',
+    'didyouproposeclosure': 'Did you propose closure?',
+    'inititals': 'Initials',
+    'initials': 'Initials',
+    'commentsifcaseisstillopenreasonmustbeprovided': 'Comments',
+    'commentsifcaseisstillopenreasonmustbeprovidedreasonmustbeprovided': 'Comments',
 }
 
 
@@ -781,6 +861,8 @@ class SupportReportIngestionService:
         source_df = normalized_df.copy() if isinstance(normalized_df, pd.DataFrame) else pd.DataFrame()
         resolved_default = normalize_caseload_number(resolved_caseload)
 
+        case_closure_mode = is_case_closure_report_type(report_type)
+
         imported_at = datetime.now()
         canonical_result = map_dataframe_to_canonical(
             source_df,
@@ -800,6 +882,10 @@ class SupportReportIngestionService:
             canonical_all['ingestion_id'] = ingestion_id
             canonical_all['source_filename'] = source_filename
             canonical_all['imported_at'] = imported_at.isoformat()
+
+        # Override workflow source when a report type requires a distinct workflow template.
+        if case_closure_mode and isinstance(canonical_all, pd.DataFrame) and not canonical_all.empty:
+            canonical_all['report_source'] = CASE_CLOSURE_WORKFLOW_SOURCE
 
         caseload_groups = []
         if 'caseload' in canonical_all.columns:
@@ -822,8 +908,42 @@ class SupportReportIngestionService:
             else:
                 caseload_canonical = canonical_all.copy()
 
-            caseload_df = canonical_to_workflow_dataframe(caseload_canonical)
-            caseload_df, _, _ = normalize_support_report_dataframe(caseload_df, caseload_value)
+            if case_closure_mode and isinstance(caseload_canonical, pd.DataFrame) and not caseload_canonical.empty:
+                caseload_canonical['report_source'] = CASE_CLOSURE_WORKFLOW_SOURCE
+
+            if case_closure_mode:
+                # Preserve pre-populated Case Maintenance fields that are not in the canonical model.
+                caseload_df = source_df.copy() if isinstance(source_df, pd.DataFrame) else pd.DataFrame()
+                caseload_df, _, _ = normalize_support_report_dataframe(caseload_df, caseload_value)
+                if 'Caseload' in caseload_df.columns:
+                    caseload_df = caseload_df[caseload_df['Caseload'].astype(str) == str(caseload_value)].copy()
+                else:
+                    caseload_df = pd.DataFrame()
+
+                # Ensure template columns exist.
+                for col in CASE_CLOSURE_PREPOPULATED_COLUMNS:
+                    if col not in caseload_df.columns:
+                        caseload_df[col] = ''
+                for col in CASE_CLOSURE_YN_COLUMNS:
+                    if col not in caseload_df.columns:
+                        caseload_df[col] = ''
+                for col in CASE_CLOSURE_FREE_TEXT_COLUMNS:
+                    if col not in caseload_df.columns:
+                        caseload_df[col] = ''
+
+                # Stamp workflow profile.
+                if 'Report Source' not in caseload_df.columns:
+                    caseload_df['Report Source'] = CASE_CLOSURE_WORKFLOW_SOURCE
+                else:
+                    caseload_df['Report Source'] = caseload_df['Report Source'].fillna('').astype(str)
+                    caseload_df.loc[caseload_df['Report Source'].str.strip() == '', 'Report Source'] = CASE_CLOSURE_WORKFLOW_SOURCE
+
+                # Normalize comment naming for downstream UI.
+                if 'Comments' not in caseload_df.columns and 'Comment' in caseload_df.columns:
+                    caseload_df['Comments'] = caseload_df['Comment'].fillna('').astype(str)
+            else:
+                caseload_df = canonical_to_workflow_dataframe(caseload_canonical)
+                caseload_df, _, _ = normalize_support_report_dataframe(caseload_df, caseload_value)
 
             owner_unit, owner_person = caseload_owner_resolver(caseload_value)
             if assigned_worker_choice == '(Auto Assign by Caseload)':

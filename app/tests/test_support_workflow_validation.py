@@ -76,3 +76,36 @@ def test_validate_56_requires_date_action_taken():
     }
     issues = report_utils.validate_support_workflow_row_completion('56', row)
     assert 'Date Action Taken is required for 56 when Completed' in issues
+
+
+def test_validate_case_closure_requires_all_yn_and_initials():
+    row = {
+        'All F&Rs filed?': '',
+        'Termination of Support needed?': 'Y',
+        'Minor child still exists?': 'N',
+        'SETS updated?': 'Y',
+        'Unallocated Hold on PHAS?': 'Y',
+        'Hold release request to Post app?': 'N',
+        'Did you propose closure?': 'Y',
+        'Initials': '',
+        'Comments': '',
+    }
+    issues = report_utils.validate_support_workflow_row_completion('CASE_CLOSURE', row)
+    assert any('All F&Rs filed?' in it for it in issues)
+    assert 'Initials is required' in issues
+
+
+def test_validate_case_closure_requires_comments_when_not_proposed():
+    row = {
+        'All F&Rs filed?': 'Y',
+        'Termination of Support needed?': 'N',
+        'Minor child still exists?': 'N',
+        'SETS updated?': 'Y',
+        'Unallocated Hold on PHAS?': 'N',
+        'Hold release request to Post app?': 'N',
+        'Did you propose closure?': 'N',
+        'Initials': 'AB',
+        'Comments': '',
+    }
+    issues = report_utils.validate_support_workflow_row_completion('CASE_CLOSURE', row)
+    assert 'Comments required when closure is not proposed' in issues

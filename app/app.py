@@ -6547,6 +6547,7 @@ elif role == "Support Officer":
                             # Determine report source early so the completion checklist can reflect
                             # the exact required fields enforced at submit-time.
                             report_source_value = ''
+                            report_type_value = str(selected_report.get('report_type') or '').strip()
                             canonical_df = selected_report.get('canonical_data')
                             if isinstance(canonical_df, pd.DataFrame) and not canonical_df.empty and 'report_source' in canonical_df.columns:
                                 try:
@@ -6561,9 +6562,21 @@ elif role == "Support Officer":
                                     report_source_value = ''
                             report_source_value = (report_source_value or 'LOCATE').upper()
 
+                            # Case Maintenance: Case Closure uses a distinct workflow template.
+                            try:
+                                from .report_utils import is_case_closure_report_type
+                            except Exception:
+                                from report_utils import is_case_closure_report_type  # type: ignore
+                            if is_case_closure_report_type(report_type_value):
+                                report_source_value = 'CASE_CLOSURE'
+
                             with st.expander("How to complete this report (checklist)", expanded=False):
                                 required_fields_text = ""
-                                if report_source_value == 'PS':
+                                if report_source_value == 'CASE_CLOSURE':
+                                    required_fields_text = (
+                                        "- **Case Closure** required when marking a row **Completed**: all **Y/N** fields, **Initials**, and **Comments** if closure is not proposed.\n"
+                                    )
+                                elif report_source_value == 'PS':
                                     required_fields_text = (
                                         "- **P-S** required when marking a row **Completed**: **Action Taken/Status**, **Case Narrated = Yes**, and **Comment** if Action Taken/Status = OTHER\n"
                                     )
@@ -6629,24 +6642,55 @@ The app will block submission if any of your assigned rows are not marked **Comp
                             else:
                                 # Ensure workflow/content columns exist so the sheet editor can enforce
                                 # consistent processing across report types.
-                                for required_col in [
-                                    'Action Taken/Status',
-                                    'Date Action Taken',
-                                    'Date Case Reviewed',
-                                    'Results of Review',
-                                    'Case Closure Code',
-                                    'Case Narrated',
-                                    'Comment',
-                                ]:
-                                    if required_col not in working_df.columns:
-                                        working_df[required_col] = ''
+                                if report_source_value == 'CASE_CLOSURE':
+                                    case_closure_cols = [
+                                        'Order Number',
+                                        'Total Arrears',
+                                        'Total Monthly Obligation',
+                                        'Last Charge Date',
+                                        'Last Payment Amount',
+                                        'Last Payment Date',
+                                        'All F&Rs filed?',
+                                        'Termination of Support needed?',
+                                        'Minor child still exists?',
+                                        'SETS updated?',
+                                        'Unallocated Hold on PHAS?',
+                                        'Hold release request to Post app?',
+                                        'Did you propose closure?',
+                                        'Initials',
+                                        'Comments',
+                                    ]
+                                    for required_col in case_closure_cols:
+                                        if required_col not in working_df.columns:
+                                            working_df[required_col] = ''
+                                else:
+                                    for required_col in [
+                                        'Action Taken/Status',
+                                        'Date Action Taken',
+                                        'Date Case Reviewed',
+                                        'Results of Review',
+                                        'Case Closure Code',
+                                        'Case Narrated',
+                                        'Comment',
+                                    ]:
+                                        if required_col not in working_df.columns:
+                                            working_df[required_col] = ''
 
-                                # Editable fields by report source (per user guidance).
-                                # LOCATE: Date Case Reviewed, Results of Review, Case Closure Code, Case Narrated, Comment
-                                # PS: Action Taken/Status, Case Narrated, Comment
-                                # 56: Date Report was Processed (mapped to Date Action Taken), Action Taken/Status, Case Narrated, Comment
+                                # Editable fields by workflow profile.
                                 editable_columns = {'Worker Status'}
-                                if report_source_value == 'PS':
+                                if report_source_value == 'CASE_CLOSURE':
+                                    editable_columns |= {
+                                        'All F&Rs filed?',
+                                        'Termination of Support needed?',
+                                        'Minor child still exists?',
+                                        'SETS updated?',
+                                        'Unallocated Hold on PHAS?',
+                                        'Hold release request to Post app?',
+                                        'Did you propose closure?',
+                                        'Initials',
+                                        'Comments',
+                                    }
+                                elif report_source_value == 'PS':
                                     editable_columns |= {'Action Taken/Status', 'Case Narrated', 'Comment'}
                                 elif report_source_value == '56':
                                     editable_columns |= {'Date Action Taken', 'Action Taken/Status', 'Case Narrated', 'Comment'}
@@ -6656,7 +6700,20 @@ The app will block submission if any of your assigned rows are not marked **Comp
                                 sheet_df = candidate_rows.copy()
 
                                 # Bring the fields the worker must touch to the front of the sheet.
-                                if report_source_value == 'PS':
+                                if report_source_value == 'CASE_CLOSURE':
+                                    editor_order = [
+                                        'Worker Status',
+                                        'All F&Rs filed?',
+                                        'Termination of Support needed?',
+                                        'Minor child still exists?',
+                                        'SETS updated?',
+                                        'Unallocated Hold on PHAS?',
+                                        'Hold release request to Post app?',
+                                        'Did you propose closure?',
+                                        'Initials',
+                                        'Comments',
+                                    ]
+                                elif report_source_value == 'PS':
                                     editor_order = ['Worker Status', 'Action Taken/Status', 'Case Narrated', 'Comment']
                                 elif report_source_value == '56':
                                     editor_order = ['Worker Status', 'Date Action Taken', 'Action Taken/Status', 'Case Narrated', 'Comment']
@@ -6692,11 +6749,31 @@ The app will block submission if any of your assigned rows are not marked **Comp
                                         'Worker Status (set to Completed when done)',
                                         options=['Not Started', 'In Progress', 'Completed'],
                                     ),
-                                    'Case Narrated': st.column_config.SelectboxColumn(
+                                }
+
+                                if report_source_value == 'CASE_CLOSURE':
+                                    yn_options = ['', 'Y', 'N']
+                                    for col in [
+                                        'All F&Rs filed?',
+                                        'Termination of Support needed?',
+                                        'Minor child still exists?',
+                                        'SETS updated?',
+                                        'Unallocated Hold on PHAS?',
+                                        'Hold release request to Post app?',
+                                        'Did you propose closure?',
+                                    ]:
+                                        if col in sheet_df.columns:
+                                            column_config[col] = st.column_config.SelectboxColumn(col, options=yn_options)
+
+                                    if 'Initials' in sheet_df.columns:
+                                        column_config['Initials'] = st.column_config.TextColumn('Initials')
+                                    if 'Comments' in sheet_df.columns:
+                                        column_config['Comments'] = st.column_config.TextColumn('Comments', max_chars=91250)
+                                else:
+                                    column_config['Case Narrated'] = st.column_config.SelectboxColumn(
                                         'Case Narrated',
                                         options=['', 'Yes', 'No']
-                                    ),
-                                }
+                                    )
 
                                 # Action Taken/Status dropdown options are report-specific.
                                 ps_action_options = [
