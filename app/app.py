@@ -2619,6 +2619,13 @@ def get_worker_user_names() -> list:
             'Case Information Specialist',
         }:
             workers.append(user.get('name', '').strip())
+
+    # Include workers currently mapped in unit configuration even if a user record
+    # is missing or uses a legacy role label.
+    for unit in st.session_state.get('units', {}).values():
+        workers.extend([str(name).strip() for name in (unit.get('team_leads', []) or []) if str(name).strip()])
+        workers.extend([str(name).strip() for name in (unit.get('support_officers', []) or []) if str(name).strip()])
+
     return sorted(list({worker for worker in workers if worker}))
 
 
@@ -6856,6 +6863,18 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                 }
 
                 globally_unassigned = [c for c in all_known_caseloads if c not in globally_assigned]
+
+                unit_prefixes = [
+                    ''.join(ch for ch in str(prefix or '').strip() if ch.isdigit())
+                    for prefix in (unit.get('caseload_series_prefixes', []) or [])
+                ]
+                unit_prefixes = [p for p in unit_prefixes if p]
+                if unit_prefixes:
+                    globally_unassigned = [
+                        c for c in globally_unassigned
+                        if any(str(c).startswith(prefix) for prefix in unit_prefixes)
+                    ]
+
                 if globally_unassigned:
                     unit.setdefault('assignments', {}).setdefault(selected_supervisor, [])
                     st.markdown("**Unassigned Caseloads:** " + ", ".join(globally_unassigned))
@@ -6866,6 +6885,8 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                             _persist_app_state()
                             st.success(f"✓ Caseload {caseload_to_pull} assigned to {selected_supervisor}")
                             st.rerun()
+                else:
+                    st.info("No unassigned caseloads are currently available in this unit's configured caseload series.")
 
                 _render_alert_panel(
                     viewer_role='Supervisor',
