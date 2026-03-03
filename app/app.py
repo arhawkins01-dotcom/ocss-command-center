@@ -2610,14 +2610,7 @@ def normalize_support_report_dataframe(df: pd.DataFrame, fallback_caseload: str)
 def get_worker_user_names() -> list:
     workers = []
     for user in st.session_state.get('users', []):
-        if user.get('role') in {
-            'Support Officer',
-            'Team Lead',
-            'Client Information Specialist Team Lead',
-            'Client Information Specialist',
-            'Case Information Specialist Team Lead',
-            'Case Information Specialist',
-        }:
+        if user.get('role') in {'Support Officer', 'Team Lead'}:
             workers.append(user.get('name', '').strip())
 
     # Include workers currently mapped in unit configuration even if a user record
