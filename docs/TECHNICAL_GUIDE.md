@@ -10,7 +10,7 @@ Last Updated: 2026-03-02
 OCSS Command Center is a role-based Streamlit application for establishment report ingestion, row-level workflow processing, KPI monitoring, and operational ticketing.
 
 Key capabilities:
-- Role-based dashboards (Director, Program Officer, Supervisor, Support Officer, IT Administrator)
+- Role-based dashboards (Director, Deputy Director, Department Manager, Senior Administrative Officer, Program Officer, Supervisor, Support Officer, IT Administrator)
 - Report ingestion with metadata, duplicate detection, preview, and export
 - Support Officer row-level processing with completion validation
 - Help Ticket Center with auto-routing/auto-assignment and KPI views
