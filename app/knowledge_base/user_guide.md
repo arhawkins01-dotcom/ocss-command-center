@@ -88,6 +88,7 @@ The main content area will update to show features relevant to your role.
 
 **📊 KPIs & Metrics Tab**
 - **Alerts (Escalation)**: A compact expander shows aging/unacknowledged work relevant to your leadership title (see Unit Role below)
+- **Leadership QA Exports**: Export live dashboard stats to an Excel/Word document directly from this tab (includes KPI and QA Flags summary sheets)
 - View organizational performance metrics:
   - Report Completion Rate
   - On-Time Submissions

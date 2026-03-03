@@ -56,22 +56,22 @@ Each role has a tailored view and permission set. Below are concise responsibili
 
 ### Director / Deputy Director
 - Purpose: Strategic oversight, leadership exports, escalation decisions
-- Key views: Organization-level KPIs, Caseload Work Status, Leadership Exports
+- Key views: Organization-level KPIs, Caseload Work Status, Team Performance Analytics, Leadership QA Exports
 - Common tasks: Review escalated items, download briefing packet, set priorities
 
 ### Department Manager / Senior Administrative Officer
 - Purpose: Operational oversight for units or regions
-- Key views: Unit KPIs, Reassignments, Team Performance
+- Key views: Unit KPIs (Department scope for DM; Unit/Dept/Agency scope for SAO), QA Data Exports, Reassignments, Team Performance
 - Common tasks: Reassign caseloads, validate unit structure, review monthly throughput
 
 ### Program Officer
 - Purpose: Upload and seed reports, validate ingestion, and monitor program-level throughput
-- Key views: Upload & Processing, Ingestion Registry, Program KPIs
+- Key views: Upload & Processing, Ingestion Registry, Program KPIs, Team Performance Analytics, Leadership QA Exports
 - Common tasks: Upload reports, fix ingestion preview issues, run exports for program reporting
 
 ### Supervisor
 - Purpose: Team-level assignment, approve caseload submissions, and monitor team alerts
-- Key views: My Team & Assignments, Worker Self-Pull, Team Performance
+- Key views: KPI Metrics (Unit/Department scoped), QA Data Exports, My Team & Assignments, Worker Self-Pull, Team Performance Analytics
 - Common tasks: Assign/reassign caseloads, acknowledge alerts, approve completed caseloads
 
 ### Support Officer / Team Lead
@@ -96,7 +96,7 @@ Dashboards show throughput (7/30-day), completion rates, and aging items. Common
 - Unassigned Caseloads
 - Escalations by Age Bucket
 
-Leadership exports produce Excel and Word briefing packets with pre-formatted summaries and an ingestion activity sheet.
+Leadership exports produce Excel and Word briefing packets with pre-formatted summaries and an ingestion activity sheet. Exports are now directly available on the root KPI Metrics tab across all executive roles (Director, Deputy Director, Program Officer, Department Manager, SAO, and Supervisor). These exports include comprehensive QA flag summaries (FAIL/WARN/INFO/OK metrics with top failure reasons). Additionally, executive and supervisory roles now feature robust Team Performance Analytics views utilizing visual progress bars for individual worker completion rates.
 
 ---
 
