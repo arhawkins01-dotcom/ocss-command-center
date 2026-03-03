@@ -5438,10 +5438,60 @@ if role in ["Director", "Deputy Director"]:
     with dir_tab3:
         st.subheader("📊 Team Performance Analytics")
 
+        # Agency-wide team performance with drill-down filters
+        _dir_perf_source = workers_data.copy() if isinstance(workers_data, pd.DataFrame) else pd.DataFrame()
+        if not _dir_perf_source.empty:
+            _dir_users_by_name = {str(u.get('name', '')).strip(): u for u in st.session_state.get('users', [])}
+            _dir_unit_department = {}
+            for _dir_unit_name, _dir_unit in st.session_state.get('units', {}).items():
+                _dir_members = []
+                if _dir_unit.get('supervisor'):
+                    _dir_members.append(_dir_unit.get('supervisor'))
+                _dir_members.extend(_dir_unit.get('team_leads', []) or [])
+                _dir_members.extend(_dir_unit.get('support_officers', []) or [])
+                _matched_departments = {
+                    str(_dir_users_by_name.get(str(_dir_member).strip(), {}).get('department', '')).strip()
+                    for _dir_member in _dir_members
+                    if str(_dir_users_by_name.get(str(_dir_member).strip(), {}).get('department', '')).strip()
+                }
+                _dir_unit_department[_dir_unit_name] = sorted(_matched_departments)[0] if _matched_departments else "Unassigned"
+
+            _dir_perf_source['Department'] = _dir_perf_source['Unit'].apply(lambda _u: _dir_unit_department.get(_u, "Unassigned"))
+
+            if st.button("Reset Performance Filters", key='dir_perf_filters_reset'):
+                for _k in ['dir_perf_department_filter', 'dir_perf_unit_filter', 'dir_perf_worker_filter']:
+                    st.session_state.pop(_k, None)
+                st.rerun()
+
+            _dir_dept_opts = ["All Departments"] + sorted(_dir_perf_source['Department'].dropna().astype(str).unique().tolist())
+            _dir_sel_dept = st.selectbox("Department Filter", options=_dir_dept_opts, index=0, key='dir_perf_department_filter')
+
+            _dir_unit_pool = _dir_perf_source.copy()
+            if _dir_sel_dept != "All Departments":
+                _dir_unit_pool = _dir_unit_pool[_dir_unit_pool['Department'] == _dir_sel_dept]
+            _dir_unit_opts = ["All Units"] + sorted(_dir_unit_pool['Unit'].dropna().astype(str).unique().tolist())
+            _dir_sel_unit = st.selectbox("Unit Filter", options=_dir_unit_opts, index=0, key='dir_perf_unit_filter')
+
+            _dir_worker_pool = _dir_unit_pool.copy()
+            if _dir_sel_unit != "All Units":
+                _dir_worker_pool = _dir_worker_pool[_dir_worker_pool['Unit'] == _dir_sel_unit]
+            _dir_worker_opts = ["All Workers"] + sorted(_dir_worker_pool['Worker Name'].dropna().astype(str).unique().tolist())
+            _dir_sel_worker = st.selectbox("Worker Filter", options=_dir_worker_opts, index=0, key='dir_perf_worker_filter')
+
+            _dir_perf_df = _dir_perf_source.copy()
+            if _dir_sel_dept != "All Departments":
+                _dir_perf_df = _dir_perf_df[_dir_perf_df['Department'] == _dir_sel_dept]
+            if _dir_sel_unit != "All Units":
+                _dir_perf_df = _dir_perf_df[_dir_perf_df['Unit'] == _dir_sel_unit]
+            if _dir_sel_worker != "All Workers":
+                _dir_perf_df = _dir_perf_df[_dir_perf_df['Worker Name'] == _dir_sel_worker]
+        else:
+            _dir_perf_df = _dir_perf_source
+
         # Live performance metrics computed from workers_data built in tab2
-        if not workers_data.empty:
-            _total_c = workers_data['Completed'].sum()
-            _total_t = workers_data['Total Cases'].sum()
+        if not _dir_perf_df.empty:
+            _total_c = _dir_perf_df['Completed'].sum()
+            _total_t = _dir_perf_df['Total Cases'].sum()
             _live_completion = (_total_c / _total_t * 100) if _total_t > 0 else 0.0
             _dq_agency = get_kpi_metrics(department=None)['data_quality_score']
             _comp_delta = round(_live_completion - 90.0, 1)
@@ -5462,15 +5512,15 @@ if role in ["Director", "Deputy Director"]:
                       delta=f"{_dq_delta:+.1f}% vs 95% target" if _dq_delta is not None else None,
                       delta_color="normal")
         with col3:
-            _worker_count = len(workers_data) if not workers_data.empty else 0
-            _units_count = workers_data['Unit'].nunique() if not workers_data.empty else 0
+            _worker_count = len(_dir_perf_df) if not _dir_perf_df.empty else 0
+            _units_count = _dir_perf_df['Unit'].nunique() if not _dir_perf_df.empty else 0
             st.metric("Active Workers", str(_worker_count), delta=f"{_units_count} unit(s)")
 
         # Completion rate bar chart across workers
-        if not workers_data.empty:
+        if not _dir_perf_df.empty:
             st.subheader("Completion Rate by Worker")
             try:
-                _chart_df = workers_data.copy()
+                _chart_df = _dir_perf_df.copy()
                 _chart_df['_pct'] = _chart_df['Completion %'].astype(str).str.rstrip('%').apply(lambda x: float(x) if x else 0.0)
                 st.bar_chart(_chart_df.set_index('Worker Name')[['_pct']].rename(columns={'_pct': 'Completion %'}))
             except Exception:
@@ -5478,23 +5528,26 @@ if role in ["Director", "Deputy Director"]:
 
         # Worker comparison
         st.write("**Individual Performance**")
-        for idx, worker in enumerate(workers_data['Worker Name']):
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.write(f"**{worker}**")
-            with col2:
-                try:
-                    val_str = str(workers_data['Completion %'].iloc[idx]).rstrip('%')
-                    # Handle float strings like '33.3' by converting to float first, then int
-                    progress_val = int(float(val_str))
-                    st.progress(progress_val / 100)
-                except Exception:
-                    st.progress(0)
-            with col3:
-                st.metric("Completed", workers_data['Completed'].iloc[idx])
-            with col4:
-                st.metric("Avg Time", workers_data['Avg Time/Report'].iloc[idx])
-            st.divider()
+        if _dir_perf_df.empty:
+            st.info("No worker performance records match the selected filters.")
+        else:
+            for idx, worker in enumerate(_dir_perf_df['Worker Name']):
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.write(f"**{worker}**")
+                with col2:
+                    try:
+                        val_str = str(_dir_perf_df['Completion %'].iloc[idx]).rstrip('%')
+                        # Handle float strings like '33.3' by converting to float first, then int
+                        progress_val = int(float(val_str))
+                        st.progress(progress_val / 100)
+                    except Exception:
+                        st.progress(0)
+                with col3:
+                    st.metric("Completed", _dir_perf_df['Completed'].iloc[idx])
+                with col4:
+                    st.metric("Avg Time", _dir_perf_df['Avg Time/Report'].iloc[idx])
+                st.divider()
 
     with dir_tab4:
         render_report_intake_portal("director_intake", "Director")
@@ -6394,12 +6447,35 @@ elif role == 'Department Manager':
                 st.metric("Staff Count", len(_dept_perf_rows), delta=f"{len(units_in_dept)} unit(s)")
 
             _dept_perf_df = pd.DataFrame(_dept_perf_rows)
-            st.dataframe(_dept_perf_df, use_container_width=True, hide_index=True)
+
+            # Department-scoped drill-down filters
+            if st.button("Reset Performance Filters", key='dept_perf_filters_reset'):
+                for _k in ['dept_perf_unit_filter', 'dept_perf_worker_filter']:
+                    st.session_state.pop(_k, None)
+                st.rerun()
+
+            _dept_unit_opts = ["All Units"] + sorted(_dept_perf_df['Unit'].dropna().astype(str).unique().tolist())
+            _dept_sel_unit = st.selectbox("Unit Filter", options=_dept_unit_opts, index=0, key='dept_perf_unit_filter')
+
+            _dept_worker_pool = _dept_perf_df.copy()
+            if _dept_sel_unit != "All Units":
+                _dept_worker_pool = _dept_worker_pool[_dept_worker_pool['Unit'] == _dept_sel_unit]
+
+            _dept_worker_opts = ["All Workers"] + sorted(_dept_worker_pool['Worker'].dropna().astype(str).unique().tolist())
+            _dept_sel_worker = st.selectbox("Worker Filter", options=_dept_worker_opts, index=0, key='dept_perf_worker_filter')
+
+            _dept_filtered_df = _dept_perf_df.copy()
+            if _dept_sel_unit != "All Units":
+                _dept_filtered_df = _dept_filtered_df[_dept_filtered_df['Unit'] == _dept_sel_unit]
+            if _dept_sel_worker != "All Workers":
+                _dept_filtered_df = _dept_filtered_df[_dept_filtered_df['Worker'] == _dept_sel_worker]
+
+            st.dataframe(_dept_filtered_df, use_container_width=True, hide_index=True)
 
             # Completion rate chart
             st.subheader("Completion Rate by Worker")
             try:
-                _dp_chart = _dept_perf_df.copy()
+                _dp_chart = _dept_filtered_df.copy()
                 _dp_chart['_pct'] = _dp_chart['Completion %'].str.rstrip('%').astype(float)
                 st.bar_chart(_dp_chart.set_index('Worker')[['_pct']].rename(columns={'_pct': 'Completion %'}))
             except Exception:
@@ -6407,23 +6483,26 @@ elif role == 'Department Manager':
 
             # Individual performance breakdown (mirrors Director/PO)
             st.write("**Individual Performance**")
-            for _dp_idx, _dp_row in _dept_perf_df.iterrows():
-                _dp_w = _dp_row['Worker']
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.write(f"**{_dp_w}**")
-                    st.caption(_dp_row.get('Unit', ''))
-                with col2:
-                    try:
-                        _dp_pct_val = int(float(str(_dp_row['Completion %']).rstrip('%')))
-                        st.progress(_dp_pct_val / 100)
-                    except Exception:
-                        st.progress(0)
-                with col3:
-                    st.metric("Completed", _dp_row['Completed'])
-                with col4:
-                    st.metric("Total Cases", _dp_row['Total Cases'])
-                st.divider()
+            if _dept_filtered_df.empty:
+                st.info("No worker performance records match the selected filters.")
+            else:
+                for _dp_idx, _dp_row in _dept_filtered_df.iterrows():
+                    _dp_w = _dp_row['Worker']
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.write(f"**{_dp_w}**")
+                        st.caption(_dp_row.get('Unit', ''))
+                    with col2:
+                        try:
+                            _dp_pct_val = int(float(str(_dp_row['Completion %']).rstrip('%')))
+                            st.progress(_dp_pct_val / 100)
+                        except Exception:
+                            st.progress(0)
+                    with col3:
+                        st.metric("Completed", _dp_row['Completed'])
+                    with col4:
+                        st.metric("Total Cases", _dp_row['Total Cases'])
+                    st.divider()
         else:
             st.info("No team data available for this department.")
 
