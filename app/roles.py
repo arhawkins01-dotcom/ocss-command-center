@@ -39,6 +39,8 @@ ROLE_VIEW_MAP = {
     "Administrative Assistant": "Program Officer",
     # Team Leads process caseloads like Support Officers; map to Support Officer view
     "Team Lead": "Support Officer",
+    # Administrative specialists reuse support-processing workflow components,
+    # but retain their own role labels in the UI.
     "Client Information Specialist Team Lead": "Support Officer",
     "Client Information Specialist": "Support Officer",
     "Case Information Specialist Team Lead": "Support Officer",

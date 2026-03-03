@@ -1,6 +1,6 @@
 # OCSS Command Center — Technical Guide
 
-Last Updated: 2026-03-02
+Last Updated: 2026-03-03
 
 ---
 
@@ -14,6 +14,12 @@ Key operational features implemented in Feb 2026 include:
 - Senior leadership exports in Excel and Word formats
 - Help Ticket Center workflow with auto-routing/assignment and ticket KPI views
 - Mixed persistence model: organizational configuration + help tickets persisted on disk; report/work data remains session-based
+
+Recent implementation updates (2026-03-03):
+- Sidebar role selection now uses grouped selection (`Role Group` + role dropdown) with last-selected role defaults.
+- Program Officer remains on the legacy dashboard and now has agency-wide KPI filters for Department, Unit, and Support Staff (Support Officer + Team Lead) with filter sync across KPI/Caseload/Performance tabs.
+- Administrative specialist roles are separated from Support Officer caseload dashboards and use administrative intake/ticket workflows.
+- Support Officer/Team Lead authenticated sessions are identity-locked to the signed-in worker, and KPI/Throughput tracker tables are filtered to that worker only.
 
 **Project Status:** Production-Ready (v1.0.0)  
 **Framework:** Streamlit 1.x with Python 3.8+  
@@ -111,6 +117,23 @@ The app keeps the sidebar role list to these five roles, but User Management sup
 - Senior Administrative Officer
 
 Operational note: Senior Administrative Officer (SAO), Supervisor, and Program Officer often have similar operational needs (workload visibility, alerts, exports). The app supports both explicit roles and leadership titles (Unit Role) depending on deployment mode.
+
+Current unauthenticated role selector groupings in sidebar:
+- Leadership
+- Management
+- Program & CQI
+- Administrative
+- Support
+- IT
+
+Administrative specialist behavior:
+- `Administrative Assistant`, `Client Information Specialist`, `Client Information Specialist Team Lead`, `Case Information Specialist`, and `Case Information Specialist Team Lead` are not treated as Support Officers for caseload dashboard behavior.
+- These roles can still process reports via intake workflows and use support ticketing.
+
+Support worker visibility controls:
+- In authenticated mode, the Support Officer identity selector is disabled and replaced by signed-in identity lock.
+- In no-auth/demo mode, the selector remains available for simulation and testing.
+- `Support Officer KPI Tracker` and `Support Officer Throughput` are filtered to the active support worker context.
 
 #### 1. **Director** 
 - **Dashboard Tabs:** KPIs, Caseload Management, Team Performance, Report Intake, Ticket KPIs, Manage Users

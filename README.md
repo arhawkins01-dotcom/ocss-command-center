@@ -14,11 +14,15 @@ OCSS Establishment Command Center — a server‑hosted internal web application
 
 ## 🚀 Quick Start
 
-### ✅ All Enhancements Are Already Included!
+### ✅ Latest Enhancements Included (v1.3.0)
 
 **👉 [See What's Included Guide](WHATS_INCLUDED.md)** - Complete list of all features already in the Streamlit app!
 
-All enhancements from previous sessions are already built into the application. Nothing needs to be added - just deploy!
+Recent updates now in this repo include:
+- Simplified role picker (`Role Group` + `Select Your Role`) with last-role default.
+- Program Officer retained on legacy dashboard with agency-wide filters (Department, Unit, Support Staff) synced across KPI/Caseload/Performance tabs.
+- Administrative specialist workflow split from Support Officer caseload dashboard (intake + tickets + KB).
+- Updated manuals/technical guides in both `docs/` and `data/knowledge_base/`.
 
 ### Deploy to Streamlit Cloud
 **GitHub URL:** https://github.com/arhawkins01-dotcom/ocss-command-center
@@ -58,3 +62,5 @@ GitHub is used only for:
 /docs/it          → Technical deployment guidance
 
 Generated: February 14, 2026
+
+Last updated: March 3, 2026

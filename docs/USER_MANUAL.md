@@ -1,13 +1,15 @@
 # OCSS Command Center — User Manual
 
-Version: 1.2.0
-Last Updated: 2026-03-02
+Version: 1.3.0
+Last Updated: 2026-03-03
 
 ---
 
 ## Change Log
 - 2026-02-27 — Consolidated manual, clarified role workflows, standardized UI label `💾 Save Progress` across instructions.
 - 2026-03-02 — Documented Help Ticket Center workflow (auto-routing/assignment, statuses, IT actions) and updated instructions for Executive Intake step flow + Support Officer completion UX.
+- 2026-03-03 — Simplified sidebar role selection (Role Group + Role dropdown), added Administrative role workflow distinction (non-caseload), and documented Program Officer agency-wide KPI filters (Department, Unit, Support Staff) synchronized across KPI/Caseload/Performance tabs.
+- 2026-03-03 — Added Support Officer/Team Lead authenticated identity lock and self-only visibility for KPI Tracker + Throughput tables.
 
 ## Table of Contents
 
@@ -44,6 +46,12 @@ The application seeds user-facing documentation from `docs/USER_MANUAL.md` into 
 2. If authentication is enabled, sign in; otherwise, select the role and pick your name where required.
 3. Review your assigned dashboard tiles and alerts.
 
+Role selection now uses a 2-step picker:
+- `Role Group` (Leadership, Management, Program & CQI, Administrative, Support, IT)
+- `Select Your Role` (filtered by selected group)
+
+Tip: the app remembers your last selected role and reopens to that role/group by default.
+
 Quick tips:
 - Use the `Knowledge Base` tab for how-to articles and this manual.
 - Export CSVs regularly for offline backups when doing bulk edits.
@@ -65,9 +73,17 @@ Each role has a tailored view and permission set. Below are concise responsibili
 - Common tasks: Reassign caseloads, validate unit structure, review monthly throughput
 
 ### Program Officer
-- Purpose: Upload and seed reports, validate ingestion, and monitor program-level throughput
-- Key views: Upload & Processing, Ingestion Registry, Program KPIs, Team Performance Analytics, Leadership QA Exports
-- Common tasks: Upload reports, fix ingestion preview issues, run exports for program reporting
+- Purpose: Non-supervisory program/CQI oversight, report intake, and agency-wide KPI analysis
+- Key views: Legacy Dashboard tabs (`Executive KPIs`, `Upload & Processing`, `Caseload Management`, `Performance Analytics`, `Ticket KPIs`, `Manage Users`, `Knowledge Base`)
+- Common tasks: Upload reports, validate ingestion, monitor agency KPIs, and filter analytics across departments/units/support staff
+
+### Administrative Roles (non-support workflow)
+- Roles: `Administrative Assistant`, `Client Information Specialist`, `Client Information Specialist Team Lead`, `Case Information Specialist`, `Case Information Specialist Team Lead`
+- Purpose: Administrative report processing workflows without Support Officer caseload ownership
+- Key views: `Report Intake`, `Support Tickets`, `Knowledge Base`
+- Notes:
+  - These roles may process Excel reports but are not treated as Support Officers.
+  - Assigned caseload dashboard behavior is intentionally disabled for this workflow.
 
 ### Supervisor
 - Purpose: Team-level assignment, approve caseload submissions, and monitor team alerts
@@ -78,6 +94,10 @@ Each role has a tailored view and permission set. Below are concise responsibili
 - Purpose: Row-level processing of reports (case lines), narration, and completion
 - Key views: My Assigned Reports, Caseload Dashboard, Knowledge Base
 - Common tasks: Process case rows, add narration, save progress, submit caseload when done
+- Security behavior:
+  - When authenticated, identity is locked to the signed-in Support Officer/Team Lead profile.
+  - `Support Officer KPI Tracker (Assigned Reports)` and `Support Officer Throughput` show only the signed-in worker's rows.
+  - In no-auth/demo mode, `Act as Support Officer / Team Lead` remains available for simulation.
 
 ### IT Administrator
 - Purpose: User and unit management, audit logs, system health, backups
@@ -97,6 +117,17 @@ Dashboards show throughput (7/30-day), completion rates, and aging items. Common
 - Escalations by Age Bucket
 
 Leadership exports produce Excel and Word briefing packets with pre-formatted summaries and an ingestion activity sheet. Exports are now directly available on the root KPI Metrics tab across all executive roles (Director, Deputy Director, Program Officer, Department Manager, SAO, and Supervisor). These exports include comprehensive QA flag summaries (FAIL/WARN/INFO/OK metrics with top failure reasons). Additionally, executive and supervisory roles now feature robust Team Performance Analytics views utilizing visual progress bars for individual worker completion rates.
+
+### Program Officer KPI Filters (Agency-wide)
+Program Officers have agency-wide KPI visibility with optional filters:
+- `Department Filter`
+- `Unit Filter`
+- `Support Staff Filter (Support Officers + Team Leads)`
+
+Behavior:
+- Filters apply to KPI tiles, monthly submission trends, and support staff snapshot in `Executive KPIs`.
+- The same filter scope is reused in Program Officer `Caseload Management` and `Performance Analytics` tabs for consistency.
+- Use `Reset all Program Officer filters` to return to agency-wide view.
 
 ---
 
@@ -140,6 +171,10 @@ Tip:
 ---
 
 ## Caseload Management & Assignment Flows
+
+Administrative workflow note:
+- Administrative specialist roles (Client/Case Information Specialist tracks + Administrative Assistant) do not use Support Officer assigned-caseload dashboards.
+- Team Leads remain in Support workflows (between Support Officer and Supervisor responsibilities).
 
 Assigning & Reassigning (Supervisor / IT)
 1. Select `Supervisor` role and your supervisor name.
@@ -220,7 +255,9 @@ The Help Ticket Center is the single workflow for reporting issues (upload probl
 
 Common issues and quick fixes:
 
-- I don't see my caseloads: select your name in `Act as Support Officer / Team Lead`.
+- I don't see my caseloads:
+  - Authenticated mode: verify your signed-in account is mapped to a Support Officer/Team Lead user profile.
+  - No-auth/demo mode: select your name in `Act as Support Officer / Team Lead`.
 - Upload preview looks wrong: verify `.xlsx`/`.csv` format and column headers.
 - Duplicate ingestion blocked: confirm metadata and enable `Allow ingestion` if intentional.
 - Can't pull a caseload: ensure you have permission and that `Simulate Current Worker` matches `Pull As`.

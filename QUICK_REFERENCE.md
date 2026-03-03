@@ -20,7 +20,7 @@ https://github.com/arhawkins01-dotcom/ocss-command-center
 ### Direct Deploy URL
 Click this link to deploy directly:
 ```
-https://share.streamlit.io/deploy?repository=arhawkins01-dotcom/ocss-command-center&branch=main&mainModule=streamlit_app.py
+https://share.streamlit.io/deploy?repository=arhawkins01-dotcom/ocss-command-center&branch=main&mainModule=app/app.py
 ```
 
 ### Your App URL (after deployment)
@@ -45,6 +45,11 @@ http://localhost:8501
 - **Streamlit Cloud Guide:** [STREAMLIT_CLOUD_DEPLOYMENT.md](STREAMLIT_CLOUD_DEPLOYMENT.md)
 - **Internal Server Guide:** [deploy/DEPLOYMENT_GUIDE.md](deploy/DEPLOYMENT_GUIDE.md)
 - **App Documentation:** [app/README.md](app/README.md)
+
+## Current Build Notes (Mar 2026)
+- Role selection is grouped (`Role Group` → `Select Your Role`).
+- Program Officer uses legacy dashboard with agency-wide KPI filters.
+- Administrative specialist roles use intake/ticket flow without Support Officer caseload dashboard.
 
 ---
 **Need Help?** See the full deployment guides linked above.

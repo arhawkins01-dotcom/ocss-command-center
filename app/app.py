@@ -2235,7 +2235,16 @@ def _sync_user_to_units(old_user: dict, new_user: dict):
             if unit.get('supervisor') == effective_name:
                 unit['supervisor'] = ''
 
-    if old_role == 'Support Officer':
+    worker_roles = {
+        'Support Officer',
+        'Team Lead',
+        'Client Information Specialist Team Lead',
+        'Client Information Specialist',
+        'Case Information Specialist Team Lead',
+        'Case Information Specialist',
+    }
+
+    if old_role in worker_roles:
         for unit in st.session_state.units.values():
             unit['team_leads'] = [person for person in unit.get('team_leads', []) if person != effective_name]
             unit['support_officers'] = [person for person in unit.get('support_officers', []) if person != effective_name]
@@ -2247,14 +2256,6 @@ def _sync_user_to_units(old_user: dict, new_user: dict):
                 unit['supervisor'] = ''
         st.session_state.units[effective_unit]['supervisor'] = effective_name
 
-    worker_roles = {
-        'Support Officer',
-        'Team Lead',
-        'Client Information Specialist Team Lead',
-        'Client Information Specialist',
-        'Case Information Specialist Team Lead',
-        'Case Information Specialist',
-    }
     if new_role in worker_roles and effective_unit:
         _ensure_unit(effective_unit)
         for unit_name, unit in st.session_state.units.items():
@@ -2271,7 +2272,7 @@ def _sync_user_to_units(old_user: dict, new_user: dict):
                 target_unit.setdefault('team_leads', []).append(effective_name)
         target_unit.setdefault('assignments', {}).setdefault(effective_name, [])
 
-    if new_role not in ['Supervisor', 'Support Officer']:
+    if new_role not in ({'Supervisor'} | worker_roles):
         for unit in st.session_state.units.values():
             if unit.get('supervisor') == effective_name:
                 unit['supervisor'] = ''
@@ -2287,6 +2288,7 @@ def _remove_user_from_units(user_name: str) -> int:
     for unit in st.session_state.units.values():
         if unit.get('supervisor') == user_name:
             unit['supervisor'] = ''
+        unit['team_leads'] = [person for person in unit.get('team_leads', []) if person != user_name]
         unit['support_officers'] = [person for person in unit.get('support_officers', []) if person != user_name]
 
         assignments = unit.setdefault('assignments', {})
@@ -2663,11 +2665,30 @@ def get_caseload_owner(caseload_number: str):
 
     if best_unit:
         unit = st.session_state.get('units', {}).get(best_unit, {}) or {}
-        # Prefer Team Leads for intake auto-assignment, otherwise first available worker.
-        candidates = list(unit.get('team_leads', []) or []) + list(unit.get('support_officers', []) or [])
-        candidates = [c for c in candidates if str(c or '').strip()]
-        if candidates:
-            return best_unit, str(candidates[0]).strip()
+        # Prefer Team Leads for intake auto-assignment and balance by current caseload counts
+        # so Team Lead 2 (and other leads) are included rather than always selecting the first name.
+        assignments = unit.get('assignments', {}) or {}
+        team_leads = [str(c).strip() for c in (unit.get('team_leads', []) or []) if str(c).strip()]
+        support_officers = [str(c).strip() for c in (unit.get('support_officers', []) or []) if str(c).strip()]
+
+        def _least_loaded(candidates: list[str]) -> str | None:
+            if not candidates:
+                return None
+            unique_candidates = sorted(list({c for c in candidates if c}))
+            if not unique_candidates:
+                return None
+            return min(
+                unique_candidates,
+                key=lambda worker_name: len(assignments.get(worker_name, []) or [])
+            )
+
+        selected_team_lead = _least_loaded(team_leads)
+        if selected_team_lead:
+            return best_unit, selected_team_lead
+
+        selected_worker = _least_loaded(team_leads + support_officers)
+        if selected_worker:
+            return best_unit, selected_worker
         return best_unit, None
     return None, None
 
@@ -2752,7 +2773,7 @@ def _auto_distribute_compliance_rows(report_entry: dict) -> None:
     report_entry['data'] = df
 
 
-def assign_caseload_to_worker(worker_name: str, caseload_number: str):
+def assign_caseload_to_worker(worker_name: str, caseload_number: str, allow_reassign: bool = False):
     # Server-side permission check: require `reassign` capability for the caller
     try:
         from .roles import role_has
@@ -2782,7 +2803,9 @@ def assign_caseload_to_worker(worker_name: str, caseload_number: str):
             st.session_state.reports_by_caseload.setdefault(normalized_caseload, [])
             _persist_app_state()
             return True, f"Caseload {normalized_caseload} is already assigned to {worker_name}."
-        return False, f"Caseload {normalized_caseload} is already assigned to {owner_person} in unit '{owner_unit}'."
+        if not allow_reassign:
+            return False, f"Caseload {normalized_caseload} is already assigned to {owner_person} in unit '{owner_unit}'."
+        _remove_caseload_from_all_units(normalized_caseload)
 
     assignments = unit.setdefault('assignments', {})
     assignments.setdefault(worker_name, [])
@@ -2791,6 +2814,11 @@ def assign_caseload_to_worker(worker_name: str, caseload_number: str):
 
     st.session_state.reports_by_caseload.setdefault(normalized_caseload, [])
     _persist_app_state()
+    if owner_person and allow_reassign:
+        return True, (
+            f"✓ Caseload {normalized_caseload} reassigned from {owner_person} "
+            f"(unit: {owner_unit}) to {worker_name} (unit: {unit_name})."
+        )
     return True, f"✓ Caseload {normalized_caseload} assigned to {worker_name} (unit: {unit_name})."
 
 
@@ -3727,6 +3755,11 @@ def render_user_management_panel(key_prefix: str, dept_scope: str | None = None)
             key=f"{key_prefix}_assign_caseload",
             placeholder="Enter 181000 or 1000-series value"
         )
+        allow_reassign = st.checkbox(
+            "Allow reassignment if caseload already has an owner",
+            value=False,
+            key=f"{key_prefix}_assign_allow_reassign"
+        )
 
     if st.button("📌 Assign Caseload", key=f"{key_prefix}_assign_caseload_btn"):
         if selected_worker == '(No Support Officer Users)':
@@ -3735,7 +3768,11 @@ def render_user_management_panel(key_prefix: str, dept_scope: str | None = None)
             raw_caseload = caseload_input.strip() if caseload_input.strip() else (
                 existing_caseload_choice if existing_caseload_choice != '(Manual Entry)' else ''
             )
-            success, message = assign_caseload_to_worker(selected_worker, raw_caseload)
+            success, message = assign_caseload_to_worker(
+                selected_worker,
+                raw_caseload,
+                allow_reassign=bool(allow_reassign)
+            )
             if success:
                 st.success(message)
                 st.rerun()
@@ -4980,10 +5017,48 @@ if auth_result.authenticated and auth_result.role:
         auth.logout()
         st.rerun()
 else:
-    selected_role = st.sidebar.radio(
+    role_groups = {
+        "Leadership": ["Director", "Deputy Director"],
+        "Management": ["Department Manager", "Supervisor", "Senior Administrative Officer"],
+        "Program & CQI": ["Program Officer"],
+        "Administrative": [
+            "Administrative Assistant",
+            "Client Information Specialist Team Lead",
+            "Client Information Specialist",
+            "Case Information Specialist Team Lead",
+            "Case Information Specialist",
+        ],
+        "Support": [
+            "Team Lead",
+            "Support Officer",
+        ],
+        "IT": [
+            "IT Administrator",
+        ],
+    }
+
+    last_selected_role = st.session_state.get('selected_role')
+    default_group = "Leadership"
+    for group_name, group_roles in role_groups.items():
+        if last_selected_role in group_roles:
+            default_group = group_name
+            break
+
+    group_names = list(role_groups.keys())
+    selected_group = st.sidebar.selectbox(
+        "Role Group:",
+        group_names,
+        index=group_names.index(default_group),
+        help="Choose a role group first",
+    )
+
+    group_roles = role_groups[selected_group]
+    default_role = last_selected_role if last_selected_role in group_roles else group_roles[0]
+    selected_role = st.sidebar.selectbox(
         "Select Your Role:",
-        EXPANDED_CORE_APP_ROLES,
-        help="Choose your role to see relevant features"
+        group_roles,
+        index=group_roles.index(default_role),
+        help="Choose your role to see relevant features",
     )
 
     role = map_to_view_role(selected_role)
@@ -5439,8 +5514,8 @@ if role in ["Director", "Deputy Director"]:
         render_knowledge_base("Director", "director")
 
 elif role == "Program Officer":
-    st.markdown(f'<div class="header-title">📋 {selected_role} - Report Intake Portal</div>', unsafe_allow_html=True)
-    st.markdown("**Report Intake & Processing**")
+    st.markdown(f'<div class="header-title">📋 {selected_role} - Legacy Dashboard</div>', unsafe_allow_html=True)
+    st.markdown("**Agency KPI Oversight, Intake, Caseload, and Performance**")
     
     # Tabs for Program Officer
     prog_tab1, prog_tab2, prog_tab3, prog_tab4, prog_tab5, prog_tab6, prog_tab7 = st.tabs([
@@ -5469,19 +5544,152 @@ elif role == "Program Officer":
             key_prefix='po_kpi_tab',
         )
 
-        # KPI Scope toggle for Program Officer (Agency / Department)
-        po_kpi_scope = st.radio("KPI Scope:", options=["Agency", "Department"], index=0, horizontal=True, key='po_kpi_scope')
-        if po_kpi_scope == 'Agency':
-            kpis = get_kpi_metrics(department=None)
-        else:
-            # determine user's department
-            viewer_name = (auth_result.display_name or auth_result.username or st.session_state.get('current_user', '') or '').strip()
-            viewer_dept = None
-            for u in st.session_state.get('users', []):
-                if str(u.get('name', '')).strip() == viewer_name:
-                    viewer_dept = str(u.get('department', '')).strip()
-                    break
-            kpis = get_kpi_metrics(department=viewer_dept)
+        units_map = st.session_state.get('units', {}) or {}
+        users_list = st.session_state.get('users', []) or []
+        reports_by_caseload = st.session_state.get('reports_by_caseload', {}) or {}
+
+        users_by_name = {
+            str(u.get('name', '')).strip(): u
+            for u in users_list
+            if str(u.get('name', '')).strip()
+        }
+
+        unit_to_department = {}
+        for _po_unit_name, _po_unit in units_map.items():
+            _po_dept = str((_po_unit or {}).get('department', '')).strip()
+            if not _po_dept:
+                _po_sup = str((_po_unit or {}).get('supervisor', '')).strip()
+                _po_dept = str((users_by_name.get(_po_sup, {}) or {}).get('department', '')).strip()
+            unit_to_department[_po_unit_name] = _po_dept
+
+        all_departments = sorted({d for d in unit_to_department.values() if d})
+        selected_department = st.selectbox(
+            "Department Filter",
+            ["All Departments"] + all_departments,
+            key="po_kpi_department_filter",
+            help="Program Officers can view agency-wide KPIs and optionally filter by department.",
+        )
+
+        units_for_filter = []
+        for _po_unit_name in units_map.keys():
+            _po_dept = unit_to_department.get(_po_unit_name, '')
+            if selected_department != "All Departments" and _po_dept != selected_department:
+                continue
+            units_for_filter.append(_po_unit_name)
+        units_for_filter = sorted(units_for_filter)
+
+        selected_unit = st.selectbox(
+            "Unit Filter",
+            ["All Units"] + units_for_filter,
+            key="po_kpi_unit_filter",
+        )
+
+        support_staff_for_filter = []
+        for _po_unit_name, _po_unit in units_map.items():
+            if selected_unit != "All Units" and _po_unit_name != selected_unit:
+                continue
+            _po_dept = unit_to_department.get(_po_unit_name, '')
+            if selected_department != "All Departments" and _po_dept != selected_department:
+                continue
+            support_staff_for_filter.extend((_po_unit.get('support_officers', []) or []))
+            support_staff_for_filter.extend((_po_unit.get('team_leads', []) or []))
+
+        support_staff_for_filter = sorted({str(w).strip() for w in support_staff_for_filter if str(w).strip()})
+        selected_support_staff = st.selectbox(
+            "Support Staff Filter (Support Officers + Team Leads)",
+            ["All Support Staff"] + support_staff_for_filter,
+            key="po_kpi_support_staff_filter",
+        )
+
+        if st.button("Reset all Program Officer filters", key="po_kpi_reset_filters"):
+            st.session_state['po_kpi_department_filter'] = 'All Departments'
+            st.session_state['po_kpi_unit_filter'] = 'All Units'
+            st.session_state['po_kpi_support_staff_filter'] = 'All Support Staff'
+            st.rerun()
+
+        total_reports = 0
+        completed_reports = 0
+        cqi_alignments = 0
+        total_rows = 0
+        total_problems = 0
+        on_time_count = 0
+        on_time_total = 0
+        scoped_months = []
+        scoped_workers: dict[tuple[str, str, str], dict] = {}
+
+        for _po_unit_name, _po_unit in units_map.items():
+            _po_dept = unit_to_department.get(_po_unit_name, '')
+            if selected_department != "All Departments" and _po_dept != selected_department:
+                continue
+            if selected_unit != "All Units" and _po_unit_name != selected_unit:
+                continue
+
+            _po_scope_staff = set((_po_unit.get('support_officers', []) or []) + (_po_unit.get('team_leads', []) or []))
+            _po_assignments = (_po_unit.get('assignments', {}) or {})
+
+            for _po_worker_name, _po_caseloads in _po_assignments.items():
+                _po_worker_name = str(_po_worker_name or '').strip()
+                if not _po_worker_name or _po_worker_name not in _po_scope_staff:
+                    continue
+                if selected_support_staff != "All Support Staff" and _po_worker_name != selected_support_staff:
+                    continue
+
+                _po_worker_key = (_po_worker_name, _po_unit_name, _po_dept)
+                _po_worker_entry = scoped_workers.setdefault(_po_worker_key, {
+                    'Support Staff': _po_worker_name,
+                    'Unit': _po_unit_name,
+                    'Department': _po_dept or '—',
+                    'Assigned Caseloads': 0,
+                    'Total Cases': 0,
+                    'Completed Cases': 0,
+                })
+                _po_worker_entry['Assigned Caseloads'] += len(_po_caseloads or [])
+
+                for _po_caseload in (_po_caseloads or []):
+                    _po_reports = reports_by_caseload.get(str(_po_caseload), []) or reports_by_caseload.get(normalize_caseload_number(_po_caseload), []) or []
+                    for _po_report in _po_reports:
+                        total_reports += 1
+
+                        _po_status = str(_po_report.get('status', '')).lower()
+                        if 'completed' in _po_status:
+                            completed_reports += 1
+
+                        _po_report_type = str(_po_report.get('report_type', '')).lower()
+                        if 'cqi' in _po_report_type:
+                            cqi_alignments += 1
+
+                        _po_qa = _po_report.get('qa_summary') or {}
+                        _po_rows = int(_po_qa.get('rows_canonical', 0) or 0)
+                        total_rows += _po_rows
+                        for _po_qk, _po_qv in _po_qa.items():
+                            if _po_qk == 'rows_canonical':
+                                continue
+                            try:
+                                total_problems += int(_po_qv or 0)
+                            except Exception:
+                                continue
+
+                        _po_uploaded_at = pd.to_datetime(_po_report.get('uploaded_at') or _po_report.get('imported_at'), errors='coerce')
+                        _po_due_at = pd.to_datetime(_po_report.get('due_at'), errors='coerce')
+                        if pd.notna(_po_uploaded_at):
+                            scoped_months.append(_po_uploaded_at.strftime('%b %Y'))
+                        if pd.notna(_po_uploaded_at) and pd.notna(_po_due_at):
+                            on_time_total += 1
+                            if _po_uploaded_at <= _po_due_at:
+                                on_time_count += 1
+
+                        _po_df = _po_report.get('data')
+                        if isinstance(_po_df, pd.DataFrame) and not _po_df.empty:
+                            _po_worker_entry['Total Cases'] += int(len(_po_df))
+                            if 'Worker Status' in _po_df.columns:
+                                _po_worker_entry['Completed Cases'] += int(_po_df['Worker Status'].eq('Completed').sum())
+
+        kpis = {
+            'report_completion_rate': float((completed_reports / total_reports * 100) if total_reports else 0.0),
+            'on_time_submissions': float((on_time_count / on_time_total * 100) if on_time_total else 0.0),
+            'data_quality_score': float(((total_rows - total_problems) / total_rows * 100) if total_rows else 100.0),
+            'cqi_alignments': int(cqi_alignments),
+        }
 
         # KPI metrics with deltas vs targets
         _po_cr_delta = round(kpis['report_completion_rate'] - 90.0, 1)
@@ -5502,27 +5710,25 @@ elif role == "Program Officer":
 
         # Monthly submissions chart from live data
         st.subheader("Monthly Report Submissions")
-        _po_audit = st.session_state.get('upload_audit_log', []) or []
-        if _po_audit:
-            _po_adf = pd.DataFrame(_po_audit)
-            _po_adf['_month'] = pd.to_datetime(_po_adf.get('uploaded_at', pd.Series(dtype=str)), errors='coerce').dt.strftime('%b %Y')
-            _po_mc = _po_adf.groupby('_month').size().reset_index(name='Submissions')
-            st.bar_chart(_po_mc.set_index('_month'))
+        if scoped_months:
+            st.bar_chart(pd.Series(scoped_months).value_counts().sort_index().rename('Submissions'))
         else:
-            _po_imported = []
-            for _rl in st.session_state.get('reports_by_caseload', {}).values():
-                for _r in (_rl or []):
-                    _ia = _r.get('imported_at') or ''
-                    if _ia:
-                        try:
-                            _po_imported.append(pd.to_datetime(str(_ia), errors='coerce').strftime('%b %Y'))
-                        except Exception:
-                            pass
-            if _po_imported:
-                st.bar_chart(pd.Series(_po_imported).value_counts().sort_index().rename('Submissions'))
-            else:
-                _po_fb_m = pd.date_range(start='2025-09-01', periods=6, freq='ME').strftime('%b %Y').tolist()
-                st.bar_chart(pd.DataFrame({'Submissions': [45, 48, 52, 50, 58, 62]}, index=_po_fb_m))
+            st.info("No submissions found for current filter selection.")
+
+        st.subheader("Filtered Support Staff Snapshot")
+        if scoped_workers:
+            _po_workers_df = pd.DataFrame(list(scoped_workers.values()))
+            _po_workers_df['Completion %'] = _po_workers_df.apply(
+                lambda r: round((float(r['Completed Cases']) / float(r['Total Cases']) * 100), 1) if float(r['Total Cases']) > 0 else 0.0,
+                axis=1,
+            )
+            st.dataframe(
+                _po_workers_df.sort_values(by=['Department', 'Unit', 'Support Staff']),
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.info("No support staff records matched the current filters.")
 
         # Strategic Insights – data-driven
         st.subheader("📌 Strategic Insights")
@@ -5585,6 +5791,29 @@ The report type you select at ingestion determines which fields Support Officers
     with prog_tab3:
         st.subheader("👥 Processing Team Caseload - Program View")
 
+        po_filter_department = st.session_state.get('po_kpi_department_filter', 'All Departments')
+        po_filter_unit = st.session_state.get('po_kpi_unit_filter', 'All Units')
+        po_filter_support_staff = st.session_state.get('po_kpi_support_staff_filter', 'All Support Staff')
+
+        st.caption(
+            f"Current scope — Department: {po_filter_department} | Unit: {po_filter_unit} | "
+            f"Support Staff: {po_filter_support_staff}"
+        )
+
+        po_units_map = st.session_state.get('units', {}) or {}
+        po_users_map = {
+            str(u.get('name', '')).strip(): u
+            for u in (st.session_state.get('users', []) or [])
+            if str(u.get('name', '')).strip()
+        }
+        po_unit_to_department = {}
+        for _po_u_name, _po_u in po_units_map.items():
+            _po_dept = str((_po_u or {}).get('department', '')).strip()
+            if not _po_dept:
+                _po_sup = str((_po_u or {}).get('supervisor', '')).strip()
+                _po_dept = str((po_users_map.get(_po_sup, {}) or {}).get('department', '')).strip()
+            po_unit_to_department[_po_u_name] = _po_dept
+
         _render_alert_panel(
             viewer_role='Program Officer',
             viewer_name=(auth_result.display_name or auth_result.username or st.session_state.get('current_user', '') or '').strip(),
@@ -5603,6 +5832,14 @@ The report type you select at ingestion determines which fields Support Officers
 
         st.subheader("📍 Caseload Work Status (Real-Time)")
         caseload_status_df = _build_caseload_work_status_df(scope_unit=None)
+        if not caseload_status_df.empty:
+            if po_filter_department != 'All Departments':
+                allowed_units = {u for u, d in po_unit_to_department.items() if d == po_filter_department}
+                caseload_status_df = caseload_status_df[caseload_status_df['Unit'].isin(allowed_units)]
+            if po_filter_unit != 'All Units':
+                caseload_status_df = caseload_status_df[caseload_status_df['Unit'] == po_filter_unit]
+            if po_filter_support_staff != 'All Support Staff':
+                caseload_status_df = caseload_status_df[caseload_status_df['Assigned To'] == po_filter_support_staff]
         if caseload_status_df.empty:
             st.info("No caseload work status available yet.")
         else:
@@ -5614,9 +5851,17 @@ The report type you select at ingestion determines which fields Support Officers
         total_team_completed_perf = 0
 
         for unit_name, unit in st.session_state.get('units', {}).items():
+             unit_department = po_unit_to_department.get(unit_name, '')
+             if po_filter_department != 'All Departments' and unit_department != po_filter_department:
+                 continue
+             if po_filter_unit != 'All Units' and unit_name != po_filter_unit:
+                 continue
+
              team_members = unit.get('support_officers', []) + unit.get('team_leads', [])
              for member in team_members:
-                 # Count items
+                if po_filter_support_staff != 'All Support Staff' and member != po_filter_support_staff:
+                    continue
+                # Count items
                 assigned_caseloads = unit.get('assignments', {}).get(member, [])
                 member_total_rows = 0
                 member_completed_rows = 0
@@ -5688,9 +5933,17 @@ The report type you select at ingestion determines which fields Support Officers
     with prog_tab4:
         st.subheader("📈 Performance Analytics")
 
+        po_filter_department = st.session_state.get('po_kpi_department_filter', 'All Departments')
+        po_filter_unit = st.session_state.get('po_kpi_unit_filter', 'All Units')
+        po_filter_support_staff = st.session_state.get('po_kpi_support_staff_filter', 'All Support Staff')
+        st.caption(
+            f"Current scope — Department: {po_filter_department} | Unit: {po_filter_unit} | "
+            f"Support Staff: {po_filter_support_staff}"
+        )
+
         # Live metrics derived from computed officers_data_display
         _po_p4_completion = (total_team_completed_perf / total_team_cases_perf * 100) if total_team_cases_perf > 0 else 0
-        _po_p4_dq = get_kpi_metrics(department=None)['data_quality_score']
+        _po_p4_dq = kpis['data_quality_score']
         _po_p4_comp_delta = round(_po_p4_completion - 90.0, 1)
         _po_p4_dq_delta = round(_po_p4_dq - 95.0, 1)
 
@@ -5699,7 +5952,7 @@ The report type you select at ingestion determines which fields Support Officers
             st.metric("Team Avg Completion", f"{_po_p4_completion:.1f}%",
                       delta=f"{_po_p4_comp_delta:+.1f}% vs 90% target", delta_color="normal")
         with col2:
-            st.metric("Agency Data Quality", f"{_po_p4_dq:.1f}%",
+            st.metric("Scoped Data Quality", f"{_po_p4_dq:.1f}%",
                       delta=f"{_po_p4_dq_delta:+.1f}% vs 95% target", delta_color="normal")
         with col3:
             _po_p4_officers = len(officers_data_display) if not officers_data_display.empty else 0
@@ -6479,6 +6732,25 @@ elif role in ["Supervisor", "Senior Administrative Officer"]:
     with sup_tab2:
         st.subheader("👥 Team Caseload Management")
 
+        _sup_viewer_name_tab2 = (auth_result.display_name or auth_result.username or st.session_state.get('current_user', '') or '').strip()
+        _sup_own_unit_name_tab2 = None
+        _sup_own_unit_tab2 = None
+        for _sup_unit_name, _sup_unit in st.session_state.get('units', {}).items():
+            if _sup_unit.get('supervisor') == _sup_viewer_name_tab2:
+                _sup_own_unit_name_tab2 = _sup_unit_name
+                _sup_own_unit_tab2 = _sup_unit
+                break
+
+        if role in {"Supervisor", "Senior Administrative Officer"}:
+            _sup_scope_default = True if role == "Supervisor" else False
+            st.toggle(
+                "Show only my unit team",
+                value=bool(st.session_state.get('sup_only_my_unit_team', _sup_scope_default)),
+                key="sup_only_my_unit_team",
+                help="When enabled, Team Caseload and Performance Analytics are limited to your own unit staff.",
+            )
+        _sup_only_my_unit = bool(st.session_state.get('sup_only_my_unit_team', role == "Supervisor"))
+
         with st.expander("Support Officer completion requirements (quick reference)", expanded=False):
             st.markdown(
                 """
@@ -6494,7 +6766,16 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
             supervisors.append(unit.get('supervisor'))
         supervisors = [s for s in supervisors if s]
 
-        selected_supervisor = st.selectbox("Select Supervisor to View", options=['(Select)'] + supervisors, key="sup_supervisor_select")
+        if _sup_only_my_unit:
+            if _sup_own_unit_name_tab2 and _sup_own_unit_tab2:
+                selected_supervisor = str(_sup_own_unit_tab2.get('supervisor') or '')
+                st.session_state['sup_supervisor_select'] = selected_supervisor
+                st.caption(f"Scoped to your unit: {_sup_own_unit_name_tab2}")
+            else:
+                selected_supervisor = '(Select)'
+                st.info("Your supervisor account is not mapped to a unit yet, so unit-team scoping cannot be applied.")
+        else:
+            selected_supervisor = st.selectbox("Select Supervisor to View", options=['(Select)'] + supervisors, key="sup_supervisor_select")
 
         if selected_supervisor and selected_supervisor != '(Select)':
             # Find unit for this supervisor
@@ -6506,6 +6787,60 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
 
             if unit_found:
                 unit_name, unit = unit_found
+                caseload_view = st.radio(
+                    "Team Caseload View",
+                    options=["Unit", "Department", "Individual Workers"],
+                    horizontal=True,
+                    key="sup_caseload_view_mode"
+                )
+
+                selected_supervisor_department = str((unit or {}).get('department', '')).strip()
+                for _usr in st.session_state.get('users', []):
+                    if str(_usr.get('name', '')).strip() == str(selected_supervisor).strip():
+                        selected_supervisor_department = str(_usr.get('department', '')).strip() or selected_supervisor_department
+                        break
+
+                if caseload_view == "Department":
+                    if not selected_supervisor_department:
+                        st.info("Department could not be determined for this supervisor.")
+                    else:
+                        dept_rows = []
+                        for dept_unit_name, dept_unit in st.session_state.get('units', {}).items():
+                            if str((dept_unit or {}).get('department', '')).strip() != selected_supervisor_department:
+                                continue
+                            dept_assignments = (dept_unit or {}).get('assignments', {}) or {}
+                            dept_assigned_total = sum(len(v or []) for v in dept_assignments.values())
+                            dept_staff = list((dept_unit or {}).get('support_officers', []) or []) + list((dept_unit or {}).get('team_leads', []) or [])
+                            dept_staff = [w for i, w in enumerate(dept_staff) if w and w not in dept_staff[:i]]
+                            dept_rows.append({
+                                'Unit': dept_unit_name,
+                                'Supervisor': str((dept_unit or {}).get('supervisor', '')).strip(),
+                                'Staff': len(dept_staff),
+                                'Assigned Caseloads': dept_assigned_total,
+                            })
+                        st.caption(f"Department: {selected_supervisor_department}")
+                        if dept_rows:
+                            st.dataframe(pd.DataFrame(dept_rows), use_container_width=True, hide_index=True)
+                        else:
+                            st.info("No department-level unit caseload data available.")
+
+                elif caseload_view == "Individual Workers":
+                    worker_rows = []
+                    team_workers = list((unit or {}).get('support_officers', []) or []) + list((unit or {}).get('team_leads', []) or [])
+                    team_workers = [w for i, w in enumerate(team_workers) if w and w not in team_workers[:i]]
+                    assignments = (unit or {}).get('assignments', {}) or {}
+                    for worker in team_workers:
+                        caseloads = list(assignments.get(worker, []) or [])
+                        worker_rows.append({
+                            'Worker': worker,
+                            'Assigned Caseload Count': len(caseloads),
+                            'Assigned Caseloads': ', '.join(sorted([str(c) for c in caseloads])) if caseloads else '(None)',
+                        })
+                    if worker_rows:
+                        st.dataframe(pd.DataFrame(worker_rows), use_container_width=True, hide_index=True)
+                    else:
+                        st.info("No individual worker caseload data available for this unit.")
+
                 st.markdown(f"**Unit:** {unit_name}")
                 st.markdown(f"**Team Lead(s):** {', '.join(unit.get('team_leads', []))}")
                 st.markdown(f"**Support Officers:** {', '.join(unit.get('support_officers', []))}")
@@ -6749,12 +7084,25 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
     
     with sup_tab3:
         st.subheader("📈 Team Performance Analytics")
+
+        _sup_viewer_name_tab3 = (auth_result.display_name or auth_result.username or st.session_state.get('current_user', '') or '').strip()
+        _sup_own_unit_name_tab3 = None
+        _sup_own_unit_tab3 = None
+        for _sup_unit_name, _sup_unit in st.session_state.get('units', {}).items():
+            if _sup_unit.get('supervisor') == _sup_viewer_name_tab3:
+                _sup_own_unit_name_tab3 = _sup_unit_name
+                _sup_own_unit_tab3 = _sup_unit
+                break
+
+        _sup_only_my_unit_t3 = bool(st.session_state.get('sup_only_my_unit_team', role == "Supervisor"))
+        if _sup_only_my_unit_t3 and _sup_own_unit_name_tab3 and _sup_own_unit_tab3:
+            selected_sup_key = str(_sup_own_unit_tab3.get('supervisor') or '')
+            st.caption(f"Scoped to your unit team: {_sup_own_unit_name_tab3}")
+        else:
+            # Attempt to get selected supervisor from session state
+            selected_sup_key = st.session_state.get('sup_supervisor_select', '(Select)')
         
         # Performance metrics - Re-calculate based on selected supervisor in tab 2
-        
-        # Attempt to get selected supervisor from session state
-        selected_sup_key = st.session_state.get('sup_supervisor_select', '(Select)')
-        
         if selected_sup_key and selected_sup_key != '(Select)':
             unit_found = None
             for unit_name, unit in st.session_state.units.items():
@@ -6764,81 +7112,135 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
             
             if unit_found:
                 unit_name, unit = unit_found
-                team_list = unit.get('support_officers', []) + unit.get('team_leads', [])
-                
-                perf_rows = []
-                total_team_comp = 0
-                total_team_cases = 0
+                # Resolve selected supervisor's department (fallback to unit department)
+                selected_supervisor_department = str((unit or {}).get('department', '')).strip()
+                for _u in st.session_state.get('users', []):
+                    if str(_u.get('name', '')).strip() == str(selected_sup_key).strip():
+                        selected_supervisor_department = str(_u.get('department', '')).strip() or selected_supervisor_department
+                        break
 
-                for worker in team_list:
-                    assigned = unit.get('assignments', {}).get(worker, [])
-                    w_total = 0
-                    w_comp = 0
-                    for c in assigned:
-                        reports = st.session_state.get('reports_by_caseload', {}).get(c, [])
-                        for r in reports:
-                            df = r.get('data')
-                            if isinstance(df, pd.DataFrame) and not df.empty:
-                                w_total += len(df)
-                                if 'Worker Status' in df.columns:
-                                    w_comp += df['Worker Status'].eq('Completed').sum()
-                    
-                    # Fake some stats if empty for demo visual
-                    if w_total == 0:
-                         w_comp_pct = "0%"
-                         w_avg_time = "-"
+                perf_view = st.radio(
+                    "Performance View",
+                    options=["Unit", "Department", "Individual Workers"],
+                    horizontal=True,
+                    key="sup_perf_view_mode"
+                )
+
+                def _unit_workers(_unit: dict) -> list[str]:
+                    workers = list((_unit or {}).get('support_officers', []) or []) + list((_unit or {}).get('team_leads', []) or [])
+                    return [w for i, w in enumerate(workers) if w and w not in workers[:i]]
+
+                def _worker_perf_row(_unit_name: str, _unit: dict, _worker: str) -> dict:
+                    assigned = (_unit or {}).get('assignments', {}).get(_worker, []) or []
+                    total_cases = 0
+                    completed_cases = 0
+                    for _caseload in assigned:
+                        reports = st.session_state.get('reports_by_caseload', {}).get(_caseload, [])
+                        for _report in reports:
+                            _df = _report.get('data')
+                            if isinstance(_df, pd.DataFrame) and not _df.empty:
+                                total_cases += len(_df)
+                                if 'Worker Status' in _df.columns:
+                                    completed_cases += int(_df['Worker Status'].eq('Completed').sum())
+                    completion_pct = round((completed_cases / total_cases * 100), 1) if total_cases > 0 else 0.0
+                    return {
+                        'Worker': _worker,
+                        'Unit': _unit_name,
+                        'Caseloads': len(assigned),
+                        'Total Cases': total_cases,
+                        'Completed': completed_cases,
+                        'Completion %': f"{completion_pct:.1f}%",
+                    }
+
+                if perf_view == "Unit":
+                    workers = _unit_workers(unit)
+                    worker_rows = [_worker_perf_row(unit_name, unit, worker) for worker in workers]
+                    total_cases = sum(int(r.get('Total Cases', 0)) for r in worker_rows)
+                    completed_cases = sum(int(r.get('Completed', 0)) for r in worker_rows)
+                    assigned_total = sum(int(r.get('Caseloads', 0)) for r in worker_rows)
+                    completion_rate = round((completed_cases / total_cases * 100), 1) if total_cases > 0 else 0.0
+
+                    m1, m2, m3, m4 = st.columns(4)
+                    with m1:
+                        st.metric("Unit Completion", f"{completion_rate:.1f}%", delta=f"{round(completion_rate - 90.0, 1):+.1f}% vs 90% target", delta_color="normal")
+                    with m2:
+                        st.metric("Unit Staff", len(workers))
+                    with m3:
+                        st.metric("Assigned Caseloads", assigned_total)
+                    with m4:
+                        st.metric("Completed Cases", completed_cases)
+
+                    unit_summary_df = pd.DataFrame([{
+                        'Unit': unit_name,
+                        'Department': selected_supervisor_department,
+                        'Staff': len(workers),
+                        'Assigned Caseloads': assigned_total,
+                        'Total Cases': total_cases,
+                        'Completed': completed_cases,
+                        'Completion %': f"{completion_rate:.1f}%",
+                    }])
+                    st.dataframe(unit_summary_df, use_container_width=True, hide_index=True)
+
+                elif perf_view == "Department":
+                    if not selected_supervisor_department:
+                        st.info("Department could not be determined for this supervisor.")
                     else:
-                         w_comp_pct = f"{(w_comp/w_total*100):.0f}%"
-                         w_avg_time = "1.8 hrs" # Placeholder
+                        dept_rows = []
+                        for dept_unit_name, dept_unit in st.session_state.get('units', {}).items():
+                            if str((dept_unit or {}).get('department', '')).strip() != selected_supervisor_department:
+                                continue
+                            dept_workers = _unit_workers(dept_unit)
+                            dept_worker_rows = [_worker_perf_row(dept_unit_name, dept_unit, worker) for worker in dept_workers]
+                            dept_total_cases = sum(int(r.get('Total Cases', 0)) for r in dept_worker_rows)
+                            dept_completed_cases = sum(int(r.get('Completed', 0)) for r in dept_worker_rows)
+                            dept_assigned_total = sum(int(r.get('Caseloads', 0)) for r in dept_worker_rows)
+                            dept_completion_rate = round((dept_completed_cases / dept_total_cases * 100), 1) if dept_total_cases > 0 else 0.0
+                            dept_rows.append({
+                                'Unit': dept_unit_name,
+                                'Staff': len(dept_workers),
+                                'Assigned Caseloads': dept_assigned_total,
+                                'Total Cases': dept_total_cases,
+                                'Completed': dept_completed_cases,
+                                'Completion %': f"{dept_completion_rate:.1f}%",
+                            })
 
+                        if dept_rows:
+                            st.caption(f"Department: {selected_supervisor_department}")
+                            st.dataframe(pd.DataFrame(dept_rows), use_container_width=True, hide_index=True)
+                        else:
+                            st.info("No department-level unit data available.")
 
-                    perf_rows.append({
-                        'Worker Name': worker,
-                        'Completed': w_comp,
-                        'Completion %': w_comp_pct,
-                        'Avg Time/Report': w_avg_time
-                    })
-                    total_team_cases += w_total
-                    total_team_comp += w_comp
-                
-                team_workers_perf = pd.DataFrame(perf_rows)
-                
-                _sup_t3_rate = (total_team_comp / total_team_cases * 100) if total_team_cases > 0 else 0.0
-                _sup_t3_dq = get_kpi_metrics(department=None)['data_quality_score']
-                _sup_t3_comp_delta = round(_sup_t3_rate - 90.0, 1)
-                _sup_t3_dq_delta = round(_sup_t3_dq - 95.0, 1)
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Team Avg Completion", f"{_sup_t3_rate:.1f}%",
-                              delta=f"{_sup_t3_comp_delta:+.1f}% vs 90% target", delta_color="normal")
-                with col2:
-                    st.metric("Agency Data Quality", f"{_sup_t3_dq:.1f}%",
-                              delta=f"{_sup_t3_dq_delta:+.1f}% vs 95% target", delta_color="normal")
-                with col3:
-                    st.metric("Unit Staff", len(team_list))
-                
-                # Worker comparison
-                st.write("**Individual Performance**")
-                for idx, worker in enumerate(team_workers_perf['Worker Name']):
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.write(f"**{worker}**")
-                    with col2:
-                        try:
-                            val = str(team_workers_perf['Completion %'].iloc[idx]).rstrip('%')
-                            comp_pct = int(val) if val.isdigit() else 0
-                            st.progress(comp_pct / 100)
-                        except Exception:
-                            st.progress(0)
-                    with col3:
-                        st.metric("Completed", team_workers_perf['Completed'].iloc[idx])
-                    with col4:
-                        st.metric("Avg Time", team_workers_perf['Avg Time/Report'].iloc[idx])
-                    st.divider()
+                else:  # Individual Workers
+                    workers = _unit_workers(unit)
+                    worker_rows = [_worker_perf_row(unit_name, unit, worker) for worker in workers]
+                    if worker_rows:
+                        worker_df = pd.DataFrame(worker_rows)
+                        st.dataframe(worker_df, use_container_width=True, hide_index=True)
+                        st.write("**Individual Performance**")
+                        for _idx, _row in worker_df.iterrows():
+                            c1, c2, c3, c4 = st.columns(4)
+                            with c1:
+                                st.write(f"**{_row['Worker']}**")
+                            with c2:
+                                try:
+                                    _pct = float(str(_row['Completion %']).rstrip('%'))
+                                    st.progress(max(0.0, min(1.0, _pct / 100.0)))
+                                except Exception:
+                                    st.progress(0)
+                            with c3:
+                                st.metric("Completed", int(_row['Completed']))
+                            with c4:
+                                st.metric("Total Cases", int(_row['Total Cases']))
+                            st.divider()
+                    else:
+                        st.info("No individual worker data available for this unit.")
             else:
                  st.error("Supervisor unit not found.")
         else:
-             st.info("Select a supervisor in the 'Team Caseload' tab to view analytics.")
+             if _sup_only_my_unit_t3:
+                 st.info("No mapped unit found for your supervisor account yet.")
+             else:
+                 st.info("Select a supervisor in the 'Team Caseload' tab to view analytics.")
 
     with sup_tab4:
         render_report_intake_portal("supervisor_intake", "Supervisor")
@@ -6860,15 +7262,77 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
 elif role == "Support Officer":
     st.markdown(f'<div class="header-title">📋 {selected_role} - Caseload Management</div>', unsafe_allow_html=True)
     st.markdown("**Assigned Reports & Technical Support**")
+
+    administrative_processing_roles = {
+        "Administrative Assistant",
+        "Client Information Specialist Team Lead",
+        "Client Information Specialist",
+        "Case Information Specialist Team Lead",
+        "Case Information Specialist",
+    }
+
+    if selected_role in administrative_processing_roles:
+        st.markdown('<div class="header-title">📤 Administrative Report Processing</div>', unsafe_allow_html=True)
+        st.markdown("**Excel Report Processing (No Assigned Caseloads)**")
+        st.info(
+            "This role uses support-style report processing workflows, but is not a Support Officer role. "
+            "Assigned caseload management is disabled for this administrative workflow."
+        )
+
+        admin_worker_name = (auth_result.display_name or auth_result.username or '').strip()
+        if not admin_worker_name:
+            admin_worker_name = st.text_input(
+                "Administrative Worker Name",
+                value=st.session_state.get('admin_worker_name', ''),
+                help="Enter your name for ticket submission and activity tracking.",
+            ).strip()
+            if admin_worker_name:
+                st.session_state['admin_worker_name'] = admin_worker_name
+
+        admin_tab1, admin_tab2, admin_tab3 = st.tabs([
+            "📤 Report Intake",
+            "🆘 Support Tickets",
+            "📚 Knowledge Base",
+        ])
+
+        with admin_tab1:
+            render_report_intake_portal("administrative_intake", selected_role)
+
+        with admin_tab2:
+            if not admin_worker_name:
+                st.info("Enter your name above to submit and track tickets.")
+            else:
+                render_help_ticket_center(
+                    selected_role,
+                    submitter_name=str(admin_worker_name),
+                    key_prefix='admin_ticket_center',
+                )
+
+        with admin_tab3:
+            render_knowledge_base("Support Officer", "support_officer")
+
+        st.stop()
     
-    # Choose which Support Officer you are acting as (since no auth yet)
+    # Build support-worker roster (support officers + team leads)
     all_sos = []
     for unit in st.session_state.units.values():
         all_sos.extend(unit.get('support_officers', []))
         all_sos.extend(unit.get('team_leads', []))
     all_sos = sorted(list(set(all_sos)))
 
-    acting_so = st.selectbox("Act as Support Officer / Team Lead", options=['(Select)'] + all_sos)
+    if auth_result.authenticated:
+        signed_in_worker = (auth_result.display_name or auth_result.username or '').strip()
+        if signed_in_worker in all_sos:
+            acting_so = signed_in_worker
+            st.caption(f"Signed in as: {acting_so} (identity locked)")
+        else:
+            acting_so = '(Select)'
+            st.warning(
+                "Your signed-in account is not mapped to a Support Officer or Team Lead profile. "
+                "Contact IT/Admin to assign your user to a support role in User Management."
+            )
+    else:
+        acting_so = st.selectbox("Act as Support Officer / Team Lead", options=['(Select)'] + all_sos)
 
     # Caseload Metrics (for selected person)
     col1, col2, col3, col4 = st.columns(4)
@@ -7366,14 +7830,27 @@ elif role == "Support Officer":
 
                     kpi_df = get_support_officer_kpi_dataframe()
                     throughput_df = get_support_officer_throughput_dataframe()
+
+                    _acting_worker = str(acting_so or '').strip()
+                    if _acting_worker:
+                        if not kpi_df.empty and 'Support Officer' in kpi_df.columns:
+                            kpi_df = kpi_df[kpi_df['Support Officer'].astype(str).str.strip() == _acting_worker]
+                        if not throughput_df.empty and 'Support Officer' in throughput_df.columns:
+                            throughput_df = throughput_df[throughput_df['Support Officer'].astype(str).str.strip() == _acting_worker]
+
+                    st.write("**Support Officer KPI Tracker (Assigned Reports)**")
                     if not kpi_df.empty:
-                        st.write("**Support Officer KPI Tracker (Assigned Reports)**")
                         st.dataframe(kpi_df, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("No KPI tracker rows are available for the selected assigned worker.")
+
+                    st.write("**Support Officer Throughput (Last 7 / 30 Days)**")
                     if not throughput_df.empty:
-                        st.write("**Support Officer Throughput (Last 7 / 30 Days)**")
                         st.dataframe(throughput_df, use_container_width=True, hide_index=True)
                         chart_df = throughput_df[['Support Officer', 'Lines Worked (7d)', 'Lines Completed (7d)']].copy()
                         st.bar_chart(chart_df.set_index('Support Officer'))
+                    else:
+                        st.info("No throughput rows are available for the selected assigned worker.")
 
                     selected_queue_key = st.selectbox(
                         "Select report to work",
