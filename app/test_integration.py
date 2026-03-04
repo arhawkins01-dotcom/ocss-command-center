@@ -48,7 +48,7 @@ try:
     assert 'app' in config
     assert 'server' in config
     assert 'paths' in config
-    assert config['app']['name'] == 'OCSS Agency Command Center'
+    assert config['app']['name'] == 'OCSS Command Center'
     print(f"  ✓ Configuration loaded: {config['app']['name']}")
     print(f"  ✓ Version: {config['app']['version']}")
 except Exception as e:

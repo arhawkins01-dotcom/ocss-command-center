@@ -9886,7 +9886,7 @@ elif role == "IT Administrator":
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #888; font-size: 0.9em;">
-    <p>OCSS Agency Command Center | Version 1.0.0</p>
+    <p>OCSS Command Center | Version 1.0.0</p>
     <p>Last Updated: """ + datetime.now().strftime("%B %d, %Y at %I:%M %p") + """</p>
 </div>
 """, unsafe_allow_html=True)
