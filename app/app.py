@@ -3439,8 +3439,8 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
     col1, col2 = st.columns([2, 1])
 
     with col1:
-        st.subheader("Step 1 — Upload Establishment Report")
-        st.caption("Upload an Excel/CSV file, confirm caseloads, set period metadata, then process.")
+        st.subheader("Step 1 — Upload Report")
+        st.caption("Upload an Excel/CSV report, confirm caseloads, set period metadata, then process.")
 
         caseload_labels = {
             '181000': 'Downtown Elementary',
@@ -4123,7 +4123,26 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
         with st.expander(f"Final report names ({len(final_rows)})", expanded=False):
             safe_st_dataframe(pd.DataFrame(final_rows), use_container_width=True, hide_index=True)
     else:
-        st.info("📝 No reports processed yet. Upload an establishment report above to begin.")
+        st.info("📝 No reports processed yet. Upload a report above to begin.")
+
+
+def _render_global_report_intake_if_allowed(selected_role_name: str, view_role_name: str) -> None:
+    """Render a shared intake panel across dashboards for import-eligible roles."""
+    try:
+        from .roles import role_has
+    except Exception:
+        from roles import role_has
+
+    effective_role = str(selected_role_name or view_role_name or '').strip()
+    if not effective_role or not role_has(effective_role, 'import_reports'):
+        return
+
+    with st.expander("📤 Quick Report Intake", expanded=False):
+        st.caption("Available for roles with report import capability.")
+        render_report_intake_portal(
+            key_prefix=f"global_{_name_key(effective_role)}_intake",
+            uploader_role=effective_role,
+        )
 
 
 def get_supervisor_user_names() -> list:
@@ -5953,6 +5972,8 @@ st.sidebar.markdown("""
 - **Reports Completed**: 389
 - **Last Update**: Today
 """)
+
+_render_global_report_intake_if_allowed(selected_role, role)
 
 # Main content area
 if role in ["Director", "Deputy Director"]:
@@ -9865,7 +9886,7 @@ elif role == "IT Administrator":
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #888; font-size: 0.9em;">
-    <p>OCSS Establishment Command Center | Version 1.0.0</p>
+    <p>OCSS Agency Command Center | Version 1.0.0</p>
     <p>Last Updated: """ + datetime.now().strftime("%B %d, %Y at %I:%M %p") + """</p>
 </div>
 """, unsafe_allow_html=True)

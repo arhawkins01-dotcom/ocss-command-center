@@ -61,9 +61,9 @@ from pathlib import Path
 from typing import Dict, Any
 
 # Application Settings
-APP_NAME = "OCSS Establishment Command Center"
+APP_NAME = "OCSS Agency Command Center"
 APP_VERSION = "1.0.0"
-APP_DESCRIPTION = "Internal Director Command Center for OCSS Establishment Reporting"
+APP_DESCRIPTION = "Internal Director Command Center for OCSS Agency Reporting"
 
 # Server Settings
 DEFAULT_PORT = 8501

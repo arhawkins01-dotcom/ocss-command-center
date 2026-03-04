@@ -298,17 +298,17 @@ def validate_org_structure(units: dict, users: list) -> list:
 # Role capabilities: map canonical view-roles to capability flags.
 # Use `map_to_view_role()` before checking capabilities to ensure sub-roles inherit.
 ROLE_CAPABILITIES = {
-    'Director': {'export': True, 'manage_users': True, 'view_kpi': True, 'reassign': True},
-    'Program Officer': {'export': True, 'manage_users': True, 'view_kpi': True, 'reassign': True},
-    'Supervisor': {'export': True, 'manage_users': True, 'view_kpi': True, 'reassign': True},
+    'Director': {'export': True, 'manage_users': True, 'view_kpi': True, 'reassign': True, 'import_reports': True},
+    'Program Officer': {'export': True, 'manage_users': True, 'view_kpi': True, 'reassign': True, 'import_reports': True},
+    'Supervisor': {'export': True, 'manage_users': True, 'view_kpi': True, 'reassign': True, 'import_reports': True},
     'Support Officer': {'export': False, 'manage_users': False, 'view_kpi': False, 'reassign': False, 'process_caseload': True},
-    'IT Administrator': {'export': True, 'manage_users': True, 'view_kpi': False, 'reassign': False, 'view_it_logs': True},
+    'IT Administrator': {'export': True, 'manage_users': True, 'view_kpi': False, 'reassign': False, 'view_it_logs': True, 'import_reports': True},
     # Non-caseload administrative support
-    'Administrative Assistant': {'export': False, 'manage_users': False, 'view_kpi': False, 'reassign': False, 'process_caseload': False},
+    'Administrative Assistant': {'export': False, 'manage_users': False, 'view_kpi': False, 'reassign': False, 'process_caseload': False, 'import_reports': True},
 }
 
 # Department Manager: department-scoped leadership capabilities
-ROLE_CAPABILITIES['Department Manager'] = {'export': True, 'manage_users': True, 'view_kpi': True, 'reassign': True}
+ROLE_CAPABILITIES['Department Manager'] = {'export': True, 'manage_users': True, 'view_kpi': True, 'reassign': True, 'import_reports': True}
 
 # Knowledge base edit capability — restricted to Program Officer and IT Administrator by default
 ROLE_CAPABILITIES['Program Officer']['edit_kb'] = True
@@ -328,6 +328,7 @@ for _role in ("Director", "Deputy Director", "Department Manager", "Program Offi
             'manage_users': True,
             'process_caseload': True,
             'view_it_logs': True,
+            'import_reports': True,
         })
 
 
