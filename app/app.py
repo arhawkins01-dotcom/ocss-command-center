@@ -72,7 +72,7 @@ if __name__ != "__main__":
             return _noop
 
         def __call__(self, *args, **kwargs):
-            return None
+            return self
 
         # Support use as a context manager (e.g., `with st.expander(...):`)
         def __enter__(self):
@@ -106,6 +106,20 @@ if __name__ != "__main__":
                         n = 1
                     return tuple(_StUIProxy() for _ in range(n))
                 return _cols
+
+            # `tabs` returns a sequence of tab containers; provide proxies so
+            # unpacking like `tab1, tab2 = st.tabs([...])` works in tests.
+            if name in ('tabs', 'beta_tabs'):
+                def _tabs(arg, *args, **kwargs):
+                    try:
+                        if isinstance(arg, (list, tuple)):
+                            n = len(arg)
+                        else:
+                            n = 1
+                    except Exception:
+                        n = 1
+                    return tuple(_StUIProxy() for _ in range(n))
+                return _tabs
 
             # Return a no-op callable for other UI functions used during import
             def _noop(*args, **kwargs):
@@ -316,6 +330,13 @@ def _safe_df(data) -> pd.DataFrame:
             return pd.DataFrame([data])
         except Exception:
             return pd.DataFrame()
+
+
+def _name_key(value: str) -> str:
+    normalized = str(value or '').strip().casefold()
+    # Normalize across common identity variants (spaces, dots, underscores, hyphens)
+    # so values like "Stacy Johnson" and "stacy.johnson" match reliably.
+    return re.sub(r"[\W_]+", "", normalized)
 
 
 def _get_repo_root_dir() -> Path:
@@ -835,6 +856,7 @@ def _reset_app_to_defaults() -> None:
         'units',
         'users',
         'departments',
+        'leadership_reporting',
         'reports_by_caseload',
         'help_tickets',
         'help_ticket_log',
@@ -886,6 +908,7 @@ def _persist_app_state() -> None:
         "saved_at": datetime.now().isoformat(),
         "users": st.session_state.get("users", []),
         "units": st.session_state.get("units", {}),
+        "leadership_reporting": st.session_state.get("leadership_reporting", {}),
         "current_user": st.session_state.get("current_user", ""),
         # Acknowledgements for alert escalation (best-effort persistence).
         "alert_acks": st.session_state.get("alert_acks", {}),
@@ -999,6 +1022,7 @@ if 'users' not in st.session_state:
             'team_leads': [],
             'support_officers': [],
             'caseload_series_prefixes': [],
+            'caseload_numbers': [],
             'assignments': {}
         })
         # Ensure keys exist even if unit loaded from older schema
@@ -1008,6 +1032,7 @@ if 'users' not in st.session_state:
         existing.setdefault('team_leads', [])
         existing.setdefault('support_officers', [])
         existing.setdefault('caseload_series_prefixes', [])
+        existing.setdefault('caseload_numbers', [])
         existing.setdefault('assignments', {})
 
     def _seed_department_baseline(dept_name: str):
@@ -1156,6 +1181,39 @@ if 'current_user' not in st.session_state:
 if 'alert_acks' not in st.session_state:
     persisted_acks = (_persisted_state or {}).get('alert_acks', {})
     st.session_state.alert_acks = persisted_acks if isinstance(persisted_acks, dict) else {}
+
+if 'leadership_reporting' not in st.session_state:
+    persisted_reporting = (_persisted_state or {}).get('leadership_reporting', {})
+    st.session_state.leadership_reporting = persisted_reporting if isinstance(persisted_reporting, dict) else {}
+if not isinstance(st.session_state.get('leadership_reporting'), dict):
+    st.session_state['leadership_reporting'] = {}
+st.session_state['leadership_reporting'].setdefault('deputy_director_departments', {})
+
+# Seed leadership reporting defaults (non-destructive).
+_default_deputy_reporting = {
+    'Robin Belcher': [
+        'Establishment',
+        'Case Maintenance',
+        'Compliance',
+        'Financial Operations',
+    ],
+    'Jeffrey Bloom': [
+        'Continuous Quality Improvement (CQI)',
+    ],
+}
+_deputy_map = st.session_state['leadership_reporting'].setdefault('deputy_director_departments', {})
+_deputy_defaults_changed = False
+_deputy_defaults_added = []
+for _deputy_name, _deputy_depts in _default_deputy_reporting.items():
+    if _deputy_name not in _deputy_map:
+        _deputy_map[_deputy_name] = list(_deputy_depts)
+        _deputy_defaults_changed = True
+        _deputy_defaults_added.append(_deputy_name)
+if _deputy_defaults_changed:
+    _seed_meta = st.session_state['leadership_reporting'].setdefault('seed_meta', {})
+    _seed_meta['default_deputy_map_applied_at'] = datetime.now().isoformat(timespec='seconds')
+    _seed_meta['default_deputy_names'] = sorted(_deputy_defaults_added)
+    _persist_app_state()
 
 
 def _parse_dt(value) -> datetime | None:
@@ -2162,6 +2220,53 @@ def get_department_options() -> list:
     return sorted(list(options))
 
 
+def _get_deputy_director_department_scope(deputy_name: str) -> list[str]:
+    cleaned_name = str(deputy_name or '').strip()
+    if not cleaned_name:
+        return []
+    mapping = ((st.session_state.get('leadership_reporting') or {}).get('deputy_director_departments') or {})
+    if not isinstance(mapping, dict):
+        return []
+    departments = mapping.get(cleaned_name, [])
+    if not isinstance(departments, list):
+        return []
+    return sorted(list({str(d).strip() for d in departments if str(d).strip()}))
+
+
+def _resolve_unit_department(unit_name: str, unit_data: dict) -> str:
+    dept = str((unit_data or {}).get('department', '')).strip()
+    if dept:
+        return dept
+    users_by_name = {
+        str(u.get('name', '')).strip(): u
+        for u in st.session_state.get('users', [])
+    }
+    members = []
+    if (unit_data or {}).get('supervisor'):
+        members.append((unit_data or {}).get('supervisor'))
+    members.extend((unit_data or {}).get('team_leads', []) or [])
+    members.extend((unit_data or {}).get('support_officers', []) or [])
+    for member in members:
+        member_user = users_by_name.get(str(member).strip())
+        if member_user:
+            member_dept = str(member_user.get('department', '')).strip()
+            if member_dept:
+                return member_dept
+    return ''
+
+
+def _get_units_for_departments(departments: list[str]) -> list[str]:
+    dept_set = {str(d).strip() for d in (departments or []) if str(d).strip()}
+    if not dept_set:
+        return sorted(list((st.session_state.get('units') or {}).keys()))
+
+    scoped_units = []
+    for unit_name, unit_data in (st.session_state.get('units') or {}).items():
+        if _resolve_unit_department(str(unit_name), unit_data) in dept_set:
+            scoped_units.append(str(unit_name))
+    return sorted(list(dict.fromkeys(scoped_units)))
+
+
 def _ensure_unit(unit_name: str):
     if not unit_name:
         return
@@ -2172,6 +2277,7 @@ def _ensure_unit(unit_name: str):
         'team_leads': [],
         'support_officers': [],
         'caseload_series_prefixes': [],
+        'caseload_numbers': [],
         'assignments': {}
     })
     # Backwards-compatible: older persisted units may be missing new keys.
@@ -2182,6 +2288,7 @@ def _ensure_unit(unit_name: str):
         unit.setdefault('team_leads', [])
         unit.setdefault('support_officers', [])
         unit.setdefault('caseload_series_prefixes', [])
+        unit.setdefault('caseload_numbers', [])
         unit.setdefault('assignments', {})
 
 
@@ -2315,18 +2422,19 @@ def _find_unit_for_person(person: str) -> str | None:
     person = str(person or '').strip()
     if not person:
         return None
+    person_key = _name_key(person)
     for unit_name, unit in st.session_state.get('units', {}).items():
-        if unit.get('supervisor') == person:
+        if _name_key(unit.get('supervisor', '')) == person_key:
             return unit_name
-        if person in (unit.get('team_leads', []) or []):
+        if person_key in {_name_key(n) for n in (unit.get('team_leads', []) or [])}:
             return unit_name
-        if person in (unit.get('support_officers', []) or []):
+        if person_key in {_name_key(n) for n in (unit.get('support_officers', []) or [])}:
             return unit_name
 
     # Fallback to user record (new schema: `unit`, legacy: `department`)
     for u in st.session_state.get('users', []) or []:
         try:
-            if str(u.get('name') or '').strip() != person:
+            if _name_key(u.get('name', '')) != person_key:
                 continue
             unit = str(u.get('unit') or '').strip()
             if unit:
@@ -2336,6 +2444,26 @@ def _find_unit_for_person(person: str) -> str | None:
         except Exception:
             continue
     return None
+
+
+def _find_supervisor_unit_record(supervisor_name: str) -> tuple[str | None, dict | None]:
+    """Resolve the supervisor's unit robustly using normalized identity and user fallback."""
+    supervisor_name = str(supervisor_name or '').strip()
+    if not supervisor_name:
+        return None, None
+
+    supervisor_key = _name_key(supervisor_name)
+    for unit_name, unit in st.session_state.get('units', {}).items():
+        if _name_key(unit.get('supervisor', '')) == supervisor_key:
+            return str(unit_name), unit
+
+    fallback_unit_name = _find_unit_for_person(supervisor_name)
+    if fallback_unit_name:
+        fallback_unit = st.session_state.get('units', {}).get(fallback_unit_name)
+        if isinstance(fallback_unit, dict):
+            return str(fallback_unit_name), fallback_unit
+
+    return None, None
 
 
 def _remove_caseload_from_all_units(caseload: str) -> int:
@@ -2354,6 +2482,37 @@ def _remove_caseload_from_all_units(caseload: str) -> int:
                 assignments[person] = [c for c in caselist if c != caseload]
                 removed += 1
     return removed
+
+
+def _note_assignment_update(action: str, caseload: str = '', source: str = '', target: str = '') -> None:
+    """Store last assignment/reassignment mutation for cross-dashboard real-time badges."""
+    st.session_state['assignment_last_updated_at'] = datetime.now().isoformat(timespec='seconds')
+    st.session_state['assignment_last_action'] = str(action or '').strip()
+    st.session_state['assignment_last_caseload'] = str(caseload or '').strip()
+    st.session_state['assignment_last_source'] = str(source or '').strip()
+    st.session_state['assignment_last_target'] = str(target or '').strip()
+
+
+def _render_assignment_update_badge(scope_label: str = '') -> None:
+    updated_at = str(st.session_state.get('assignment_last_updated_at', '') or '').strip()
+    if not updated_at:
+        return
+    action = str(st.session_state.get('assignment_last_action', '') or '').strip()
+    caseload = str(st.session_state.get('assignment_last_caseload', '') or '').strip()
+    source = str(st.session_state.get('assignment_last_source', '') or '').strip()
+    target = str(st.session_state.get('assignment_last_target', '') or '').strip()
+
+    parts = []
+    if scope_label:
+        parts.append(scope_label)
+    parts.append(f"last update: {updated_at}")
+    if action:
+        parts.append(action)
+    if caseload:
+        parts.append(f"caseload {caseload}")
+    if source or target:
+        parts.append(f"{source or '—'} → {target or '—'}")
+    st.caption(" • ".join(parts))
 
 
 def _classify_report_work_bucket(report_status: str) -> str:
@@ -2608,33 +2767,73 @@ def normalize_support_report_dataframe(df: pd.DataFrame, fallback_caseload: str)
 
 
 def get_worker_user_names() -> list:
-    workers = []
+    # Build canonical worker display names keyed by normalized identity.
+    # Prefer names from unit configuration first, then fill from user records.
+    workers_by_key: dict[str, str] = {}
+
+    for unit in st.session_state.get('units', {}).values():
+        for raw_name in list(unit.get('team_leads', []) or []) + list(unit.get('support_officers', []) or []):
+            cleaned = str(raw_name or '').strip()
+            key = _name_key(cleaned)
+            if cleaned and key and key not in workers_by_key:
+                workers_by_key[key] = cleaned
+
     for user in st.session_state.get('users', []):
         if user.get('role') in {'Support Officer', 'Team Lead'}:
-            workers.append(user.get('name', '').strip())
+            cleaned = str(user.get('name', '') or '').strip()
+            key = _name_key(cleaned)
+            if cleaned and key and key not in workers_by_key:
+                workers_by_key[key] = cleaned
 
-    # Include workers currently mapped in unit configuration even if a user record
-    # is missing or uses a legacy role label.
+    return sorted(list(workers_by_key.values()))
+
+
+def _resolve_worker_name_alias(worker_name: str) -> str:
+    """Resolve a worker name to canonical roster spelling (case/whitespace insensitive)."""
+    cleaned = str(worker_name or '').strip()
+    key = _name_key(cleaned)
+    if not key:
+        return ''
+
+    # Prefer canonical names from unit rosters.
     for unit in st.session_state.get('units', {}).values():
-        workers.extend([str(name).strip() for name in (unit.get('team_leads', []) or []) if str(name).strip()])
-        workers.extend([str(name).strip() for name in (unit.get('support_officers', []) or []) if str(name).strip()])
+        for raw_name in list(unit.get('team_leads', []) or []) + list(unit.get('support_officers', []) or []):
+            candidate = str(raw_name or '').strip()
+            if _name_key(candidate) == key:
+                return candidate
 
-    return sorted(list({worker for worker in workers if worker}))
+    # Fall back to users table.
+    for user in st.session_state.get('users', []):
+        candidate = str(user.get('name', '') or '').strip()
+        if _name_key(candidate) == key:
+            return candidate
+
+    return cleaned
 
 
 def find_worker_unit(worker_name: str) -> str:
     if not worker_name:
         return ''
+    worker_key = _name_key(worker_name)
+    if not worker_key:
+        return ''
+
     for unit_name, unit in st.session_state.get('units', {}).items():
-        if worker_name in unit.get('support_officers', []) or worker_name in unit.get('team_leads', []):
+        support_keys = {_name_key(name) for name in (unit.get('support_officers', []) or [])}
+        team_lead_keys = {_name_key(name) for name in (unit.get('team_leads', []) or [])}
+        if worker_key in support_keys or worker_key in team_lead_keys:
             return unit_name
 
     for user in st.session_state.get('users', []):
-        if user.get('name') == worker_name:
+        if _name_key(user.get('name', '')) == worker_key:
             unit = str(user.get('unit', '')).strip()
             if unit:
                 return unit
-            return user.get('department', '').strip()
+            # Legacy compatibility: older data sometimes stored unit in department.
+            dept = str(user.get('department', '')).strip()
+            if dept and dept in st.session_state.get('units', {}):
+                return dept
+            return ''
     return ''
 
 
@@ -2646,6 +2845,36 @@ def get_caseload_owner(caseload_number: str):
         for person, caseloads in unit.get('assignments', {}).items():
             if caseload_key in caseloads:
                 return unit_name, person
+
+    # Fallback: explicit unit caseload pool ownership.
+    for unit_name, unit in st.session_state.get('units', {}).items():
+        explicit_numbers = [
+            normalize_caseload_number(v)
+            for v in (unit.get('caseload_numbers') or [])
+        ]
+        if caseload_key in {v for v in explicit_numbers if v}:
+            best_unit = unit_name
+            unit_ref = st.session_state.get('units', {}).get(best_unit, {}) or {}
+            assignments = unit_ref.get('assignments', {}) or {}
+            team_leads = [str(c).strip() for c in (unit_ref.get('team_leads', []) or []) if str(c).strip()]
+            support_officers = [str(c).strip() for c in (unit_ref.get('support_officers', []) or []) if str(c).strip()]
+
+            def _least_loaded(candidates: list[str]) -> str | None:
+                if not candidates:
+                    return None
+                unique_candidates = sorted(list({c for c in candidates if c}))
+                if not unique_candidates:
+                    return None
+                return min(unique_candidates, key=lambda worker_name: len(assignments.get(worker_name, []) or []))
+
+            selected_team_lead = _least_loaded(team_leads)
+            if selected_team_lead:
+                return best_unit, selected_team_lead
+
+            selected_worker = _least_loaded(team_leads + support_officers)
+            if selected_worker:
+                return best_unit, selected_worker
+            return best_unit, None
 
     # Fallback: series-based ownership (unit owns a caseload series prefix).
     # This enables unit definitions like "Establishment Unit 15 owns the 181100 series".
@@ -2694,10 +2923,16 @@ def get_caseload_owner(caseload_number: str):
 
 
 def _resolve_unit_for_caseload_by_series(caseload_number: str) -> str:
-    """Return the best-matching unit for a caseload using unit series prefixes."""
+    """Return the best-matching unit for a caseload using unit pools, then series prefixes."""
     caseload_key = normalize_caseload_number(caseload_number)
     if not caseload_key:
         return ''
+
+    # Exact unit pool numbers take priority.
+    for unit_name, unit in st.session_state.get('units', {}).items():
+        explicit_numbers = [normalize_caseload_number(v) for v in (unit.get('caseload_numbers') or [])]
+        if caseload_key in {v for v in explicit_numbers if v}:
+            return str(unit_name)
 
     best_unit = ''
     best_prefix_len = -1
@@ -2783,43 +3018,50 @@ def assign_caseload_to_worker(worker_name: str, caseload_number: str, allow_reas
     if caller_role and not role_has(caller_role, 'reassign'):
         return False, "Permission denied: you cannot reassign caseloads."
     normalized_caseload = normalize_caseload_number(caseload_number)
-    if not worker_name:
+    resolved_worker_name = _resolve_worker_name_alias(worker_name)
+    if not resolved_worker_name:
         return False, "Select a worker before assigning a caseload."
     if not normalized_caseload:
         return False, "Enter a valid caseload number (example: 181000 or 1000)."
 
-    unit_name = find_worker_unit(worker_name)
+    unit_name = find_worker_unit(resolved_worker_name)
     if not unit_name:
-        return False, f"Worker '{worker_name}' is not linked to a unit/department."
+        return False, f"Worker '{resolved_worker_name}' is not linked to a unit. Add the worker to a unit first in Unit Grouping."
     _ensure_unit(unit_name)
     unit = st.session_state.units[unit_name]
 
-    if worker_name not in unit.get('support_officers', []) and worker_name not in unit.get('team_leads', []):
-        unit.setdefault('support_officers', []).append(worker_name)
+    if resolved_worker_name not in unit.get('support_officers', []) and resolved_worker_name not in unit.get('team_leads', []):
+        unit.setdefault('support_officers', []).append(resolved_worker_name)
 
     owner_unit, owner_person = get_caseload_owner(normalized_caseload)
     if owner_person:
-        if owner_person == worker_name and owner_unit == unit_name:
+        if _name_key(owner_person) == _name_key(resolved_worker_name) and owner_unit == unit_name:
             st.session_state.reports_by_caseload.setdefault(normalized_caseload, [])
             _persist_app_state()
-            return True, f"Caseload {normalized_caseload} is already assigned to {worker_name}."
+            return True, f"Caseload {normalized_caseload} is already assigned to {resolved_worker_name}."
         if not allow_reassign:
             return False, f"Caseload {normalized_caseload} is already assigned to {owner_person} in unit '{owner_unit}'."
         _remove_caseload_from_all_units(normalized_caseload)
 
     assignments = unit.setdefault('assignments', {})
-    assignments.setdefault(worker_name, [])
-    if normalized_caseload not in assignments[worker_name]:
-        assignments[worker_name].append(normalized_caseload)
+    assignments.setdefault(resolved_worker_name, [])
+    if normalized_caseload not in assignments[resolved_worker_name]:
+        assignments[resolved_worker_name].append(normalized_caseload)
+        _note_assignment_update(
+            action='reassign' if (owner_person and allow_reassign) else 'assign',
+            caseload=normalized_caseload,
+            source=f"{owner_person} ({owner_unit})" if owner_person and owner_unit else '',
+            target=f"{resolved_worker_name} ({unit_name})",
+        )
 
     st.session_state.reports_by_caseload.setdefault(normalized_caseload, [])
     _persist_app_state()
     if owner_person and allow_reassign:
         return True, (
             f"✓ Caseload {normalized_caseload} reassigned from {owner_person} "
-            f"(unit: {owner_unit}) to {worker_name} (unit: {unit_name})."
+            f"(unit: {owner_unit}) to {resolved_worker_name} (unit: {unit_name})."
         )
-    return True, f"✓ Caseload {normalized_caseload} assigned to {worker_name} (unit: {unit_name})."
+    return True, f"✓ Caseload {normalized_caseload} assigned to {resolved_worker_name} (unit: {unit_name})."
 
 
 def assign_caseloads_bulk(worker_name: str, caseload_numbers: list):
@@ -3623,13 +3865,39 @@ def save_unit_grouping(unit_name: str, supervisor_name: str, team_leads: list, s
     # Preserve any existing series assignment, unless explicitly provided via UI.
     unit.setdefault('caseload_series_prefixes', [])
 
-    allowed_assignment_people = set(unit['team_leads'] + unit['support_officers'])
-    assignments = unit.setdefault('assignments', {})
-    for assignee in list(assignments.keys()):
-        if assignee not in allowed_assignment_people:
-            del assignments[assignee]
-    for assignee in allowed_assignment_people:
-        assignments.setdefault(assignee, [])
+    assignment_people = list(unit['team_leads']) + list(unit['support_officers'])
+    if unit.get('supervisor'):
+        assignment_people.append(str(unit.get('supervisor')).strip())
+
+    allowed_by_key = {
+        _name_key(name): str(name).strip()
+        for name in assignment_people
+        if str(name).strip()
+    }
+
+    existing_assignments = unit.setdefault('assignments', {}) or {}
+    normalized_assignments: dict[str, list[str]] = {}
+
+    for raw_assignee, raw_caseloads in existing_assignments.items():
+        assignee_key = _name_key(raw_assignee)
+        canonical_assignee = allowed_by_key.get(assignee_key)
+        if not canonical_assignee:
+            continue
+
+        normalized_assignments.setdefault(canonical_assignee, [])
+        cleaned_caseloads = [
+            normalize_caseload_number(c)
+            for c in (raw_caseloads or [])
+        ]
+        cleaned_caseloads = [c for c in cleaned_caseloads if c]
+        for caseload in cleaned_caseloads:
+            if caseload not in normalized_assignments[canonical_assignee]:
+                normalized_assignments[canonical_assignee].append(caseload)
+
+    for canonical_assignee in allowed_by_key.values():
+        normalized_assignments.setdefault(canonical_assignee, [])
+
+    unit['assignments'] = normalized_assignments
 
     update_user_departments(
         ([supervisor_name] if supervisor_name else []) + unit['team_leads'] + unit['support_officers'],
@@ -3640,8 +3908,29 @@ def save_unit_grouping(unit_name: str, supervisor_name: str, team_leads: list, s
     return True, f"✓ Unit '{target_unit}' grouping saved."
 
 
-def render_user_management_panel(key_prefix: str, dept_scope: str | None = None):
+def render_user_management_panel(
+    key_prefix: str,
+    dept_scope: str | None = None,
+    unit_scope: list[str] | None = None,
+):
     st.subheader("👥 User Management")
+
+    scoped_units_set = {
+        str(unit_name).strip()
+        for unit_name in (unit_scope or [])
+        if str(unit_name).strip()
+    }
+    scoped_member_names = set()
+    for scoped_unit_name in scoped_units_set:
+        scoped_unit = st.session_state.get('units', {}).get(scoped_unit_name, {}) or {}
+        for member_name in [
+            scoped_unit.get('supervisor', ''),
+            *list(scoped_unit.get('team_leads', []) or []),
+            *list(scoped_unit.get('support_officers', []) or []),
+        ]:
+            cleaned_member = str(member_name or '').strip()
+            if cleaned_member:
+                scoped_member_names.add(cleaned_member)
 
     # Destructive reset: only show to Director + IT Administrator.
     try:
@@ -3666,11 +3955,16 @@ def render_user_management_panel(key_prefix: str, dept_scope: str | None = None)
                 _reset_app_to_defaults()
 
     users_df_all = get_users_dataframe()
-    # If dept_scope provided, restrict visible users and unit choices to that department
+    # If dept_scope provided, restrict visible users and unit choices to that department.
+    # If unit_scope provided, further constrain to users mapped to those units.
+    users_df = users_df_all
     if dept_scope:
-        users_df = users_df_all[users_df_all['Department'] == dept_scope]
-    else:
-        users_df = users_df_all
+        users_df = users_df[users_df['Department'] == dept_scope]
+    if scoped_units_set:
+        users_df = users_df[
+            users_df['Unit'].isin(list(scoped_units_set))
+            | users_df['Name'].isin(list(scoped_member_names))
+        ]
     safe_st_dataframe(users_df, use_container_width=True)
 
     # Agency leadership structure expectations (visibility + guardrails)
@@ -3694,6 +3988,58 @@ def render_user_management_panel(key_prefix: str, dept_scope: str | None = None)
         st.warning("Expected leadership structure: at least 4 Department Managers (Unit Role='Department Manager').")
     if sao_count < 1:
         st.warning("Expected leadership structure: at least 1 Senior Administrative Officer (Unit Role='Senior Administrative Officer').")
+
+    # Leadership reporting map (separate from operational units):
+    # Deputy Director -> Department(s) they oversee.
+    if not dept_scope and not scoped_units_set:
+        with st.expander("Leadership Reporting Map (Deputy Director → Departments)", expanded=False):
+            _seed_meta = ((st.session_state.get('leadership_reporting') or {}).get('seed_meta') or {})
+            _seed_applied_at = str(_seed_meta.get('default_deputy_map_applied_at', '')).strip()
+            _seeded_names = [str(n).strip() for n in (_seed_meta.get('default_deputy_names', []) or []) if str(n).strip()]
+            if _seed_applied_at and _seeded_names:
+                st.info(
+                    "Seeded default leadership mappings were applied "
+                    f"({_seed_applied_at}) for: {', '.join(sorted(_seeded_names))}."
+                )
+
+            deputy_directors = sorted([
+                str(u.get('name', '')).strip()
+                for u in st.session_state.get('users', [])
+                if str(u.get('role', '')).strip() == 'Director'
+                and str(u.get('unit_role', '')).strip() == 'Deputy Director'
+                and str(u.get('name', '')).strip()
+            ])
+
+            if not deputy_directors:
+                st.info("No Deputy Director users found. Add Deputy Directors first in Add User.")
+            else:
+                deputy_departments = ((st.session_state.get('leadership_reporting') or {}).get('deputy_director_departments') or {})
+                if not isinstance(deputy_departments, dict):
+                    deputy_departments = {}
+
+                dept_options = [d for d in get_department_options() if d not in {'Executive', 'IT'}]
+                staged_map: dict[str, list[str]] = {}
+
+                for idx, deputy_name in enumerate(deputy_directors):
+                    existing = deputy_departments.get(deputy_name, [])
+                    existing = [str(d).strip() for d in (existing or []) if str(d).strip()]
+                    staged_map[deputy_name] = st.multiselect(
+                        f"{deputy_name} departments",
+                        options=dept_options,
+                        default=[d for d in existing if d in dept_options],
+                        key=f"{key_prefix}_deputy_dept_map_{idx}",
+                        help="Map departments for leadership reporting scope. This does not change unit/caseload ownership.",
+                    )
+
+                if st.button("💾 Save Leadership Reporting Map", key=f"{key_prefix}_save_deputy_reporting"):
+                    st.session_state.setdefault('leadership_reporting', {})
+                    st.session_state['leadership_reporting']['deputy_director_departments'] = {
+                        name: sorted(list({str(d).strip() for d in deps if str(d).strip()}))
+                        for name, deps in staged_map.items()
+                    }
+                    _persist_app_state()
+                    st.success("Saved deputy-director department reporting map.")
+                    st.rerun()
 
     st.divider()
     # Departments management (allow admins to add/remove departments)
@@ -3737,6 +4083,16 @@ def render_user_management_panel(key_prefix: str, dept_scope: str | None = None)
                 st.rerun()
     st.write("**Assign Caseload to Worker**")
     worker_options = get_worker_user_names()
+    if dept_scope:
+        users_in_dept = {
+            str(u.get('name', '')).strip()
+            for u in st.session_state.get('users', [])
+            if str(u.get('department', '')).strip() == str(dept_scope).strip()
+        }
+        worker_options = [w for w in worker_options if w in users_in_dept]
+    if scoped_member_names:
+        worker_options = [w for w in worker_options if w in scoped_member_names]
+
     assign_col1, assign_col2 = st.columns(2)
     with assign_col1:
         selected_worker = st.selectbox(
@@ -3775,14 +4131,25 @@ def render_user_management_panel(key_prefix: str, dept_scope: str | None = None)
             )
             if success:
                 st.success(message)
+                try:
+                    _resolved_name = _resolve_worker_name_alias(selected_worker)
+                    _target_unit = find_worker_unit(_resolved_name)
+                    if _target_unit:
+                        st.session_state[f"{key_prefix}_unit_summary_focus"] = _target_unit
+                        st.session_state[f"{key_prefix}_unit_summary_last_update"] = datetime.now().isoformat(timespec='seconds')
+                except Exception:
+                    pass
                 st.rerun()
             else:
                 st.error(message)
 
     st.divider()
     st.write("**Unit Grouping (Supervisor, Team Lead(s), Support Officers)**")
-    # Unit choices: if department-scoped, only include units that have members in that department
-    if dept_scope:
+    # Unit choices: if department-scoped, only include units that have members in that department.
+    # If explicit unit scope was provided, use that directly.
+    if scoped_units_set:
+        unit_choices = sorted(list(scoped_units_set))
+    elif dept_scope:
         unit_choices = []
         users_by_name = {str(u.get('name', '')).strip(): u for u in st.session_state.get('users', [])}
         for unit_name, unit in st.session_state.get('units', {}).items():
@@ -3813,20 +4180,36 @@ def render_user_management_panel(key_prefix: str, dept_scope: str | None = None)
     effective_unit_name = unit_name_input.strip() if unit_name_input.strip() else (selected_unit if selected_unit != '(New Unit)' else '')
     current_unit_data = st.session_state.units.get(
         effective_unit_name,
-        {'supervisor': '', 'team_leads': [], 'support_officers': [], 'caseload_series_prefixes': []}
-    ) if effective_unit_name else {'supervisor': '', 'team_leads': [], 'support_officers': [], 'caseload_series_prefixes': []}
+        {'supervisor': '', 'team_leads': [], 'support_officers': [], 'caseload_series_prefixes': [], 'caseload_numbers': []}
+    ) if effective_unit_name else {'supervisor': '', 'team_leads': [], 'support_officers': [], 'caseload_series_prefixes': [], 'caseload_numbers': []}
 
     # Supervisor and support options should respect department scope when provided
     if dept_scope:
-        supervisor_options = ['(None)'] + [n for n in get_supervisor_user_names() if any(str(u.get('department','')).strip()==dept_scope and u.get('name')==n for u in st.session_state.get('users', []))]
-        support_officer_options = [n for n in get_worker_user_names() if any(str(u.get('department','')).strip()==dept_scope and u.get('name')==n for u in st.session_state.get('users', []))]
+        supervisor_options = ['(None)'] + [
+            n for n in get_supervisor_user_names()
+            if any(
+                str(u.get('department', '')).strip() == dept_scope and u.get('name') == n
+                for u in st.session_state.get('users', [])
+            )
+        ]
+        support_officer_options = [
+            n for n in get_worker_user_names()
+            if any(
+                str(u.get('department', '')).strip() == dept_scope and u.get('name') == n
+                for u in st.session_state.get('users', [])
+            )
+        ]
     else:
         supervisor_options = ['(None)'] + get_supervisor_user_names()
         support_officer_options = get_worker_user_names()
+
+    if scoped_member_names:
+        supervisor_options = ['(None)'] + [n for n in supervisor_options if n != '(None)' and n in scoped_member_names]
+        support_officer_options = [n for n in support_officer_options if n in scoped_member_names]
+
     default_supervisor = current_unit_data.get('supervisor', '')
     default_supervisor_index = supervisor_options.index(default_supervisor) if default_supervisor in supervisor_options else 0
 
-    support_officer_options = get_worker_user_names()
     default_support = [name for name in current_unit_data.get('support_officers', []) if name in support_officer_options]
     default_team_leads = [name for name in current_unit_data.get('team_leads', []) if name in support_officer_options]
 
@@ -3838,6 +4221,11 @@ def render_user_management_panel(key_prefix: str, dept_scope: str | None = None)
             index=default_supervisor_index,
             key=f"{key_prefix}_group_supervisor"
         )
+        if chosen_supervisor and chosen_supervisor != '(None)':
+            _sup_user = next((u for u in st.session_state.get('users', []) if str(u.get('name', '')).strip() == str(chosen_supervisor).strip()), None)
+            _sup_role = str((_sup_user or {}).get('role', '')).strip()
+            if _sup_role and _sup_role != 'Supervisor':
+                st.warning(f"Selected supervisor '{chosen_supervisor}' currently has role '{_sup_role}'. Update role to 'Supervisor' under Edit User for consistency.")
     with group_col2:
         chosen_support_officers = st.multiselect(
             "Support Officers",
@@ -3862,6 +4250,94 @@ def render_user_management_panel(key_prefix: str, dept_scope: str | None = None)
         key=f"{key_prefix}_group_series"
     )
 
+    caseload_numbers_default = current_unit_data.get('caseload_numbers') or []
+    if not isinstance(caseload_numbers_default, list):
+        caseload_numbers_default = []
+    caseload_numbers_text = st.text_input(
+        "Unit Caseload Pool (comma-separated caseload numbers)",
+        value=", ".join([str(c).strip() for c in caseload_numbers_default if str(c).strip()]),
+        key=f"{key_prefix}_group_caseload_numbers",
+        help="Adds caseload numbers to this unit's pool without assigning to a worker.",
+    )
+
+    quick_add_col1, quick_add_col2 = st.columns([3, 1])
+    with quick_add_col1:
+        quick_add_caseload = st.text_input(
+            "Quick Add Caseload Number to Unit Pool",
+            value="",
+            key=f"{key_prefix}_quick_add_caseload",
+            placeholder="Example: 181123",
+        )
+    with quick_add_col2:
+        if st.button("➕ Add to Unit Pool", key=f"{key_prefix}_quick_add_caseload_btn"):
+            if not effective_unit_name:
+                st.error("Select or enter a unit name first.")
+            else:
+                normalized_quick = normalize_caseload_number(quick_add_caseload)
+                if not normalized_quick:
+                    st.error("Enter a valid caseload number.")
+                else:
+                    _ensure_unit(effective_unit_name)
+                    st.session_state.units[effective_unit_name].setdefault('caseload_numbers', [])
+                    pool_numbers = [
+                        normalize_caseload_number(v)
+                        for v in (st.session_state.units[effective_unit_name].get('caseload_numbers') or [])
+                    ]
+                    pool_numbers = [v for v in pool_numbers if v]
+                    if normalized_quick not in pool_numbers:
+                        pool_numbers.append(normalized_quick)
+                    st.session_state.units[effective_unit_name]['caseload_numbers'] = sorted(list(dict.fromkeys(pool_numbers)))
+                    st.session_state.reports_by_caseload.setdefault(normalized_quick, [])
+                    _note_assignment_update(
+                        action='pool_add',
+                        caseload=normalized_quick,
+                        source='Unit Caseload Pool',
+                        target=effective_unit_name,
+                    )
+                    _persist_app_state()
+                    st.success(f"Added caseload {normalized_quick} to unit pool for {effective_unit_name}.")
+                    st.rerun()
+
+    remove_pool_col1, remove_pool_col2 = st.columns([3, 1])
+    with remove_pool_col1:
+        current_pool_for_remove = []
+        if effective_unit_name:
+            current_pool_for_remove = [
+                str(c).strip()
+                for c in (st.session_state.get('units', {}).get(effective_unit_name, {}).get('caseload_numbers', []) or [])
+                if str(c).strip()
+            ]
+        remove_pool_caseload = st.selectbox(
+            "Remove Caseload from Unit Pool",
+            options=current_pool_for_remove if current_pool_for_remove else ['(No Caseloads in Pool)'],
+            key=f"{key_prefix}_quick_remove_caseload_select",
+        )
+    with remove_pool_col2:
+        if st.button("➖ Remove", key=f"{key_prefix}_quick_remove_caseload_btn"):
+            if not effective_unit_name:
+                st.error("Select or enter a unit name first.")
+            elif remove_pool_caseload == '(No Caseloads in Pool)':
+                st.info("No caseloads are available to remove from this unit pool.")
+            else:
+                _ensure_unit(effective_unit_name)
+                pool_numbers = [
+                    normalize_caseload_number(v)
+                    for v in (st.session_state.units[effective_unit_name].get('caseload_numbers') or [])
+                ]
+                pool_numbers = [v for v in pool_numbers if v]
+                normalized_remove = normalize_caseload_number(remove_pool_caseload)
+                pool_numbers = [v for v in pool_numbers if v != normalized_remove]
+                st.session_state.units[effective_unit_name]['caseload_numbers'] = sorted(list(dict.fromkeys(pool_numbers)))
+                _note_assignment_update(
+                    action='pool_remove',
+                    caseload=normalized_remove,
+                    source=effective_unit_name,
+                    target='Unit Caseload Pool',
+                )
+                _persist_app_state()
+                st.success(f"Removed caseload {normalized_remove} from unit pool for {effective_unit_name}.")
+                st.rerun()
+
     if st.button("💾 Save Unit Grouping", key=f"{key_prefix}_save_unit_grouping"):
         supervisor_name = '' if chosen_supervisor == '(None)' else chosen_supervisor
         # Parse series prefixes from UI
@@ -3872,10 +4348,21 @@ def render_user_management_panel(key_prefix: str, dept_scope: str | None = None)
                 parsed_prefixes.append(cleaned)
         parsed_prefixes = [p for i, p in enumerate(parsed_prefixes) if p and p not in parsed_prefixes[:i]]
 
+        parsed_caseload_numbers = []
+        for part in str(caseload_numbers_text or '').split(','):
+            cleaned_caseload = normalize_caseload_number(part)
+            if cleaned_caseload:
+                parsed_caseload_numbers.append(cleaned_caseload)
+        parsed_caseload_numbers = [p for i, p in enumerate(parsed_caseload_numbers) if p and p not in parsed_caseload_numbers[:i]]
+
         success, message = save_unit_grouping(effective_unit_name, supervisor_name, chosen_team_leads, chosen_support_officers)
         if success and effective_unit_name:
             st.session_state.units.setdefault(effective_unit_name, {}).setdefault('caseload_series_prefixes', [])
             st.session_state.units[effective_unit_name]['caseload_series_prefixes'] = parsed_prefixes
+            st.session_state.units.setdefault(effective_unit_name, {}).setdefault('caseload_numbers', [])
+            st.session_state.units[effective_unit_name]['caseload_numbers'] = parsed_caseload_numbers
+            for caseload_value in parsed_caseload_numbers:
+                st.session_state.reports_by_caseload.setdefault(caseload_value, [])
             _persist_app_state()
         if success:
             st.success(message)
@@ -3885,15 +4372,19 @@ def render_user_management_panel(key_prefix: str, dept_scope: str | None = None)
 
     st.write("**Unit Summary**")
     unit_summary_rows = []
-    for unit_name, unit_data in sorted(st.session_state.units.items()):
+    visible_units = sorted(st.session_state.units.items())
+    if scoped_units_set:
+        visible_units = [(n, u) for n, u in visible_units if n in scoped_units_set]
+    for unit_name, unit_data in visible_units:
         assignments = unit_data.get('assignments', {})
-        assigned_caseload_total = sum(len(caseloads) for caseloads in assignments.values())
+        assigned_caseload_total = sum(len(caseloads or []) for caseloads in assignments.values())
         unit_summary_rows.append({
             'Unit': unit_name,
             'Supervisor': unit_data.get('supervisor', ''),
             'Team Leads': len(unit_data.get('team_leads', [])),
             'Support Officers': len(unit_data.get('support_officers', [])),
             'Series Prefixes': ', '.join([str(p) for p in (unit_data.get('caseload_series_prefixes') or []) if str(p).strip()]),
+            'Caseload Pool': len([str(c).strip() for c in (unit_data.get('caseload_numbers') or []) if str(c).strip()]),
             'Assigned Caseloads': assigned_caseload_total
         })
 
@@ -3901,8 +4392,17 @@ def render_user_management_panel(key_prefix: str, dept_scope: str | None = None)
         safe_st_dataframe(pd.DataFrame(unit_summary_rows), use_container_width=True, hide_index=True)
         st.caption("Expand a unit below to view members and caseload distribution.")
 
-        for unit_name, unit_data in sorted(st.session_state.units.items()):
-            with st.expander(f"📂 {unit_name} Details", expanded=False):
+        focus_unit = str(st.session_state.get(f"{key_prefix}_unit_summary_focus", '') or '').strip()
+        focus_updated_at = str(st.session_state.get(f"{key_prefix}_unit_summary_last_update", '') or '').strip()
+        visible_unit_names = {name for name, _ in visible_units}
+        if focus_unit and focus_unit in visible_unit_names:
+            st.info(
+                f"Latest assignment update: {focus_unit}"
+                + (f" (at {focus_updated_at})" if focus_updated_at else "")
+            )
+
+        for unit_name, unit_data in visible_units:
+            with st.expander(f"📂 {unit_name} Details", expanded=(unit_name == focus_unit and focus_unit != '')):
                 st.markdown(f"**Supervisor:** {unit_data.get('supervisor', '(None)')}")
 
                 series_prefixes = unit_data.get('caseload_series_prefixes') or []
@@ -3911,6 +4411,12 @@ def render_user_management_panel(key_prefix: str, dept_scope: str | None = None)
                 else:
                     st.markdown("**Caseload Series Prefixes:** (None)")
 
+                unit_pool_numbers = [str(c).strip() for c in (unit_data.get('caseload_numbers') or []) if str(c).strip()]
+                if unit_pool_numbers:
+                    st.markdown(f"**Unit Caseload Pool:** {', '.join(unit_pool_numbers)}")
+                else:
+                    st.markdown("**Unit Caseload Pool:** (None)")
+
                 team_leads = unit_data.get('team_leads', [])
                 support_officers = unit_data.get('support_officers', [])
                 st.markdown(f"**Team Lead(s):** {', '.join(team_leads) if team_leads else '(None)'}")
@@ -3918,18 +4424,38 @@ def render_user_management_panel(key_prefix: str, dept_scope: str | None = None)
 
                 st.write("**Caseload Assignments**")
                 assignment_rows = []
+                team_lead_keys = {_name_key(n) for n in team_leads}
+                supervisor_key = _name_key(unit_data.get('supervisor', ''))
                 for assignee, caseloads in sorted(unit_data.get('assignments', {}).items()):
+                    assignee_key = _name_key(assignee)
+                    if assignee_key == supervisor_key:
+                        role_in_unit = 'Supervisor'
+                    elif assignee_key in team_lead_keys:
+                        role_in_unit = 'Team Lead'
+                    else:
+                        role_in_unit = 'Support Officer'
+                    normalized_assignment_caseloads = [
+                        normalize_caseload_number(c) or str(c).strip()
+                        for c in (caseloads or [])
+                        if str(c).strip()
+                    ]
                     assignment_rows.append({
                         'Assignee': assignee,
-                        'Role in Unit': 'Team Lead' if assignee in team_leads else 'Support Officer',
-                        'Caseload Count': len(caseloads),
-                        'Caseload Numbers': ', '.join(sorted(caseloads)) if caseloads else '(None)'
+                        'Role in Unit': role_in_unit,
+                        'Caseload Count': len(normalized_assignment_caseloads),
+                        'Caseload Numbers': ', '.join(sorted(normalized_assignment_caseloads)) if normalized_assignment_caseloads else '(None)'
                     })
 
                 if assignment_rows:
                     safe_st_dataframe(pd.DataFrame(assignment_rows), use_container_width=True, hide_index=True)
                 else:
                     st.info("No caseload assignments configured for this unit.")
+
+        # Single-use focus: after one render, clear so subsequent interactions
+        # return to normal collapsed behavior.
+        if focus_unit:
+            st.session_state.pop(f"{key_prefix}_unit_summary_focus", None)
+            st.session_state.pop(f"{key_prefix}_unit_summary_last_update", None)
     else:
         st.info("No units have been configured yet.")
 
@@ -4016,10 +4542,23 @@ def render_user_management_panel(key_prefix: str, dept_scope: str | None = None)
     st.divider()
     st.write("**Edit User**")
 
-    if st.session_state.users:
-        user_options = [u['name'] for u in st.session_state.users]
+    editable_user_indexes = list(range(len(st.session_state.users)))
+    if dept_scope:
+        editable_user_indexes = [
+            idx for idx in editable_user_indexes
+            if str(st.session_state.users[idx].get('department', '')).strip() == str(dept_scope).strip()
+        ]
+    if scoped_units_set:
+        editable_user_indexes = [
+            idx for idx in editable_user_indexes
+            if str(st.session_state.users[idx].get('unit', '')).strip() in scoped_units_set
+            or str(st.session_state.users[idx].get('name', '')).strip() in scoped_member_names
+        ]
+
+    if editable_user_indexes:
+        user_options = [st.session_state.users[idx]['name'] for idx in editable_user_indexes]
         selected_user_name = st.selectbox("Select User", options=user_options, key=f"{key_prefix}_selected_user")
-        selected_index = next((idx for idx, user in enumerate(st.session_state.users) if user['name'] == selected_user_name), None)
+        selected_index = next((idx for idx in editable_user_indexes if st.session_state.users[idx]['name'] == selected_user_name), None)
 
         if selected_index is not None:
             selected_user = st.session_state.users[selected_index]
@@ -4148,7 +4687,7 @@ def render_user_management_panel(key_prefix: str, dept_scope: str | None = None)
                     )
                     st.rerun()
     else:
-        st.info("No users are available to edit yet.")
+        st.info("No users are available to edit yet for the current scope.")
 
 
 def get_assignment_counts_by_user() -> dict:
@@ -5051,6 +5590,8 @@ else:
         index=group_names.index(default_group),
         help="Choose a role group first",
     )
+    if selected_group not in role_groups:
+        selected_group = default_group
 
     group_roles = role_groups[selected_group]
     default_role = last_selected_role if last_selected_role in group_roles else group_roles[0]
@@ -5060,6 +5601,8 @@ else:
         index=group_roles.index(default_role),
         help="Choose your role to see relevant features",
     )
+    if selected_role not in group_roles:
+        selected_role = default_role
 
     role = map_to_view_role(selected_role)
     # Persist selection for server-side capability checks
@@ -5093,6 +5636,16 @@ st.sidebar.markdown("""
 if role in ["Director", "Deputy Director"]:
     st.markdown('<div class="header-title">📈 Executive Dashboard</div>', unsafe_allow_html=True)
     st.markdown("**Strategy & Oversight**")
+
+    _exec_viewer_name = (auth_result.display_name or auth_result.username or st.session_state.get('current_user', '') or '').strip()
+    _exec_viewer_unit_role = _get_user_unit_role(_exec_viewer_name) if _exec_viewer_name else 'Director'
+    if not _exec_viewer_unit_role:
+        _exec_viewer_unit_role = 'Director'
+    _exec_deputy_departments = _get_deputy_director_department_scope(_exec_viewer_name) if _exec_viewer_unit_role == 'Deputy Director' else []
+    _exec_scoped_units = _get_units_for_departments(_exec_deputy_departments) if _exec_deputy_departments else sorted(list((st.session_state.get('units') or {}).keys()))
+
+    if _exec_viewer_unit_role == 'Deputy Director' and _exec_deputy_departments:
+        st.caption("Deputy Director scope: " + ", ".join(_exec_deputy_departments))
     
     # Tabs for Director
     dir_tab1, dir_tab2, dir_tab3, dir_tab4, dir_tab5, dir_tab6, dir_tab7 = st.tabs([
@@ -5106,10 +5659,8 @@ if role in ["Director", "Deputy Director"]:
     ])
     
     with dir_tab1:
-        viewer_name = (auth_result.display_name or auth_result.username or st.session_state.get('current_user', '') or '').strip()
-        viewer_unit_role = _get_user_unit_role(viewer_name) if viewer_name else 'Director'
-        if not viewer_unit_role:
-            viewer_unit_role = 'Director'
+        viewer_name = _exec_viewer_name
+        viewer_unit_role = _exec_viewer_unit_role
 
         _render_leadership_exports(
             viewer_role='Director',
@@ -5120,7 +5671,12 @@ if role in ["Director", "Deputy Director"]:
         )
 
         # KPI scope toggle: allow Director/Deputy to view Agency OR Department KPIs
-        kpi_scope = st.radio("KPI Scope:", options=["Agency", "Department"], index=0, horizontal=True, key='exec_kpi_scope')
+        _kpi_scope_options = ["Agency", "Department"]
+        if viewer_unit_role == 'Deputy Director' and _exec_deputy_departments:
+            _kpi_scope_options = ["Department"]
+        kpi_scope = st.radio("KPI Scope:", options=_kpi_scope_options, index=0, horizontal=True, key='exec_kpi_scope')
+
+        selected_dept = None
 
         if kpi_scope == 'Agency':
             _render_alert_panel(
@@ -5190,7 +5746,10 @@ if role in ["Director", "Deputy Director"]:
 
         else:
             # Department-level KPIs selected by Director/Deputy
-            dept_options = get_department_options()
+            dept_options = _exec_deputy_departments if (viewer_unit_role == 'Deputy Director' and _exec_deputy_departments) else get_department_options()
+            if not dept_options:
+                st.info("No departments are mapped to this Deputy Director yet. Showing all departments.")
+                dept_options = get_department_options()
             selected_dept = st.selectbox("Select Department:", options=dept_options, key='exec_kpi_dept')
 
             # Build units belonging to the selected department
@@ -5239,7 +5798,7 @@ if role in ["Director", "Deputy Director"]:
         
         # Strategic Insights – data-driven
         st.subheader("📌 Strategic Insights")
-        _kpis_all = get_kpi_metrics(department=None)
+        _kpis_all = get_kpi_metrics(department=selected_dept)
         _ins_col1, _ins_col2 = st.columns(2)
         with _ins_col1:
             _wins = []
@@ -5277,19 +5836,20 @@ if role in ["Director", "Deputy Director"]:
     
     with dir_tab2:
         st.subheader("👥 Caseload Management - All Workers")
+        _render_assignment_update_badge("Executive Caseload")
 
         st.subheader("📍 Caseload Work Status (Real-Time)")
         caseload_status_df = _build_caseload_work_status_df(scope_unit=None)
+        if not caseload_status_df.empty and _exec_deputy_departments:
+            caseload_status_df = caseload_status_df[caseload_status_df['Unit'].isin(_exec_scoped_units) | (caseload_status_df['Overall Status'] == 'Unassigned')]
         if caseload_status_df.empty:
             st.info("No caseload work status available yet.")
         else:
             st.dataframe(caseload_status_df, use_container_width=True, hide_index=True)
 
         # Escalation alerts (Director/Deputy/Department Manager views are driven by Unit Role).
-        viewer_name = (auth_result.display_name or auth_result.username or st.session_state.get('current_user', '') or '').strip()
-        viewer_unit_role = _get_user_unit_role(viewer_name) if viewer_name else 'Director'
-        if not viewer_unit_role:
-            viewer_unit_role = 'Director'
+        viewer_name = _exec_viewer_name
+        viewer_unit_role = _exec_viewer_unit_role
         _render_alert_panel(
             viewer_role='Director',
             viewer_name=viewer_name,
@@ -5310,6 +5870,8 @@ if role in ["Director", "Deputy Director"]:
         worker_metrics = []
         all_workers = []
         for unit_name, unit in st.session_state.get('units', {}).items():
+            if _exec_deputy_departments and str(unit_name) not in _exec_scoped_units:
+                continue
             # Get all staff
             staff = unit.get('support_officers', []) + unit.get('team_leads', [])
             all_workers.extend(staff)
@@ -5375,13 +5937,16 @@ if role in ["Director", "Deputy Director"]:
         st.subheader("📋 Reassign Caseloads Between Workers")
         col1, col2, col3 = st.columns(3)
         with col1:
-            from_worker = st.selectbox("From Worker", all_workers, key="dir_reassign_from")
+            _exec_worker_opts = sorted(list({str(w).strip() for w in all_workers if str(w).strip()}))
+            from_worker = st.selectbox("From Worker", _exec_worker_opts if _exec_worker_opts else ['(No Workers in Scope)'], key="dir_reassign_from")
         
         # Find unit and caseloads for selected worker
         worker_unit = None
         worker_caseloads = []
         for u_name, u in st.session_state.units.items():
-            if from_worker in u.get('assignments', {}):
+            if _exec_deputy_departments and str(u_name) not in _exec_scoped_units:
+                continue
+            if from_worker != '(No Workers in Scope)' and from_worker in u.get('assignments', {}):
                 worker_unit = u_name
                 worker_caseloads = u['assignments'][from_worker]
                 break
@@ -5396,7 +5961,9 @@ if role in ["Director", "Deputy Director"]:
             elif worker_unit and allow_cross:
                 # Allow selecting any worker across units (exclude the source worker)
                 all_peers = []
-                for u in st.session_state.units.values():
+                for scoped_unit_name, u in st.session_state.units.items():
+                    if _exec_deputy_departments and str(scoped_unit_name) not in _exec_scoped_units:
+                        continue
                     all_peers.extend(u.get('support_officers', []) or [])
                     all_peers.extend(u.get('team_leads', []) or [])
                 all_peers = [p for p in sorted(set(all_peers)) if p != from_worker]
@@ -5408,7 +5975,9 @@ if role in ["Director", "Deputy Director"]:
             caseload_to_move = st.selectbox("Select Caseload", worker_caseloads if worker_caseloads else [], key="dir_reassign_caseload")
         
         if st.button("🔄 Execute Reassignment", key="director_reassign"):
-            if not (from_worker and to_worker and caseload_to_move and worker_unit):
+            if from_worker == '(No Workers in Scope)':
+                st.error("No workers are available in the current leadership scope.")
+            elif not (from_worker and to_worker and caseload_to_move and worker_unit):
                 st.error("Please select valid workers and a caseload to move.")
             else:
                 # Remove from source unit assignments
@@ -5420,6 +5989,8 @@ if role in ["Director", "Deputy Director"]:
                 # Determine destination unit
                 dest_unit = None
                 for u_name, u in st.session_state.units.items():
+                    if _exec_deputy_departments and str(u_name) not in _exec_scoped_units:
+                        continue
                     peers = (u.get('support_officers', []) or []) + (u.get('team_leads', []) or [])
                     if to_worker in peers:
                         dest_unit = u_name
@@ -5431,6 +6002,12 @@ if role in ["Director", "Deputy Director"]:
 
                 st.session_state.units[dest_unit].setdefault('assignments', {})
                 st.session_state.units[dest_unit]['assignments'].setdefault(to_worker, []).append(caseload_to_move)
+                _note_assignment_update(
+                    action='reassign',
+                    caseload=caseload_to_move,
+                    source=f"{from_worker} ({worker_unit})",
+                    target=f"{to_worker} ({dest_unit})",
+                )
                 _persist_app_state()
                 st.success(f"✓ Caseload {caseload_to_move} reassigned from {from_worker} ({worker_unit}) to {to_worker} ({dest_unit})")
                 st.rerun()
@@ -6090,6 +6667,73 @@ elif role == 'Department Manager':
                 units_in_dept.append(unit_name)
                 break
 
+    units_in_dept = sorted(list(dict.fromkeys(units_in_dept)))
+
+    # Department Managers can select one or more departments and then select direct-report units.
+    _dept_scope_options = get_department_options()
+
+    # Auto-load manager defaults when this manager first opens the dashboard (or after sign-in change).
+    _dept_scope_owner_key = 'dept_mgr_scope_owner'
+    _dept_scope_owner = str(st.session_state.get(_dept_scope_owner_key, '') or '').strip()
+    _current_scope_owner = str(viewer_name or '').strip()
+    if viewer_department and _current_scope_owner and _dept_scope_owner != _current_scope_owner:
+        st.session_state['dept_mgr_department_scope'] = [viewer_department]
+        st.session_state.pop('dept_mgr_unit_scope', None)
+        st.session_state[_dept_scope_owner_key] = _current_scope_owner
+
+    _dept_scope_default = [viewer_department] if viewer_department in _dept_scope_options else []
+    if not _dept_scope_default and _dept_scope_options:
+        _dept_scope_default = [_dept_scope_options[0]]
+    selected_departments = st.multiselect(
+        "Departments to monitor/manage",
+        options=_dept_scope_options,
+        default=_dept_scope_default,
+        key='dept_mgr_department_scope',
+    )
+
+    _scope_meta_col1, _scope_meta_col2 = st.columns([3, 1])
+    with _scope_meta_col1:
+        if viewer_department:
+            st.caption(f"Default scope: {viewer_department}")
+        else:
+            st.caption("Default scope unavailable (department not set on your user profile).")
+    with _scope_meta_col2:
+        if st.button("Use My Department", key='dept_mgr_reset_scope'):
+            if viewer_department:
+                st.session_state['dept_mgr_department_scope'] = [viewer_department]
+                st.session_state.pop('dept_mgr_unit_scope', None)
+                st.session_state[_dept_scope_owner_key] = _current_scope_owner
+                st.rerun()
+            else:
+                st.warning("Your user profile is missing a department.")
+
+    # Direct reports are unit supervisors assigned to units in the selected departments.
+    _dept_scope_set = {str(d).strip() for d in selected_departments if str(d).strip()}
+    _scope_supervisors = set()
+    for _scope_unit in st.session_state.get('units', {}).values():
+        _scope_unit_dept = str((_scope_unit or {}).get('department', '')).strip()
+        _scope_supervisor = str((_scope_unit or {}).get('supervisor', '')).strip()
+        if _scope_supervisor and (not _dept_scope_set or _scope_unit_dept in _dept_scope_set):
+            _scope_supervisors.add(_scope_supervisor)
+
+    _scope_units = []
+    for _scope_unit_name, _scope_unit in st.session_state.get('units', {}).items():
+        _scope_supervisor = str((_scope_unit or {}).get('supervisor', '')).strip()
+        if _scope_supervisor and _scope_supervisor in _scope_supervisors:
+            _scope_units.append(str(_scope_unit_name))
+
+    if not _scope_units:
+        _scope_units = units_in_dept
+    _scope_units = sorted(list(dict.fromkeys(_scope_units)))
+
+    selected_units = st.multiselect(
+        "Units assigned to your supervisors",
+        options=_scope_units,
+        default=_scope_units,
+        key='dept_mgr_unit_scope',
+    )
+    managed_units = [u for u in selected_units if u in _scope_units] if selected_units else _scope_units
+
     # Tabs similar to Director but scoped to department (add Knowledge Base)
     dept_tab1, dept_tab2, dept_tab3, dept_tab4, dept_tab5 = st.tabs([
         "📊 KPIs & Metrics",
@@ -6191,8 +6835,8 @@ elif role == 'Department Manager':
         else:
             # Department-scoped alerts: build all alerts then filter to units in department
             all_alerts = _build_escalation_alerts_df()
-            if not all_alerts.empty and units_in_dept:
-                dept_alerts = all_alerts[all_alerts['Unit'].isin(units_in_dept) | (all_alerts['Unassigned'] == True)]
+            if not all_alerts.empty and managed_units:
+                dept_alerts = all_alerts[all_alerts['Unit'].isin(managed_units) | (all_alerts['Unassigned'] == True)]
             else:
                 dept_alerts = all_alerts
 
@@ -6210,7 +6854,10 @@ elif role == 'Department Manager':
                     st.dataframe(viewer_alerts.head(25).astype(str), use_container_width=True, hide_index=True)
 
             # Department KPI tiles with deltas vs targets
-            _dm_d_kpis = get_kpi_metrics(department=viewer_department)
+            _dm_kpi_department = selected_departments[0] if len(selected_departments) == 1 else None
+            _dm_d_kpis = get_kpi_metrics(department=_dm_kpi_department)
+            if len(selected_departments) > 1:
+                st.caption("KPI tiles are showing agency roll-up while multiple departments are selected.")
             _dm_d_cr_d = round(_dm_d_kpis['report_completion_rate'] - 90.0, 1)
             _dm_d_ot_d = round(_dm_d_kpis['on_time_submissions'] - 85.0, 1)
             _dm_d_dq_d = round(_dm_d_kpis['data_quality_score'] - 95.0, 1)
@@ -6225,7 +6872,7 @@ elif role == 'Department Manager':
                 st.metric("Data Quality Score", f"{_dm_d_kpis['data_quality_score']}%",
                           delta=f"{_dm_d_dq_d:+.1f}% vs 95% target", delta_color="normal")
             with col4:
-                st.metric("Units in Dept", str(len(units_in_dept)),
+                st.metric("Units in Scope", str(len(managed_units)),
                           delta=f"{_dm_d_kpis['cqi_alignments']} CQI alignments")
 
             # Monthly submissions chart (department-scoped)
@@ -6254,8 +6901,8 @@ elif role == 'Department Manager':
             # Caseload work status (department-scoped)
             with st.expander("Caseload Work Status", expanded=False):
                 caseload_status_df = _build_caseload_work_status_df(scope_unit=None)
-                if not caseload_status_df.empty and units_in_dept:
-                    caseload_status_df = caseload_status_df[caseload_status_df['Unit'].isin(units_in_dept) | (caseload_status_df['Overall Status'] == 'Unassigned')]
+                if not caseload_status_df.empty and managed_units:
+                    caseload_status_df = caseload_status_df[caseload_status_df['Unit'].isin(managed_units) | (caseload_status_df['Overall Status'] == 'Unassigned')]
                 if caseload_status_df.empty:
                     st.info("No caseload work status available yet for this department.")
                 else:
@@ -6285,7 +6932,7 @@ elif role == 'Department Manager':
                 if _dm_d_kpis['data_quality_score'] < 95:
                     _dmd_items.append(f"Data quality {round(95 - _dm_d_kpis['data_quality_score'], 1)}% below 95% target")
                 _dmd_empty = [
-                    n for n in units_in_dept
+                    n for n in managed_units
                     if not any(st.session_state.get('reports_by_caseload', {}).get(c)
                                for c in sum(st.session_state.get('units', {}).get(n, {}).get('assignments', {}).values(), []))
                 ]
@@ -6298,6 +6945,7 @@ elif role == 'Department Manager':
 
     with dept_tab2:
         st.subheader("👥 Caseload Management - Department View")
+        _render_assignment_update_badge("Department Caseload")
         # Department manager should be able to run leadership exports and manage users/units scoped
         _render_leadership_exports(
             viewer_role='Department Manager',
@@ -6309,7 +6957,11 @@ elif role == 'Department Manager':
 
         # Department-scoped user and unit management (create units, add/delete workers, reassign)
         try:
-            render_user_management_panel("dept_admin", dept_scope=viewer_department)
+            render_user_management_panel(
+                "dept_admin",
+                dept_scope=(selected_departments[0] if len(selected_departments) == 1 else None),
+                unit_scope=managed_units,
+            )
         except Exception:
             # Fallback: call unscoped management panel if something goes wrong
             render_user_management_panel("dept_admin")
@@ -6318,7 +6970,7 @@ elif role == 'Department Manager':
         # Build worker metrics similar to Director view but scoped to department units
         worker_metrics = []
         all_workers = []
-        for unit_name in units_in_dept:
+        for unit_name in managed_units:
             unit = st.session_state.get('units', {}).get(unit_name, {})
             staff = (unit.get('support_officers', []) or []) + (unit.get('team_leads', []) or [])
             all_workers.extend(staff)
@@ -6361,13 +7013,18 @@ elif role == 'Department Manager':
         st.subheader("📋 Reassign Caseloads Between Department Workers")
         col1, col2, col3 = st.columns(3)
         with col1:
-            from_worker = st.selectbox("From Worker", all_workers, key="dept_reassign_from")
+            _dept_workers = sorted(list({str(w).strip() for w in all_workers if str(w).strip()}))
+            from_worker = st.selectbox(
+                "From Worker",
+                _dept_workers if _dept_workers else ['(No Workers in Scope)'],
+                key="dept_reassign_from"
+            )
 
         worker_unit = None
         worker_caseloads = []
-        for u_name in units_in_dept:
+        for u_name in managed_units:
             u = st.session_state.get('units', {}).get(u_name, {})
-            if from_worker and from_worker in u.get('assignments', {}):
+            if from_worker and from_worker != '(No Workers in Scope)' and from_worker in u.get('assignments', {}):
                 worker_unit = u_name
                 worker_caseloads = u['assignments'][from_worker]
                 break
@@ -6384,9 +7041,17 @@ elif role == 'Department Manager':
             caseload_to_move = st.selectbox("Select Caseload", worker_caseloads if worker_caseloads else [], key="dept_reassign_caseload")
 
         if st.button("🔄 Execute Department Reassignment", key="dept_reassign_exec"):
-            if from_worker and to_worker and caseload_to_move and worker_unit:
+            if from_worker == '(No Workers in Scope)':
+                st.error("No workers are available in the selected scope.")
+            elif from_worker and to_worker and caseload_to_move and worker_unit:
                 st.session_state.units[worker_unit]['assignments'][from_worker].remove(caseload_to_move)
                 st.session_state.units[worker_unit]['assignments'].setdefault(to_worker, []).append(caseload_to_move)
+                _note_assignment_update(
+                    action='reassign',
+                    caseload=caseload_to_move,
+                    source=f"{from_worker} ({worker_unit})",
+                    target=f"{to_worker} ({worker_unit})",
+                )
                 _persist_app_state()
                 st.success(f"✓ Caseload {caseload_to_move} reassigned from {from_worker} to {to_worker}")
                 st.rerun()
@@ -6400,7 +7065,7 @@ elif role == 'Department Manager':
         _dept_perf_rows = []
         _dept_total_cases = 0
         _dept_total_comp = 0
-        for _dp_unit_name in units_in_dept:
+        for _dp_unit_name in managed_units:
             _dp_unit = st.session_state.get('units', {}).get(_dp_unit_name, {})
             _dp_staff = (_dp_unit.get('support_officers', []) or []) + (_dp_unit.get('team_leads', []) or [])
             for _dp_worker in _dp_staff:
@@ -6432,7 +7097,8 @@ elif role == 'Department Manager':
 
         if _dept_perf_rows:
             _dept_rate = round(_dept_total_comp / _dept_total_cases * 100, 1) if _dept_total_cases > 0 else 0.0
-            _dept_kpis = get_kpi_metrics(department=viewer_department)
+            _dept_kpi_department = selected_departments[0] if len(selected_departments) == 1 else None
+            _dept_kpis = get_kpi_metrics(department=_dept_kpi_department)
             _dept_dq = _dept_kpis['data_quality_score']
             _dept_rate_delta = round(_dept_rate - 90.0, 1)
             _dept_dq_delta = round(_dept_dq - 95.0, 1)
@@ -6444,7 +7110,7 @@ elif role == 'Department Manager':
                 st.metric("Dept Data Quality", f"{_dept_dq:.1f}%",
                           delta=f"{_dept_dq_delta:+.1f}% vs 95% target", delta_color="normal")
             with _mc3:
-                st.metric("Staff Count", len(_dept_perf_rows), delta=f"{len(units_in_dept)} unit(s)")
+                st.metric("Staff Count", len(_dept_perf_rows), delta=f"{len(managed_units)} unit(s)")
 
             _dept_perf_df = pd.DataFrame(_dept_perf_rows)
 
@@ -6531,18 +7197,12 @@ elif role in ["Supervisor", "Senior Administrative Officer"]:
         _sup_viewer_name = (auth_result.display_name or auth_result.username or st.session_state.get('current_user', '') or '').strip()
 
         # Resolve viewer's own unit (unit where they are the supervisor)
-        _sup_own_unit_name = None
-        _sup_own_unit = None
-        for _svu_name, _svu in st.session_state.get('units', {}).items():
-            if _svu.get('supervisor') == _sup_viewer_name:
-                _sup_own_unit_name = _svu_name
-                _sup_own_unit = _svu
-                break
+        _sup_own_unit_name, _sup_own_unit = _find_supervisor_unit_record(_sup_viewer_name)
 
         # Resolve viewer's department from users list
         _sup_viewer_dept = None
         for _svu_u in st.session_state.get('users', []):
-            if str(_svu_u.get('name', '')).strip() == _sup_viewer_name:
+            if _name_key(_svu_u.get('name', '')) == _name_key(_sup_viewer_name):
                 _sup_viewer_dept = str(_svu_u.get('department', '')).strip() or None
                 break
 
@@ -6718,6 +7378,18 @@ elif role in ["Supervisor", "Senior Administrative Officer"]:
                         st.divider()
             else:
                 st.info("Your unit could not be determined. Ensure your name is set as a supervisor on a unit.")
+                _attempted_name = str(_sup_viewer_name or '').strip()
+                _available_supervisors = [
+                    str((u or {}).get('supervisor', '')).strip()
+                    for u in st.session_state.get('units', {}).values()
+                    if str((u or {}).get('supervisor', '')).strip()
+                ]
+                _available_supervisors = sorted(list(dict.fromkeys(_available_supervisors)))
+                st.caption(
+                    "Lookup diagnostics: "
+                    f"attempted supervisor='{_attempted_name or '(blank)'}'; "
+                    f"available supervisors={', '.join(_available_supervisors[:10]) if _available_supervisors else '(none configured)'}"
+                )
 
         # ── DEPARTMENT scope ──
         elif _sup_scope == "Department":
@@ -6810,15 +7482,10 @@ elif role in ["Supervisor", "Senior Administrative Officer"]:
     
     with sup_tab2:
         st.subheader("👥 Team Caseload Management")
+        _render_assignment_update_badge("Supervisor Caseload")
 
         _sup_viewer_name_tab2 = (auth_result.display_name or auth_result.username or st.session_state.get('current_user', '') or '').strip()
-        _sup_own_unit_name_tab2 = None
-        _sup_own_unit_tab2 = None
-        for _sup_unit_name, _sup_unit in st.session_state.get('units', {}).items():
-            if _sup_unit.get('supervisor') == _sup_viewer_name_tab2:
-                _sup_own_unit_name_tab2 = _sup_unit_name
-                _sup_own_unit_tab2 = _sup_unit
-                break
+        _sup_own_unit_name_tab2, _sup_own_unit_tab2 = _find_supervisor_unit_record(_sup_viewer_name_tab2)
 
         if role in {"Supervisor", "Senior Administrative Officer"}:
             _sup_scope_default = True if role == "Supervisor" else False
@@ -6858,13 +7525,9 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
 
         if selected_supervisor and selected_supervisor != '(Select)':
             # Find unit for this supervisor
-            unit_found = None
-            for unit_name, unit in st.session_state.units.items():
-                if unit.get('supervisor') == selected_supervisor:
-                    unit_found = (unit_name, unit)
-                    break 
+            unit_found = _find_supervisor_unit_record(selected_supervisor)
 
-            if unit_found:
+            if unit_found and unit_found[0] and unit_found[1]:
                 unit_name, unit = unit_found
                 caseload_view = st.radio(
                     "Team Caseload View",
@@ -6875,7 +7538,7 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
 
                 selected_supervisor_department = str((unit or {}).get('department', '')).strip()
                 for _usr in st.session_state.get('users', []):
-                    if str(_usr.get('name', '')).strip() == str(selected_supervisor).strip():
+                    if _name_key(_usr.get('name', '')) == _name_key(selected_supervisor):
                         selected_supervisor_department = str(_usr.get('department', '')).strip() or selected_supervisor_department
                         break
 
@@ -6941,10 +7604,16 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                     for prefix in (unit.get('caseload_series_prefixes', []) or [])
                 ]
                 unit_prefixes = [p for p in unit_prefixes if p]
-                if unit_prefixes:
+                unit_pool_numbers = [
+                    normalize_caseload_number(v)
+                    for v in (unit.get('caseload_numbers', []) or [])
+                ]
+                unit_pool_numbers = [v for v in unit_pool_numbers if v]
+
+                if unit_prefixes or unit_pool_numbers:
                     globally_unassigned = [
                         c for c in globally_unassigned
-                        if any(str(c).startswith(prefix) for prefix in unit_prefixes)
+                        if (c in unit_pool_numbers) or any(str(c).startswith(prefix) for prefix in unit_prefixes)
                     ]
 
                 if globally_unassigned:
@@ -6954,6 +7623,12 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                     if st.button("Pull Selected Caseload to Myself", key="sup_self_pull_btn"):
                         if caseload_to_pull and caseload_to_pull not in unit['assignments'][selected_supervisor]:
                             unit['assignments'][selected_supervisor].append(caseload_to_pull)
+                            _note_assignment_update(
+                                action='assign',
+                                caseload=caseload_to_pull,
+                                source='Unassigned Pool',
+                                target=f"{selected_supervisor} ({unit_name})",
+                            )
                             _persist_app_state()
                             st.success(f"✓ Caseload {caseload_to_pull} assigned to {selected_supervisor}")
                             st.rerun()
@@ -7004,8 +7679,15 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                         if caseload_choice in st.session_state.units[unit_name]['assignments'].get(from_worker, []):
                             st.session_state.units[unit_name]['assignments'][from_worker].remove(caseload_choice)
                             st.session_state.units[unit_name]['assignments'].setdefault(to_worker, []).append(caseload_choice)
+                            _note_assignment_update(
+                                action='reassign',
+                                caseload=caseload_choice,
+                                source=f"{from_worker} ({unit_name})",
+                                target=f"{to_worker} ({unit_name})",
+                            )
                             _persist_app_state()
                             st.success(f"✓ Caseload {caseload_choice} moved from {from_worker} to {to_worker}")
+                            st.rerun()
                         else:
                             st.error("Selected caseload not found for the source worker")
 
@@ -7041,8 +7723,15 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                                 st.session_state.units[dest_unit].setdefault('assignments', {}).setdefault(dest_person, [])
                                 if move_caseload not in st.session_state.units[dest_unit]['assignments'][dest_person]:
                                     st.session_state.units[dest_unit]['assignments'][dest_person].append(move_caseload)
+                                _note_assignment_update(
+                                    action='reassign',
+                                    caseload=move_caseload,
+                                    source=f"{cur_owner} ({cur_unit})" if cur_owner and cur_unit else 'Unassigned',
+                                    target=f"{dest_person} ({dest_unit})",
+                                )
                                 _persist_app_state()
                                 st.success(f"✓ Caseload {move_caseload} reassigned to {dest_person} (unit: {dest_unit})")
+                                st.rerun()
 
                     st.divider()
                     # Worker Self-Pull: allow workers to pull a caseload only to themselves (no claiming for others)
@@ -7166,8 +7855,15 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                                 else:
                                     # Assign to the pull_worker within this unit
                                     st.session_state.units[unit_name].setdefault('assignments', {}).setdefault(pull_worker, []).append(pull_caseload)
+                                    _note_assignment_update(
+                                        action='assign',
+                                        caseload=pull_caseload,
+                                        source='Unassigned Pool',
+                                        target=f"{pull_worker} ({unit_name})",
+                                    )
                                     _persist_app_state()
                                     st.success(f"✓ Caseload {pull_caseload} claimed by {pull_worker} in unit '{unit_name}'")
+                                    st.rerun()
                 else:
                     st.info("No team members assigned yet for this supervisor")
             else:
@@ -7179,13 +7875,7 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
         st.subheader("📈 Team Performance Analytics")
 
         _sup_viewer_name_tab3 = (auth_result.display_name or auth_result.username or st.session_state.get('current_user', '') or '').strip()
-        _sup_own_unit_name_tab3 = None
-        _sup_own_unit_tab3 = None
-        for _sup_unit_name, _sup_unit in st.session_state.get('units', {}).items():
-            if _sup_unit.get('supervisor') == _sup_viewer_name_tab3:
-                _sup_own_unit_name_tab3 = _sup_unit_name
-                _sup_own_unit_tab3 = _sup_unit
-                break
+        _sup_own_unit_name_tab3, _sup_own_unit_tab3 = _find_supervisor_unit_record(_sup_viewer_name_tab3)
 
         _sup_only_my_unit_t3 = bool(st.session_state.get('sup_only_my_unit_team', role == "Supervisor"))
         if _sup_only_my_unit_t3 and _sup_own_unit_name_tab3 and _sup_own_unit_tab3:
@@ -7197,18 +7887,14 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
         
         # Performance metrics - Re-calculate based on selected supervisor in tab 2
         if selected_sup_key and selected_sup_key != '(Select)':
-            unit_found = None
-            for unit_name, unit in st.session_state.units.items():
-                if unit.get('supervisor') == selected_sup_key:
-                    unit_found = (unit_name, unit)
-                    break 
+            unit_found = _find_supervisor_unit_record(selected_sup_key)
             
-            if unit_found:
+            if unit_found and unit_found[0] and unit_found[1]:
                 unit_name, unit = unit_found
                 # Resolve selected supervisor's department (fallback to unit department)
                 selected_supervisor_department = str((unit or {}).get('department', '')).strip()
                 for _u in st.session_state.get('users', []):
-                    if str(_u.get('name', '')).strip() == str(selected_sup_key).strip():
+                    if _name_key(_u.get('name', '')) == _name_key(selected_sup_key):
                         selected_supervisor_department = str(_u.get('department', '')).strip() or selected_supervisor_department
                         break
 
@@ -7355,6 +8041,7 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
 elif role == "Support Officer":
     st.markdown(f'<div class="header-title">📋 {selected_role} - Caseload Management</div>', unsafe_allow_html=True)
     st.markdown("**Assigned Reports & Technical Support**")
+    _render_assignment_update_badge("Support Caseload")
 
     administrative_processing_roles = {
         "Administrative Assistant",
@@ -7411,12 +8098,14 @@ elif role == "Support Officer":
     for unit in st.session_state.units.values():
         all_sos.extend(unit.get('support_officers', []))
         all_sos.extend(unit.get('team_leads', []))
-    all_sos = sorted(list(set(all_sos)))
+    all_sos = sorted(list({str(n).strip() for n in all_sos if str(n).strip()}))
+    all_sos_by_key = {_name_key(n): n for n in all_sos}
 
     if auth_result.authenticated:
         signed_in_worker = (auth_result.display_name or auth_result.username or '').strip()
-        if signed_in_worker in all_sos:
-            acting_so = signed_in_worker
+        signed_in_key = _name_key(signed_in_worker)
+        if signed_in_key in all_sos_by_key:
+            acting_so = all_sos_by_key[signed_in_key]
             st.caption(f"Signed in as: {acting_so} (identity locked)")
         else:
             acting_so = '(Select)'
@@ -7430,20 +8119,27 @@ elif role == "Support Officer":
     # Caseload Metrics (for selected person)
     col1, col2, col3, col4 = st.columns(4)
     if acting_so and acting_so != '(Select)':
+        acting_so_key = _name_key(acting_so)
         # find caseloads assigned across units
         assigned_caseloads = []
         for unit in st.session_state.units.values():
             for person, caseloads in unit.get('assignments', {}).items():
-                if person == acting_so:
+                if _name_key(person) == acting_so_key:
                     assigned_caseloads.extend(caseloads)
 
         support_kpi_df = get_support_officer_kpi_dataframe()
-        acting_kpi = support_kpi_df[support_kpi_df['Support Officer'] == acting_so] if not support_kpi_df.empty else pd.DataFrame()
+        if not support_kpi_df.empty and 'Support Officer' in support_kpi_df.columns:
+            acting_kpi = support_kpi_df[support_kpi_df['Support Officer'].astype(str).apply(_name_key) == acting_so_key]
+        else:
+            acting_kpi = pd.DataFrame()
         reports_worked = int(acting_kpi['Reports Worked'].iloc[0]) if not acting_kpi.empty else 0
         case_lines_worked = int(acting_kpi['Case Lines Worked'].iloc[0]) if not acting_kpi.empty else 0
         case_lines_completed = int(acting_kpi['Case Lines Completed'].iloc[0]) if not acting_kpi.empty else 0
         throughput_df = get_support_officer_throughput_dataframe()
-        acting_throughput = throughput_df[throughput_df['Support Officer'] == acting_so] if not throughput_df.empty else pd.DataFrame()
+        if not throughput_df.empty and 'Support Officer' in throughput_df.columns:
+            acting_throughput = throughput_df[throughput_df['Support Officer'].astype(str).apply(_name_key) == acting_so_key]
+        else:
+            acting_throughput = pd.DataFrame()
         lines_worked_7d = int(acting_throughput['Lines Worked (7d)'].iloc[0]) if not acting_throughput.empty else 0
 
         st.session_state.setdefault('last_acting_so', acting_so)
@@ -7516,10 +8212,11 @@ elif role == "Support Officer":
         with col1:
             # If acting as a Support Officer, limit caseloads to assigned ones
             if 'acting_so' in locals() and acting_so and acting_so != '(Select)':
+                _acting_so_key = _name_key(acting_so)
                 options = []
                 for unit in st.session_state.units.values():
                     for person, caseloads in unit.get('assignments', {}).items():
-                        if person == acting_so:
+                        if _name_key(person) == _acting_so_key:
                             options.extend(caseloads)
                 # fallback to all if none assigned
                 if not options:
@@ -7793,10 +8490,11 @@ elif role == "Support Officer":
         if not acting_so or acting_so == '(Select)':
             st.info("Select yourself at the top of the page to view assigned reports.")
         else:
+            _acting_so_key = _name_key(acting_so)
             assigned_to_worker = []
             for unit in st.session_state.units.values():
                 for person, caseloads in unit.get('assignments', {}).items():
-                    if person == acting_so:
+                    if _name_key(person) == _acting_so_key:
                         assigned_to_worker.extend(caseloads)
 
             assigned_to_worker = sorted(list(set(assigned_to_worker)))
@@ -7854,7 +8552,7 @@ elif role == "Support Officer":
                 )
                 my_audit_rows = []
                 for audit_entry in st.session_state.get('upload_audit_log', []):
-                    if audit_entry.get('assigned_worker') == acting_so:
+                    if _name_key(audit_entry.get('assigned_worker')) == _acting_so_key:
                         my_audit_rows.append({
                             'Timestamp': pd.to_datetime(audit_entry.get('timestamp')),
                             'Report ID': audit_entry.get('report_id'),
@@ -7878,7 +8576,7 @@ elif role == "Support Officer":
                     if selected_group != '(All)' and caseload_series_group_label(caseload) != selected_group:
                         continue
                     for report_idx, report in enumerate(st.session_state.reports_by_caseload.get(caseload, [])):
-                        if report.get('assigned_worker') and report.get('assigned_worker') != acting_so:
+                        if report.get('assigned_worker') and _name_key(report.get('assigned_worker')) != _acting_so_key:
                             continue_processing = False
                         else:
                             continue_processing = True
@@ -7927,9 +8625,9 @@ elif role == "Support Officer":
                     _acting_worker = str(acting_so or '').strip()
                     if _acting_worker:
                         if not kpi_df.empty and 'Support Officer' in kpi_df.columns:
-                            kpi_df = kpi_df[kpi_df['Support Officer'].astype(str).str.strip() == _acting_worker]
+                            kpi_df = kpi_df[kpi_df['Support Officer'].astype(str).apply(_name_key) == _name_key(_acting_worker)]
                         if not throughput_df.empty and 'Support Officer' in throughput_df.columns:
-                            throughput_df = throughput_df[throughput_df['Support Officer'].astype(str).str.strip() == _acting_worker]
+                            throughput_df = throughput_df[throughput_df['Support Officer'].astype(str).apply(_name_key) == _name_key(_acting_worker)]
 
                     st.write("**Support Officer KPI Tracker (Assigned Reports)**")
                     if not kpi_df.empty:
@@ -7984,7 +8682,7 @@ elif role == "Support Officer":
                         unassigned_mask = working_df['Assigned Worker'].str.strip() == ''
                         working_df.loc[unassigned_mask, 'Assigned Worker'] = acting_so
 
-                        worker_rows = working_df[working_df['Assigned Worker'].str.strip() == acting_so].copy()
+                        worker_rows = working_df[working_df['Assigned Worker'].astype(str).apply(_name_key) == _acting_so_key].copy()
                         if worker_rows.empty:
                             st.info("No case rows are currently assigned to you in this report.")
                             selected_report['data'] = working_df
@@ -8427,7 +9125,7 @@ P-S Report: Contacted client via phone/web portal. Action taken: CONTACT LETTER.
                                             )
                                         else:
                                             # Additional submit-time validations aligned to 56RA / P-S guidance.
-                                            validation_rows = working_df[working_df['Assigned Worker'].str.strip() == acting_so].copy()
+                                            validation_rows = working_df[working_df['Assigned Worker'].astype(str).apply(_name_key) == _acting_so_key].copy()
                                             completed_mask = validation_rows['Worker Status'].astype(str).str.strip() == 'Completed'
                                             completed_rows = validation_rows[completed_mask].copy()
 
@@ -8466,7 +9164,7 @@ P-S Report: Contacted client via phone/web portal. Action taken: CONTACT LETTER.
             # Lightweight metrics for the current worker
             my_tickets = [
                 t for t in (st.session_state.get('help_tickets', []) or [])
-                if str(t.get('submitter_name') or '').strip() == str(acting_so).strip()
+                if _name_key(t.get('submitter_name')) == _name_key(acting_so)
             ]
             open_statuses = {'Open', 'Assigned', 'In Progress', 'Waiting on Submitter'}
             my_open = sum(1 for t in my_tickets if str(t.get('status') or '').strip() in open_statuses)
@@ -8559,6 +9257,7 @@ elif role == "IT Administrator":
     
     with it_tab2:
         st.subheader("👥 User & Caseload Management")
+        _render_assignment_update_badge("IT Caseload Admin")
         # Current user for audit purposes
         current_user = st.text_input("Current User (for audit)", value=st.session_state.get('current_user', ''), help="Enter your name to be recorded in audit entries.")
         if current_user:
@@ -8693,9 +9392,16 @@ elif role == "IT Administrator":
                         person_list = assignments.setdefault(assignee, [])
                         if caseload_to_assign not in person_list:
                             person_list.append(caseload_to_assign)
+                            _note_assignment_update(
+                                action='assign',
+                                caseload=caseload_to_assign,
+                                source='IT Admin Mapping',
+                                target=f"{assignee} ({target_unit})",
+                            )
 
             _persist_app_state()
             st.success(f"✓ Unit '{target_unit}' created/updated")
+            st.rerun()
 
         # Quick view of units
         st.write("**Current Units:**")
@@ -8742,6 +9448,12 @@ elif role == "IT Administrator":
                                             if not assignments.get(remove_person):
                                                 del assignments[remove_person]
                                             st.session_state.units[remove_unit]['assignments'] = assignments
+                                            _note_assignment_update(
+                                                action='remove',
+                                                caseload=remove_caseload,
+                                                source=f"{remove_person} ({remove_unit})",
+                                                target='Unassigned Pool',
+                                            )
                                             _persist_app_state()
                                             # Append audit log entry
                                             st.session_state.audit_log.append({
@@ -8762,6 +9474,7 @@ elif role == "IT Administrator":
                                             except Exception as e:
                                                 st.warning(f"Could not persist audit entry to disk: {e}")
                                             st.success(f"✓ Removed caseload {remove_caseload} from {remove_person} in unit '{remove_unit}'")
+                                            st.rerun()
                                 with col_c2:
                                     if st.button("Cancel", key=f"cancel_remove_{remove_unit}_{remove_person}_{remove_caseload}"):
                                         st.info("Removal cancelled.")
