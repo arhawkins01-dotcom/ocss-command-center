@@ -339,6 +339,39 @@ def _name_key(value: str) -> str:
     return re.sub(r"[\W_]+", "", normalized)
 
 
+def _name_alias_keys(value: str) -> set[str]:
+    """Return identity keys including middle-initial-insensitive variants.
+
+    Example: "Anna K. Engler" -> {"annakengler", "annaengler"}
+    """
+    text = str(value or '').strip().casefold()
+    if not text:
+        return set()
+
+    tokens = [token for token in re.findall(r"[a-z0-9]+", text) if token]
+    if not tokens:
+        return set()
+
+    strict_key = ''.join(tokens)
+    keys = {strict_key} if strict_key else set()
+
+    if len(tokens) >= 3:
+        compact_tokens = [tokens[0]] + [token for token in tokens[1:-1] if len(token) > 1] + [tokens[-1]]
+        compact_key = ''.join(compact_tokens)
+        if compact_key:
+            keys.add(compact_key)
+
+    return {key for key in keys if key}
+
+
+def _names_match(left: str, right: str) -> bool:
+    left_keys = _name_alias_keys(left)
+    right_keys = _name_alias_keys(right)
+    if not left_keys or not right_keys:
+        return False
+    return bool(left_keys.intersection(right_keys))
+
+
 def _get_repo_root_dir() -> Path:
     return Path(__file__).resolve().parent.parent
 
@@ -2611,7 +2644,194 @@ def _apply_establishment_roster_alignment() -> None:
         return
 
 
+def _merge_establishment_duplicate_names_preserve_assignments() -> None:
+    """Merge duplicate Establishment names in users/units while preserving assignments.
+
+    Excludes James Brown/Borwn variants from merge as requested for demo safety.
+    """
+    try:
+        units = st.session_state.get('units', {}) or {}
+        users = st.session_state.get('users', []) or []
+        if not isinstance(units, dict) or not isinstance(users, list):
+            return
+
+        excluded_keys = _name_alias_keys('James Brown').union(_name_alias_keys('James Borwn'))
+
+        establishment_unit_names = [
+            str(unit_name).strip()
+            for unit_name, unit_data in units.items()
+            if str((unit_data or {}).get('department', '')).strip() == 'Establishment'
+        ]
+        if not establishment_unit_names:
+            return
+
+        canonical_by_key: dict[str, str] = {}
+
+        def _track_name(raw_name: str) -> None:
+            cleaned = str(raw_name or '').strip()
+            if not cleaned:
+                return
+            keys = _name_alias_keys(cleaned)
+            if not keys:
+                return
+            if keys.intersection(excluded_keys):
+                return
+            for key in keys:
+                canonical_by_key.setdefault(key, cleaned)
+
+        # Prefer user-table display names first, then unit roster names.
+        for user in users:
+            if str(user.get('department', '')).strip() == 'Establishment':
+                _track_name(user.get('name', ''))
+
+        for unit_name in establishment_unit_names:
+            unit = units.get(unit_name, {}) or {}
+            _track_name(unit.get('supervisor', ''))
+            for person_name in (unit.get('team_leads', []) or []):
+                _track_name(person_name)
+            for person_name in (unit.get('support_officers', []) or []):
+                _track_name(person_name)
+            for person_name in (unit.get('assignments', {}) or {}).keys():
+                _track_name(person_name)
+
+        def _canonical_name(raw_name: str) -> str:
+            cleaned = str(raw_name or '').strip()
+            if not cleaned:
+                return ''
+            keys = _name_alias_keys(cleaned)
+            if not keys or keys.intersection(excluded_keys):
+                return cleaned
+            for key in keys:
+                mapped = canonical_by_key.get(key)
+                if mapped:
+                    return mapped
+            return cleaned
+
+        def _dedupe_preserve_order(names: list[str]) -> list[str]:
+            seen = set()
+            out = []
+            for raw_name in names or []:
+                canonical = _canonical_name(raw_name)
+                keys = _name_alias_keys(canonical)
+                if not canonical or not keys:
+                    continue
+                if seen.intersection(keys):
+                    continue
+                seen.update(keys)
+                out.append(canonical)
+            return out
+
+        changed = False
+
+        # Merge duplicate names in Establishment unit rosters and assignments.
+        for unit_name in establishment_unit_names:
+            unit = units.get(unit_name, {}) or {}
+
+            supervisor_old = str(unit.get('supervisor', '')).strip()
+            supervisor_new = _canonical_name(supervisor_old)
+            if supervisor_old != supervisor_new:
+                unit['supervisor'] = supervisor_new
+                changed = True
+
+            team_old = [str(v).strip() for v in (unit.get('team_leads', []) or []) if str(v).strip()]
+            team_new = _dedupe_preserve_order(team_old)
+            if team_old != team_new:
+                unit['team_leads'] = team_new
+                changed = True
+
+            support_old = [str(v).strip() for v in (unit.get('support_officers', []) or []) if str(v).strip()]
+            support_new = _dedupe_preserve_order(support_old)
+            if support_old != support_new:
+                unit['support_officers'] = support_new
+                changed = True
+
+            assignments_old = unit.get('assignments', {}) or {}
+            merged_assignments: dict[str, list[str]] = {}
+            for assignee_name, caseloads in assignments_old.items():
+                assignee = _canonical_name(assignee_name)
+                if not assignee:
+                    continue
+                merged_assignments.setdefault(assignee, [])
+                for caseload in (caseloads or []):
+                    caseload_clean = str(caseload or '').strip()
+                    if caseload_clean and caseload_clean not in merged_assignments[assignee]:
+                        merged_assignments[assignee].append(caseload_clean)
+
+            # Preserve assignment placeholders for known members so current ownership remains visible.
+            for known_member in [supervisor_new] + team_new + support_new:
+                known_clean = str(known_member or '').strip()
+                if known_clean:
+                    merged_assignments.setdefault(known_clean, [])
+
+            if assignments_old != merged_assignments:
+                unit['assignments'] = merged_assignments
+                changed = True
+
+        # Merge duplicate Establishment user rows by canonical name key.
+        merged_users = []
+        est_index_by_key: dict[str, int] = {}
+
+        for user in users:
+            department = str(user.get('department', '')).strip()
+            if department != 'Establishment':
+                merged_users.append(user)
+                continue
+
+            original_name = str(user.get('name', '')).strip()
+            canonical_name = _canonical_name(original_name)
+            canonical_keys = _name_alias_keys(canonical_name or original_name)
+            canonical_key = sorted(canonical_keys)[0] if canonical_keys else ''
+
+            if not canonical_name or not canonical_key or canonical_keys.intersection(excluded_keys):
+                merged_users.append(user)
+                continue
+
+            user_copy = dict(user)
+            if original_name != canonical_name:
+                user_copy['name'] = canonical_name
+                changed = True
+
+            if canonical_key not in est_index_by_key:
+                est_index_by_key[canonical_key] = len(merged_users)
+                merged_users.append(user_copy)
+                continue
+
+            # Duplicate Establishment user row -> merge non-empty fields into first row.
+            primary = merged_users[est_index_by_key[canonical_key]]
+            for field_name in ('role', 'unit', 'unit_role'):
+                primary_value = str(primary.get(field_name, '') or '').strip()
+                incoming_value = str(user_copy.get(field_name, '') or '').strip()
+                if not primary_value and incoming_value:
+                    primary[field_name] = incoming_value
+                    changed = True
+            changed = True
+
+        if users != merged_users:
+            st.session_state['users'] = merged_users
+
+        # Keep current login identity consistent if it matched a merged Establishment alias.
+        current_user = str(st.session_state.get('current_user', '') or '').strip()
+        if current_user:
+            current_keys = _name_alias_keys(current_user)
+            if not current_keys.intersection(excluded_keys):
+                current_canonical = current_user
+                for current_key in current_keys:
+                    mapped = canonical_by_key.get(current_key)
+                    if mapped:
+                        current_canonical = mapped
+                        break
+                if current_canonical != current_user:
+                    st.session_state['current_user'] = current_canonical
+                    changed = True
+
+        if changed:
+            _persist_app_state()
+    except Exception:
+        return
+
+
 _apply_establishment_roster_alignment()
+_merge_establishment_duplicate_names_preserve_assignments()
 
 
 def _rename_person_in_units(old_name: str, new_name: str):
@@ -2744,19 +2964,23 @@ def _find_unit_for_person(person: str) -> str | None:
     person = str(person or '').strip()
     if not person:
         return None
-    person_key = _name_key(person)
+    person_keys = _name_alias_keys(person)
+    if not person_keys:
+        return None
     for unit_name, unit in st.session_state.get('units', {}).items():
-        if _name_key(unit.get('supervisor', '')) == person_key:
+        if person_keys.intersection(_name_alias_keys(unit.get('supervisor', ''))):
             return unit_name
-        if person_key in {_name_key(n) for n in (unit.get('team_leads', []) or [])}:
+        team_keys = set().union(*[_name_alias_keys(n) for n in (unit.get('team_leads', []) or [])]) if (unit.get('team_leads', []) or []) else set()
+        if person_keys.intersection(team_keys):
             return unit_name
-        if person_key in {_name_key(n) for n in (unit.get('support_officers', []) or [])}:
+        support_keys = set().union(*[_name_alias_keys(n) for n in (unit.get('support_officers', []) or [])]) if (unit.get('support_officers', []) or []) else set()
+        if person_keys.intersection(support_keys):
             return unit_name
 
     # Fallback to user record (new schema: `unit`, legacy: `department`)
     for u in st.session_state.get('users', []) or []:
         try:
-            if _name_key(u.get('name', '')) != person_key:
+            if not person_keys.intersection(_name_alias_keys(u.get('name', ''))):
                 continue
             unit = str(u.get('unit') or '').strip()
             if unit:
@@ -2774,9 +2998,11 @@ def _find_supervisor_unit_record(supervisor_name: str) -> tuple[str | None, dict
     if not supervisor_name:
         return None, None
 
-    supervisor_key = _name_key(supervisor_name)
+    supervisor_keys = _name_alias_keys(supervisor_name)
+    if not supervisor_keys:
+        return None, None
     for unit_name, unit in st.session_state.get('units', {}).items():
-        if _name_key(unit.get('supervisor', '')) == supervisor_key:
+        if supervisor_keys.intersection(_name_alias_keys(unit.get('supervisor', ''))):
             return str(unit_name), unit
 
     fallback_unit_name = _find_unit_for_person(supervisor_name)
@@ -3091,43 +3317,50 @@ def normalize_support_report_dataframe(df: pd.DataFrame, fallback_caseload: str)
 def get_worker_user_names() -> list:
     # Build canonical worker display names keyed by normalized identity.
     # Prefer names from unit configuration first, then fill from user records.
-    workers_by_key: dict[str, str] = {}
+    workers: list[str] = []
+    seen_keys: set[str] = set()
+
+    def _add_worker(raw_name: str) -> None:
+        cleaned = str(raw_name or '').strip()
+        if not cleaned:
+            return
+        alias_keys = _name_alias_keys(cleaned)
+        if not alias_keys:
+            return
+        if seen_keys.intersection(alias_keys):
+            return
+        workers.append(cleaned)
+        seen_keys.update(alias_keys)
 
     for unit in st.session_state.get('units', {}).values():
         for raw_name in list(unit.get('team_leads', []) or []) + list(unit.get('support_officers', []) or []):
-            cleaned = str(raw_name or '').strip()
-            key = _name_key(cleaned)
-            if cleaned and key and key not in workers_by_key:
-                workers_by_key[key] = cleaned
+            _add_worker(raw_name)
 
     for user in st.session_state.get('users', []):
         if user.get('role') in {'Support Officer', 'Team Lead'}:
-            cleaned = str(user.get('name', '') or '').strip()
-            key = _name_key(cleaned)
-            if cleaned and key and key not in workers_by_key:
-                workers_by_key[key] = cleaned
+            _add_worker(user.get('name', ''))
 
-    return sorted(list(workers_by_key.values()))
+    return sorted(workers)
 
 
 def _resolve_worker_name_alias(worker_name: str) -> str:
     """Resolve a worker name to canonical roster spelling (case/whitespace insensitive)."""
     cleaned = str(worker_name or '').strip()
-    key = _name_key(cleaned)
-    if not key:
+    alias_keys = _name_alias_keys(cleaned)
+    if not alias_keys:
         return ''
 
     # Prefer canonical names from unit rosters.
     for unit in st.session_state.get('units', {}).values():
         for raw_name in list(unit.get('team_leads', []) or []) + list(unit.get('support_officers', []) or []):
             candidate = str(raw_name or '').strip()
-            if _name_key(candidate) == key:
+            if alias_keys.intersection(_name_alias_keys(candidate)):
                 return candidate
 
     # Fall back to users table.
     for user in st.session_state.get('users', []):
         candidate = str(user.get('name', '') or '').strip()
-        if _name_key(candidate) == key:
+        if alias_keys.intersection(_name_alias_keys(candidate)):
             return candidate
 
     return cleaned
@@ -3136,18 +3369,18 @@ def _resolve_worker_name_alias(worker_name: str) -> str:
 def find_worker_unit(worker_name: str) -> str:
     if not worker_name:
         return ''
-    worker_key = _name_key(worker_name)
-    if not worker_key:
+    worker_keys = _name_alias_keys(worker_name)
+    if not worker_keys:
         return ''
 
     for unit_name, unit in st.session_state.get('units', {}).items():
-        support_keys = {_name_key(name) for name in (unit.get('support_officers', []) or [])}
-        team_lead_keys = {_name_key(name) for name in (unit.get('team_leads', []) or [])}
-        if worker_key in support_keys or worker_key in team_lead_keys:
+        support_keys = set().union(*[_name_alias_keys(name) for name in (unit.get('support_officers', []) or [])]) if (unit.get('support_officers', []) or []) else set()
+        team_lead_keys = set().union(*[_name_alias_keys(name) for name in (unit.get('team_leads', []) or [])]) if (unit.get('team_leads', []) or []) else set()
+        if worker_keys.intersection(support_keys) or worker_keys.intersection(team_lead_keys):
             return unit_name
 
     for user in st.session_state.get('users', []):
-        if _name_key(user.get('name', '')) == worker_key:
+        if worker_keys.intersection(_name_alias_keys(user.get('name', ''))):
             unit = str(user.get('unit', '')).strip()
             if unit:
                 return unit
@@ -4512,11 +4745,13 @@ def render_user_management_panel(
         options=['(New Unit)'] + unit_choices,
         key=f"{key_prefix}_unit_group_select"
     )
+    selected_unit = str(selected_unit or '').strip() or '(New Unit)'
     unit_name_input = st.text_input(
         "Unit Name",
         value='' if selected_unit == '(New Unit)' else selected_unit,
         key=f"{key_prefix}_unit_name_input"
     )
+    unit_name_input = str(unit_name_input or '')
 
     effective_unit_name = unit_name_input.strip() if unit_name_input.strip() else (selected_unit if selected_unit != '(New Unit)' else '')
     current_unit_data = st.session_state.units.get(
@@ -4854,8 +5089,11 @@ def render_user_management_panel(
             if caller_role and not role_has(caller_role, 'manage_users'):
                 st.error("Permission denied: you cannot add users.")
                 st.stop()
-            existing = {u['name'].strip().lower() for u in st.session_state.users}
-            if cleaned_name.lower() in existing:
+            duplicate_existing = any(
+                _names_match(u.get('name', ''), cleaned_name)
+                for u in st.session_state.users
+            )
+            if duplicate_existing:
                 st.error(f"User '{cleaned_name}' already exists.")
             else:
                 if new_user_role == 'Director':
@@ -4958,7 +5196,7 @@ def render_user_management_panel(
                     st.error("User name cannot be empty.")
                 else:
                     duplicate_name = any(
-                        idx != selected_index and user['name'].strip().lower() == cleaned_edited_name.lower()
+                        idx != selected_index and _names_match(user.get('name', ''), cleaned_edited_name)
                         for idx, user in enumerate(st.session_state.users)
                     )
                     if duplicate_name:
