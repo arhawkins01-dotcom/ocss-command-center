@@ -13,7 +13,7 @@ OCSS_DEPARTMENTS = {
             'New Order Unit 22',
             # Clerical units
             'Front Desk Unit 8',
-            'Genetic Testing Unit',
+            'Genetic Testing Unit 22',
             'Interface Unit 23',
         ]
     },
@@ -210,6 +210,17 @@ for _unit_name, _prefixes in _DEFAULT_CASELOAD_SERIES_PREFIXES.items():
 # Establishment unit rosters (caseload assignments) where caseloads are known.
 _DEFAULT_UNIT_ROSTERS = {
     'Establishment Unit 15': {
+        'supervisor': 'Stacy Slick-Williams',
+        'team_leads': ['Anna K. Engler', 'Akilah Rasheed-Tinsley'],
+        'support_officers': [
+            'Anna K. Engler',
+            'Joy G. Ogunmola',
+            'Akilah Rasheed-Tinsley',
+            'Brittany Baran',
+            'Jeffrey A. Swanson',
+            'Cyrita J. Johnson',
+        ],
+        'caseload_numbers': ['181100', '181101', '181103', '181105', '181106', '181107', '181109', '181110', '181112'],
         'assignments': {
             'Stacy Slick-Williams': ['181100'],
             'Anna K. Engler': ['181101'],
@@ -221,6 +232,17 @@ _DEFAULT_UNIT_ROSTERS = {
         },
     },
     'Establishment Unit 16': {
+        'supervisor': 'Robin L. Patterson',
+        'team_leads': ['April Jeter', 'Awilda Martinez'],
+        'support_officers': [
+            'April Jeter',
+            'Karen McRowe',
+            'Tamika Joseph-McManus',
+            'Awilda Martinez',
+            'Richard Fletcher',
+            'Natalie Spatafore',
+        ],
+        'caseload_numbers': ['181200', '181201', '181202', '181204', '181205', '181208', '181209', '181213', '181214'],
         'assignments': {
             'Robin L. Patterson': ['181200'],
             'April Jeter': ['181204'],
@@ -232,6 +254,17 @@ _DEFAULT_UNIT_ROSTERS = {
         },
     },
     'Establishment Unit 17': {
+        'supervisor': 'Jeanne Sua',
+        'team_leads': ['Kristine DeSouza', 'L. Arlene Gonzalez'],
+        'support_officers': [
+            'Kristine DeSouza',
+            'Patricia Bennett',
+            'Cecelia Durham',
+            'Mayra Berrios',
+            'L. Arlene Gonzalez',
+            'Hannah Maynard',
+        ],
+        'caseload_numbers': ['181300', '181301', '181302', '181303', '181304', '181305', '181306', '181307', '181308'],
         'assignments': {
             'Jeanne Sua': ['181300'],
             'Kristine DeSouza': ['181301'],
@@ -244,6 +277,15 @@ _DEFAULT_UNIT_ROSTERS = {
     },
     'New Order Unit 22': {
         'supervisor': 'James Brown',
+        'team_leads': ['Nadia Ahmetovic'],
+        'support_officers': [
+            'Nadia Ahmetovic',
+            'Latonya Grays-Martin',
+            'Michelle Fogler',
+            'Tracy Wilson',
+            'William Wedmedyk',
+        ],
+        'caseload_numbers': ['182001', '182002', '182003', '182004', '182005'],
         'assignments': {
             'Nadia Ahmetovic': ['182001'],
             'Latonya Grays-Martin': ['182002'],
@@ -253,12 +295,19 @@ _DEFAULT_UNIT_ROSTERS = {
         },
     },
     'Front Desk Unit 8': {
+        'supervisor': 'James Brown',
+        'team_leads': ['Reginald Davis'],
         'support_officers': [
             'Pamela Alexander',
             'Danielle Deberry',
             'Reginald Davis',
             'Aleesha Anderson',
-            'Silas Ungar',
+        ],
+    },
+    'Genetic Testing Unit 22': {
+        'supervisor': 'Silas Ungar',
+        'team_leads': ['Laurie Tomlinson'],
+        'support_officers': [
             'Laurie Tomlinson',
             'Aleia Lawson',
             'Natasha Johnson',
@@ -266,8 +315,9 @@ _DEFAULT_UNIT_ROSTERS = {
         ],
     },
     'Interface Unit 23': {
+        'supervisor': 'Giselle Torres',
+        'team_leads': ['Quiana Harville', 'Enid Williams'],
         'support_officers': [
-            'Giselle Torres',
             'Sierra Carter',
             'Chandara Dodson',
             'Quiana Harville',
@@ -305,20 +355,46 @@ for _unit_name, _preset in _DEFAULT_UNIT_ROSTERS.items():
     DEFAULT_UNITS[_unit_name].setdefault('assignments', {})
     DEFAULT_UNITS[_unit_name].setdefault('team_leads', [])
     DEFAULT_UNITS[_unit_name].setdefault('support_officers', [])
+    DEFAULT_UNITS[_unit_name].setdefault('caseload_numbers', [])
 
     if 'supervisor' in _preset and isinstance(_preset['supervisor'], str):
         DEFAULT_UNITS[_unit_name]['supervisor'] = _preset['supervisor']
 
     if 'assignments' in _preset and isinstance(_preset['assignments'], dict):
         DEFAULT_UNITS[_unit_name]['assignments'].update(_preset['assignments'])
-        # If workers are listed in assignments, treat them as support officers.
+        # If workers are listed in assignments, treat non-supervisor workers as support officers.
+        _preset_supervisor = str(_preset.get('supervisor', '')).strip()
         DEFAULT_UNITS[_unit_name]['support_officers'] = list(
-            dict.fromkeys(list(DEFAULT_UNITS[_unit_name]['support_officers']) + list(_preset['assignments'].keys()))
+            dict.fromkeys(
+                list(DEFAULT_UNITS[_unit_name]['support_officers'])
+                + [
+                    str(worker).strip()
+                    for worker in _preset['assignments'].keys()
+                    if str(worker).strip() and str(worker).strip() != _preset_supervisor
+                ]
+            )
+        )
+
+    if 'team_leads' in _preset and isinstance(_preset['team_leads'], list):
+        DEFAULT_UNITS[_unit_name]['team_leads'] = list(
+            dict.fromkeys([str(n).strip() for n in _preset['team_leads'] if str(n).strip() and str(n).strip().upper() != 'VACANT'])
         )
 
     if 'support_officers' in _preset and isinstance(_preset['support_officers'], list):
         DEFAULT_UNITS[_unit_name]['support_officers'] = list(
-            dict.fromkeys(list(DEFAULT_UNITS[_unit_name]['support_officers']) + [str(n).strip() for n in _preset['support_officers'] if str(n).strip()])
+            dict.fromkeys(
+                list(DEFAULT_UNITS[_unit_name]['support_officers'])
+                + [
+                    str(n).strip()
+                    for n in _preset['support_officers']
+                    if str(n).strip() and str(n).strip().upper() != 'VACANT'
+                ]
+            )
+        )
+
+    if 'caseload_numbers' in _preset and isinstance(_preset['caseload_numbers'], list):
+        DEFAULT_UNITS[_unit_name]['caseload_numbers'] = list(
+            dict.fromkeys([str(c).strip() for c in _preset['caseload_numbers'] if str(c).strip()])
         )
 
 # Caseload Configuration

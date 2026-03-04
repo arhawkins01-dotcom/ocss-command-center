@@ -2292,6 +2292,328 @@ def _ensure_unit(unit_name: str):
         unit.setdefault('assignments', {})
 
 
+def _apply_establishment_roster_alignment() -> None:
+    """One-time roster reconciliation for Establishment units and staff.
+
+    Applies the configured Establishment org roster to persisted state so
+    dashboard scope, unit grouping, and caseload ownership stay aligned.
+    """
+    try:
+        st.session_state.setdefault('units', {})
+        st.session_state.setdefault('users', [])
+        st.session_state.setdefault('leadership_reporting', {})
+        seed_meta = st.session_state['leadership_reporting'].setdefault('seed_meta', {})
+        if seed_meta.get('establishment_roster_sync_v2_applied_at'):
+            return
+
+        def _unit_key(value: str) -> str:
+            return re.sub(r"[^a-z0-9]+", "", str(value or '').strip().casefold())
+
+        def _norm_caseload(raw_value: str) -> str:
+            digits = ''.join(ch for ch in str(raw_value or '') if ch.isdigit())
+            if not digits:
+                return ''
+            if len(digits) == 4 and digits.startswith('1'):
+                return f"18{digits}"
+            return digits
+
+        establishment_units = [
+            {
+                'unit': 'Establishment Unit 15',
+                'aliases': ['Establishment Unit #15'],
+                'unit_type': 'standard',
+                'supervisor': 'Stacy Slick-Williams',
+                'team_leads': ['Anna K. Engler', 'Akilah Rasheed-Tinsley'],
+                'support_officers': ['Joy G. Ogunmola', 'Brittany Baran', 'Jeffrey A. Swanson', 'Cyrita J. Johnson'],
+                'assignments': {
+                    'Stacy Slick-Williams': ['181100'],
+                    'Anna K. Engler': ['181101'],
+                    'Joy G. Ogunmola': ['181103'],
+                    'Akilah Rasheed-Tinsley': ['181105'],
+                    'Brittany Baran': ['181107'],
+                    'Jeffrey A. Swanson': ['181109'],
+                    'Cyrita J. Johnson': ['181112'],
+                },
+                'caseload_numbers': ['181100', '181101', '181103', '181105', '181106', '181107', '181109', '181110', '181112'],
+            },
+            {
+                'unit': 'Establishment Unit 16',
+                'aliases': ['Establishment Unit #16'],
+                'unit_type': 'standard',
+                'supervisor': 'Robin L. Patterson',
+                'team_leads': ['April Jeter', 'Awilda Martinez'],
+                'support_officers': ['Karen McRowe', 'Tamika Joseph-McManus', 'Richard Fletcher', 'Natalie Spatafore'],
+                'assignments': {
+                    'Robin L. Patterson': ['181200'],
+                    'April Jeter': ['181204'],
+                    'Karen McRowe': ['181205'],
+                    'Tamika Joseph-McManus': ['181208'],
+                    'Awilda Martinez': ['181209'],
+                    'Richard Fletcher': ['181213'],
+                    'Natalie Spatafore': ['181214'],
+                },
+                'caseload_numbers': ['181200', '181201', '181202', '181204', '181205', '181208', '181209', '181213', '181214'],
+            },
+            {
+                'unit': 'Establishment Unit 17',
+                'aliases': ['Establishment Unit #17'],
+                'unit_type': 'standard',
+                'supervisor': 'Jeanne Sua',
+                'team_leads': ['Kristine DeSouza', 'L. Arlene Gonzalez'],
+                'support_officers': ['Patricia Bennett', 'Cecelia Durham', 'Mayra Berrios', 'Hannah Maynard'],
+                'assignments': {
+                    'Jeanne Sua': ['181300'],
+                    'Kristine DeSouza': ['181301'],
+                    'Patricia Bennett': ['181303'],
+                    'Cecelia Durham': ['181304'],
+                    'Mayra Berrios': ['181306'],
+                    'L. Arlene Gonzalez': ['181307'],
+                    'Hannah Maynard': ['181308'],
+                },
+                'caseload_numbers': ['181300', '181301', '181302', '181303', '181304', '181305', '181306', '181307', '181308'],
+            },
+            {
+                'unit': 'New Order Unit 22',
+                'aliases': ['New Order Unit #22'],
+                'unit_type': 'standard',
+                'supervisor': 'James Brown',
+                'team_leads': ['Nadia Ahmetovic'],
+                'support_officers': ['Latonya Grays-Martin', 'Michelle Fogler', 'Tracy Wilson', 'William Wedmedyk'],
+                'assignments': {
+                    'Nadia Ahmetovic': ['182001'],
+                    'Latonya Grays-Martin': ['182002'],
+                    'Michelle Fogler': ['182003'],
+                    'Tracy Wilson': ['182004'],
+                    'William Wedmedyk': ['182005'],
+                },
+                'caseload_numbers': ['182001', '182002', '182003', '182004', '182005'],
+            },
+            {
+                'unit': 'Front Desk Unit 8',
+                'aliases': ['Front Desk Unit #8'],
+                'unit_type': 'interface',
+                'supervisor': 'James Brown',
+                'team_leads': ['Reginald Davis'],
+                'support_officers': ['Pamela Alexander', 'Danielle Deberry', 'Aleesha Anderson'],
+                'assignments': {},
+                'caseload_numbers': [],
+            },
+            {
+                'unit': 'Genetic Testing Unit 22',
+                'aliases': ['Genetic Testing Unit #22', 'Genetic Testing Unit'],
+                'unit_type': 'genetic_testing',
+                'supervisor': 'Silas Ungar',
+                'team_leads': ['Laurie Tomlinson'],
+                'support_officers': ['Aleia Lawson', 'Natasha Johnson', 'Tiffany Johnson'],
+                'assignments': {},
+                'caseload_numbers': [],
+            },
+            {
+                'unit': 'Interface Unit 23',
+                'aliases': ['Interface Unit #23'],
+                'unit_type': 'interface',
+                'supervisor': 'Giselle Torres',
+                'team_leads': ['Quiana Harville', 'Enid Williams'],
+                'support_officers': ['Sierra Carter', 'Chandara Dodson', 'Avonna Handsome', 'Taylor Andrews'],
+                'assignments': {},
+                'caseload_numbers': [],
+            },
+        ]
+
+        department_people = [
+            {'name': 'Ashombia Hawkins', 'role': 'Director', 'unit_role': 'Department Manager'},
+            {'name': 'Chaiyeh Davis', 'role': 'Program Officer', 'unit_role': ''},
+            {'name': 'Almida Aviles', 'role': 'Administrative Assistant', 'unit_role': ''},
+        ]
+
+        changed = False
+
+        existing_units_by_key = {
+            _unit_key(name): name
+            for name in st.session_state.get('units', {}).keys()
+        }
+
+        for spec in establishment_units:
+            canonical = str(spec.get('unit') or '').strip()
+            aliases = [canonical] + [str(v).strip() for v in (spec.get('aliases') or []) if str(v).strip()]
+
+            resolved_unit_name = ''
+            for candidate in aliases:
+                candidate_match = existing_units_by_key.get(_unit_key(candidate), '')
+                if candidate_match:
+                    resolved_unit_name = candidate_match
+                    break
+            if not resolved_unit_name:
+                resolved_unit_name = canonical
+
+            if resolved_unit_name != canonical and canonical not in st.session_state.units:
+                st.session_state.units[canonical] = st.session_state.units.pop(resolved_unit_name)
+                resolved_unit_name = canonical
+                changed = True
+
+            _ensure_unit(resolved_unit_name)
+            unit_ref = st.session_state.units[resolved_unit_name]
+
+            supervisor = str(spec.get('supervisor') or '').strip()
+            team_leads = [str(n).strip() for n in (spec.get('team_leads') or []) if str(n).strip() and str(n).strip().upper() != 'VACANT']
+            support_workers = [str(n).strip() for n in (spec.get('support_officers') or []) if str(n).strip() and str(n).strip().upper() != 'VACANT']
+            support_with_leads = list(dict.fromkeys(team_leads + support_workers))
+
+            normalized_assignments = {}
+            for owner_name, caseloads in (spec.get('assignments') or {}).items():
+                owner = str(owner_name or '').strip()
+                if not owner or owner.upper() == 'VACANT':
+                    continue
+                normalized_assignments[owner] = []
+                for caseload in (caseloads or []):
+                    normalized = _norm_caseload(caseload)
+                    if normalized and normalized not in normalized_assignments[owner]:
+                        normalized_assignments[owner].append(normalized)
+
+            unit_pool = []
+            for caseload in (spec.get('caseload_numbers') or []):
+                normalized = _norm_caseload(caseload)
+                if normalized and normalized not in unit_pool:
+                    unit_pool.append(normalized)
+
+            if not unit_pool:
+                for owner_values in normalized_assignments.values():
+                    for caseload in owner_values:
+                        if caseload not in unit_pool:
+                            unit_pool.append(caseload)
+
+            series_prefixes = sorted(list({c[:4] for c in unit_pool if len(c) >= 4 and c[:4].isdigit()}))
+
+            if unit_ref.get('department') != 'Establishment':
+                unit_ref['department'] = 'Establishment'
+                changed = True
+            if str(unit_ref.get('unit_type', '')).strip() != str(spec.get('unit_type', 'standard')).strip():
+                unit_ref['unit_type'] = str(spec.get('unit_type', 'standard')).strip()
+                changed = True
+            if str(unit_ref.get('supervisor', '')).strip() != supervisor:
+                unit_ref['supervisor'] = supervisor
+                changed = True
+            if list(unit_ref.get('team_leads', []) or []) != team_leads:
+                unit_ref['team_leads'] = list(team_leads)
+                changed = True
+            if list(unit_ref.get('support_officers', []) or []) != support_with_leads:
+                unit_ref['support_officers'] = list(support_with_leads)
+                changed = True
+            if list(unit_ref.get('caseload_numbers', []) or []) != unit_pool:
+                unit_ref['caseload_numbers'] = list(unit_pool)
+                changed = True
+            if list(unit_ref.get('caseload_series_prefixes', []) or []) != series_prefixes:
+                unit_ref['caseload_series_prefixes'] = list(series_prefixes)
+                changed = True
+
+            assignments_with_defaults = dict(normalized_assignments)
+            if supervisor and supervisor not in assignments_with_defaults:
+                assignments_with_defaults[supervisor] = []
+            for worker_name in support_with_leads:
+                assignments_with_defaults.setdefault(worker_name, [])
+
+            if unit_ref.get('assignments', {}) != assignments_with_defaults:
+                unit_ref['assignments'] = assignments_with_defaults
+                changed = True
+
+        person_roles = {}
+
+        def _track_person(name: str, role: str, unit: str = '', unit_role: str = ''):
+            cleaned_name = str(name or '').strip()
+            if not cleaned_name:
+                return
+            key = _name_key(cleaned_name)
+            person_roles.setdefault(key, {
+                'name': cleaned_name,
+                'role': role,
+                'unit_role': unit_role,
+                'units': set(),
+            })
+            if unit:
+                person_roles[key]['units'].add(str(unit).strip())
+
+        for person in department_people:
+            _track_person(person.get('name', ''), person.get('role', ''), '', person.get('unit_role', ''))
+
+        for spec in establishment_units:
+            unit_name = str(spec.get('unit') or '').strip()
+            _track_person(spec.get('supervisor', ''), 'Supervisor', unit_name)
+            for lead in (spec.get('team_leads') or []):
+                lead_name = str(lead).strip()
+                if not lead_name or lead_name.upper() == 'VACANT':
+                    continue
+                if unit_name in {'Genetic Testing Unit 22', 'Interface Unit 23'}:
+                    _track_person(lead_name, 'Client Information Specialist Team Lead', unit_name)
+                else:
+                    _track_person(lead_name, 'Team Lead', unit_name)
+            for worker in (spec.get('support_officers') or []):
+                worker_name = str(worker).strip()
+                if not worker_name or worker_name.upper() == 'VACANT':
+                    continue
+                if unit_name in {'Genetic Testing Unit 22', 'Interface Unit 23'}:
+                    _track_person(worker_name, 'Client Information Specialist', unit_name)
+                else:
+                    _track_person(worker_name, 'Support Officer', unit_name)
+
+        users = st.session_state.get('users', []) or []
+        for person in person_roles.values():
+            person_name = person.get('name', '')
+            person_key = _name_key(person_name)
+            found_user = next((u for u in users if _name_key(u.get('name', '')) == person_key), None)
+            single_unit = ''
+            units_sorted = sorted(list(person.get('units', set())))
+            if len(units_sorted) == 1:
+                single_unit = units_sorted[0]
+
+            if found_user is None:
+                users.append({
+                    'name': person_name,
+                    'role': person.get('role', ''),
+                    'department': 'Establishment',
+                    'unit': single_unit,
+                    'unit_role': person.get('unit_role', ''),
+                })
+                changed = True
+                continue
+
+            desired_role = str(person.get('role', '')).strip()
+            desired_unit_role = str(person.get('unit_role', '')).strip()
+            desired_dept = 'Establishment'
+
+            if str(found_user.get('role', '')).strip() != desired_role:
+                found_user['role'] = desired_role
+                changed = True
+            if str(found_user.get('department', '')).strip() != desired_dept:
+                found_user['department'] = desired_dept
+                changed = True
+
+            existing_unit = str(found_user.get('unit', '')).strip()
+            if single_unit:
+                if existing_unit != single_unit:
+                    found_user['unit'] = single_unit
+                    changed = True
+            elif existing_unit:
+                found_user['unit'] = ''
+                changed = True
+
+            if desired_role == 'Director':
+                if str(found_user.get('unit_role', '')).strip() != desired_unit_role:
+                    found_user['unit_role'] = desired_unit_role
+                    changed = True
+
+        st.session_state['users'] = users
+
+        if changed:
+            seed_meta['establishment_roster_sync_v2_applied_at'] = datetime.now().isoformat(timespec='seconds')
+            seed_meta['establishment_roster_sync_units'] = [spec.get('unit') for spec in establishment_units]
+            _persist_app_state()
+    except Exception:
+        return
+
+
+_apply_establishment_roster_alignment()
+
+
 def _rename_person_in_units(old_name: str, new_name: str):
     if not old_name or not new_name or old_name == new_name:
         return
