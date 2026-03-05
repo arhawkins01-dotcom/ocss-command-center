@@ -38,6 +38,27 @@ pip install -r app/requirements.txt
 ./scripts/start_app.sh
 ```
 
+### IT + Developer Demo Prep
+
+- Runbook: `docs/IT_DEVELOPER_DEMO_RUNBOOK.md`
+- Day-of checklist: `docs/DEMO_DAY_CHECKLIST.md`
+- Preflight: `./scripts/demo_preflight.sh`
+
+### QA & Compliance System
+
+**New in v1.4.0:** Automated Quality Assurance with Ohio OAC/ORC/OCSE compliance tracking
+
+- **Auto-sampling:** 5 cases per worker per report (automatic on submission)
+- **Supervisors:** QA Review tab with Ohio compliance criteria
+- **Executives:** QA & Compliance dashboard with agency-wide metrics
+- **Documentation:** `docs/QA_COMPLIANCE_SYSTEM_COMPLETE.md`
+
+**Key Features:**
+- ✅ Ohio-specific compliance criteria (OAC 5101:12, ORC 3111.04, OCSE guidance)
+- ✅ Automated case sampling (deterministic, reproducible)
+- ✅ Real-time compliance scoring and trending
+- ✅ Executive KPI integration for strategic oversight
+
 ## Production Hosting
 ⚠️ Production does NOT run from GitHub.
 

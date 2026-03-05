@@ -31,6 +31,37 @@ try:
     )
     from . import database
     from . import auth
+    from .support_officer_ui_helpers import (
+        render_report_type_badge,
+        render_required_fields_panel,
+        render_narration_templates,
+        calculate_row_completion_percentage,
+        render_row_progress_indicator,
+    )
+    from .qa_compliance import (
+        OHIO_COMPLIANCE_CRITERIA,
+        get_qa_samples_for_report,
+        score_case_compliance,
+        init_qa_storage,
+        store_qa_review,
+        get_qa_review,
+        get_qa_samples,
+        calculate_worker_qa_metrics,
+        calculate_agency_qa_metrics,
+        get_compliance_issues_by_category,
+        auto_qa_sampling_on_submit,
+    )
+    from .qa_ui_components import (
+        render_qa_sample_badge,
+        render_compliance_score_card,
+        render_criteria_checklist,
+        render_qa_metrics_summary,
+        render_category_breakdown_chart,
+        render_common_issues_list,
+        render_qa_review_form,
+        render_worker_qa_dashboard,
+        render_report_qa_status_badge,
+    )
 except Exception:
     from report_utils import (
         SupportReportIngestionService,
@@ -39,6 +70,69 @@ except Exception:
     )
     import database
     import auth
+    try:
+        from support_officer_ui_helpers import (
+            render_report_type_badge,
+            render_required_fields_panel,
+            render_narration_templates,
+            calculate_row_completion_percentage,
+            render_row_progress_indicator,
+        )
+    except Exception:
+        # Graceful fallback if helpers not available
+        def render_report_type_badge(report_source):
+            pass
+        def render_required_fields_panel(report_source, current_row_data=None):
+            pass
+        def render_narration_templates(report_source):
+            pass
+        def calculate_row_completion_percentage(row_data, report_source):
+            return 0, []
+        def render_row_progress_indicator(row_data, report_source):
+            pass
+    try:
+        from qa_compliance import (
+            OHIO_COMPLIANCE_CRITERIA,
+            get_qa_samples_for_report,
+            score_case_compliance,
+            init_qa_storage,
+            store_qa_review,
+            get_qa_review,
+            get_qa_samples,
+            calculate_worker_qa_metrics,
+            calculate_agency_qa_metrics,
+            get_compliance_issues_by_category,
+            auto_qa_sampling_on_submit,
+        )
+        from qa_ui_components import (
+            render_qa_sample_badge,
+            render_compliance_score_card,
+            render_criteria_checklist,
+            render_qa_metrics_summary,
+            render_category_breakdown_chart,
+            render_common_issues_list,
+            render_qa_review_form,
+            render_worker_qa_dashboard,
+            render_report_qa_status_badge,
+        )
+    except Exception:
+        # Graceful fallback if QA modules not available
+        def auto_qa_sampling_on_submit(report_dict):
+            pass
+        def init_qa_storage():
+            pass
+        def get_qa_samples(report_id):
+            return {}
+        def calculate_agency_qa_metrics(department=None):
+            return {'total_cases_reviewed': 0, 'avg_compliance_score': 0.0, 'pass_rate': 0.0, 'workers_reviewed': 0, 'criteria_breakdown': {}}
+        def get_compliance_issues_by_category(report_source):
+            return []
+        def render_qa_metrics_summary(metrics):
+            pass
+        def render_category_breakdown_chart(criteria_breakdown):
+            pass
+        def render_common_issues_list(issues):
+            pass
 
 try:
     from docx import Document  # type: ignore
@@ -311,6 +405,9 @@ if 'help_tickets' not in st.session_state:
 
 if 'help_ticket_log' not in st.session_state:
     st.session_state.help_ticket_log = []
+
+# Initialize QA storage
+init_qa_storage()
 
 
 def _safe_df(data) -> pd.DataFrame:
@@ -1576,29 +1673,19 @@ def _render_alert_panel(
 
         if selected_report_id and selected_report_id != '(Select)':
             st.markdown(
-                f"""
-1. Open and update each row assigned to you using the inline editor controls.
+                """
+**Processing Instructions:**
+
+1. Open and update each row assigned to you using the inline editor controls
 2. Use **Worker Status** consistently:
    - **Not Started**: you have not begun
    - **In Progress**: you are actively working the row
    - **Completed**: row is fully reviewed and ready for supervisor
-3. When marking a row **Completed**, fill the report-type required fields:
-{required_fields_text}
-4. Use the in-app **Update** control (when shown) to apply edits for a row. The application persists edits to session state automatically while you work.
-5. When all assigned rows are **Completed**, use **✅ Submit Caseload as Complete** to finalize — the app validates completion and required fields before allowing submission.
+3. When marking a row **Completed**, ensure all report-type required fields are filled
+4. Use the in-app **Update** control to apply edits for a row
+5. When all assigned rows are **Completed**, use **✅ Submit Caseload as Complete**
 
-The app will block submission if any of your assigned rows are not marked **Completed** or if required report-type fields are missing.
-
----
-
-**Sample narration templates (copy/paste):**
-
-- **56RA Report:** Case pending GTU. Action taken: Scheduled GT. Next steps: follow up after appointment date.
-- **56RA Report:** PCR pending at court. Next hearing: __/__/____. Next steps: monitor docket and follow up.
-- **56RA Report:** COBO. Sent COBO letter(s) to all parties. Deadline: __/__/____.
-- **Locate Report:** Cleared BMV/SVES/dockets/ODRC/Work Number; no info. Contacted CP; no new address. Case in locate 2+ years with SSN; closed UNL.
-- **Locate Report:** Cleared databases; no info. No response from CP. Case in locate 6+ months without SSN; closed NAS.
-- **P-S Report:** Contacted client via phone/web portal. Action taken: CONTACT LETTER. Next steps: follow up by __/__/____.
+The app validates completion and required fields before allowing submission.
                 """
             )
 
@@ -6229,10 +6316,11 @@ if role in ["Director", "Deputy Director"]:
         st.caption("Deputy Director scope: " + ", ".join(_exec_deputy_departments))
     
     # Tabs for Director
-    dir_tab1, dir_tab2, dir_tab3, dir_tab4, dir_tab5, dir_tab6, dir_tab7 = st.tabs([
+    dir_tab1, dir_tab2, dir_tab3, dir_tab4, dir_tab5, dir_tab6, dir_tab7, dir_tab8 = st.tabs([
         "📊 KPIs & Metrics",
         "👥 Caseload Management",
         "📋 Team Performance",
+        "🎯 QA & Compliance",
         "📤 Report Intake",
         "🆘 Ticket KPIs",
         "👤 Manage Users",
@@ -6708,9 +6796,106 @@ if role in ["Director", "Deputy Director"]:
                 st.divider()
 
     with dir_tab4:
-        render_report_intake_portal("director_intake", "Director")
+        # ═══════════════════════════════════════════════════════════════════════════
+        # QA & COMPLIANCE TAB - Executive View
+        # ═══════════════════════════════════════════════════════════════════════════
+        st.subheader("🎯 Quality Assurance & Ohio Compliance Tracking")
+        st.markdown("**5-Case Random Sample Per Worker Per Report | Ohio OAC/ORC/OCSE Standards**")
+        
+        # QA Metrics Summary
+        try:
+            qa_metrics = calculate_agency_qa_metrics(department=selected_dept if kpi_scope == 'Department' else None)
+            
+            if qa_metrics['total_cases_reviewed'] == 0:
+                st.info(
+                    "**No QA reviews completed yet.**\n\n"
+                    "QA samples are automatically generated when workers submit reports. "
+                    "Supervisors can then review these sampled cases against Ohio child support compliance criteria."
+                )
+            else:
+                # Display QA metrics
+                render_qa_metrics_summary(qa_metrics)
+                
+                # Overall compliance visualization
+                st.markdown("---")
+                col_qa1, col_qa2 = st.columns([2, 1])
+                
+                with col_qa1:
+                    # Category breakdown chart
+                    render_category_breakdown_chart(qa_metrics['criteria_breakdown'])
+                
+                with col_qa2:
+                    # Common issues list
+                    issues = get_compliance_issues_by_category('')
+                    render_common_issues_list(issues)
+                
+                # Strategic insights based on QA data
+                st.markdown("---")
+                st.markdown("### 📌 QA-Based Strategic Insights")
+                
+                qa_col1, qa_col2 = st.columns(2)
+                
+                with qa_col1:
+                    # Wins
+                    wins = []
+                    if qa_metrics['avg_compliance_score'] >= 90:
+                        wins.append(f"Agency avg compliance at {qa_metrics['avg_compliance_score']}% (≥90% excellent)")
+                    if qa_metrics['pass_rate'] >= 85:
+                        wins.append(f"Pass rate at {qa_metrics['pass_rate']}% (≥85% target met)")
+                    if qa_metrics['total_cases_reviewed'] >= 50:
+                        wins.append(f"Strong QA coverage: {qa_metrics['total_cases_reviewed']} cases reviewed")
+                    
+                    if wins:
+                        st.success("✅ **QA Performance Wins**\n" + "\n".join(f"- {w}" for w in wins))
+                    else:
+                        st.info("Continue QA reviews to establish performance baseline.")
+                
+                with qa_col2:
+                    # Action items
+                    actions = []
+                    if qa_metrics['avg_compliance_score'] < 75:
+                        gap = round(75 - qa_metrics['avg_compliance_score'], 1)
+                        actions.append(f"Compliance {gap}% below 75% minimum threshold")
+                    if qa_metrics['pass_rate'] < 70:
+                        actions.append(f"Only {qa_metrics['pass_rate']}% of cases pass QA - review training needs")
+                    if qa_metrics['total_cases_reviewed'] < 20:
+                        actions.append("Increase QA review coverage for more reliable metrics")
+                    
+                    # Check for specific problematic categories
+                    for category, pass_rate in qa_metrics.get('criteria_breakdown', {}).items():
+                        if pass_rate < 60:
+                            actions.append(f"'{category}' category at {pass_rate}% - needs focused training")
+                    
+                    if actions:
+                        st.warning("⚠️ **QA Action Items**\n" + "\n".join(f"- {a}" for a in actions))
+                    else:
+                        st.success("All QA thresholds met - maintain current standards.")
+                
+                # Ohio Compliance Standards Reference
+                st.markdown("---")
+                with st.expander("📚 Ohio Compliance Standards Reference", expanded=False):
+                    st.markdown("""
+**QA Criteria Based On:**
+- **Ohio Administrative Code (OAC)** 5101:12-1-30 (Locate), 5101:12-45-03 (Establishment), 5101:12-45-10 (P-S), 5101:12-1-50 (Closure)
+- **Ohio Revised Code (ORC)** 3111.04 (Paternity/GT), 3119.05 (Support), 3121.89 (Termination), 3125.25 (Locate)
+- **OCSE Action Transmittals** AT-06-02, AT-08-01, PIQ-06-02, PIQ-10-03
+
+**Scoring:**
+- **90%+**: Excellent - Exceeds Ohio standards
+- **75-89%**: Acceptable - Meets minimum compliance
+- **Below 75%**: Needs Improvement - Corrective action required
+
+**Sample Size:** 5 cases per worker per report (industry standard for QA sampling)
+                    """)
+        
+        except Exception as qa_err:
+            st.error(f"Error loading QA metrics: {qa_err}")
+            st.info("QA system initializing. Metrics will appear after first QA reviews are completed.")
 
     with dir_tab5:
+        render_report_intake_portal("director_intake", "Director")
+
+    with dir_tab6:
         render_help_ticket_kpi_tab("Director", "director")
         render_help_ticket_center(
             "Director",
@@ -6718,10 +6903,10 @@ if role in ["Director", "Deputy Director"]:
             key_prefix='director_ticket_center',
         )
 
-    with dir_tab6:
+    with dir_tab7:
         render_user_management_panel("director")
 
-    with dir_tab7:
+    with dir_tab8:
         render_knowledge_base("Director", "director")
 
 elif role == "Program Officer":
@@ -7764,10 +7949,11 @@ elif role in ["Supervisor", "Senior Administrative Officer"]:
     st.markdown("**Real-Time KPI Visibility**")
     
     # Tabs for Supervisor
-    sup_tab1, sup_tab2, sup_tab3, sup_tab4, sup_tab5, sup_tab6, sup_tab7 = st.tabs([
+    sup_tab1, sup_tab2, sup_tab3, sup_tab4, sup_tab5, sup_tab6, sup_tab7, sup_tab8 = st.tabs([
         "📊 KPI Metrics",
         "👥 Team Caseload",
         "📈 Performance Analytics",
+        "🎯 QA Review",
         "📤 Report Intake",
         "🆘 Ticket KPIs",
         "👤 Manage Users",
@@ -8603,9 +8789,205 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                  st.info("Select a supervisor in the 'Team Caseload' tab to view analytics.")
 
     with sup_tab4:
-        render_report_intake_portal("supervisor_intake", "Supervisor")
+        # ═══════════════════════════════════════════════════════════════════════════
+        # QA REVIEW TAB - Supervisor View
+        # ═══════════════════════════════════════════════════════════════════════════
+        st.subheader("🎯 Quality Assurance Review")
+        st.markdown("**Review 5-case samples against Ohio OAC/ORC/OCSE compliance standards**")
+        
+        _sup_reviewer_name = (auth_result.display_name or auth_result.username or st.session_state.get('current_user', '') or '').strip()
+        
+        # Get reports submitted for review in supervisor's unit
+        _sup_own_unit_name, _sup_own_unit = _find_supervisor_unit_record(_sup_reviewer_name)
+        
+        if not _sup_own_unit_name:
+            st.info("You are not assigned as a supervisor for any unit. QA review is available to unit supervisors.")
+        else:
+            # Find submitted reports in this unit
+            submitted_reports = []
+            for caseload, reports in (st.session_state.get('reports_by_caseload', {}) or {}).items():
+                owner_unit, owner_person = get_caseload_owner(caseload)
+                if owner_unit == _sup_own_unit_name:
+                    for rep_idx, report in enumerate(reports):
+                        if str(report.get('status', '')).lower() in ['submitted for review', 'under review', 'submitted']:
+                            # Check if this report has QA samples
+                            report_id = str(report.get('report_id', ''))
+                            qa_samples = get_qa_samples(report_id)
+                            if qa_samples:
+                                submitted_reports.append({
+                                    'caseload': caseload,
+                                    'report_idx': rep_idx,
+                                    'report': report,
+                                    'qa_samples': qa_samples,
+                                })
+            
+            if not submitted_reports:
+                st.info(
+                    "**No reports with QA samples available yet.**\n\n"
+                    "QA samples are automatically generated when workers submit caseloads for review. "
+                    "Once workers submit their work, you'll see reports here for QA review."
+                )
+            else:
+                st.success(f"✅ {len(submitted_reports)} report(s) available for QA review in your unit.")
+                
+                # Report selector
+                report_options = {}
+                for sr in submitted_reports:
+                    report_id = str(sr['report'].get('report_id', ''))
+                    display_name = f"{report_id} - {sr['caseload']} ({len(sr['qa_samples'])} workers)"
+                    report_options[display_name] = sr
+                
+                selected_qa_report_key = st.selectbox(
+                    "Select Report for QA Review:",
+                    options=list(report_options.keys()),
+                    key='sup_qa_report_select'
+                )
+                
+                if selected_qa_report_key:
+                    selected_qa_report = report_options[selected_qa_report_key]
+                    report = selected_qa_report['report']
+                    report_id = str(report.get('report_id', ''))
+                    report_data = report.get('data')
+                    qa_samples = selected_qa_report['qa_samples']
+                    
+                    # Determine report source for compliance checking
+                    report_source = ''
+                    canonical_df = report.get('canonical_data')
+                    if isinstance(canonical_df, pd.DataFrame) and not canonical_df.empty and 'report_source' in canonical_df.columns:
+                        report_source = str(canonical_df['report_source'].dropna().astype(str).iloc[0]).strip()
+                    
+                    if not report_source and isinstance(report_data, pd.DataFrame) and 'Report Source' in report_data.columns:
+                        non_blank = report_data['Report Source'].astype(str).replace('nan', '').str.strip()
+                        report_source = str(non_blank[non_blank != ''].iloc[0]).strip() if any(non_blank != '') else ''
+                    
+                    # Normalize report source
+                    if report_source.upper() in ['56RA', '56', 'EST', 'ESTABLISHMENT']:
+                        report_source = '56'
+                    elif report_source.upper() in ['PS', 'P-S', 'PARENTING', 'PATERNITY']:
+                        report_source = 'PS'
+                    elif report_source.upper() in ['LOC', 'LOCATE']:
+                        report_source = 'LOCATE'
+                    elif 'closure' in str(report.get('report_type', '')).lower():
+                        report_source = 'CASE_CLOSURE'
+                    
+                    # Show QA status badge
+                    try:
+                        from qa_compliance import get_qa_review
+                        total_samples = sum(len(indices) for indices in qa_samples.values())
+                        reviews_completed = sum(
+                            1 for worker, indices in qa_samples.items()
+                            for idx in indices
+                            if get_qa_review(report_id, worker, idx) is not None
+                        )
+                        from qa_ui_components import render_report_qa_status_badge
+                        render_report_qa_status_badge(report_id, qa_samples, reviews_completed)
+                    except Exception:
+                        pass
+                    
+                    # Worker selector for QA review
+                    worker_list = list(qa_samples.keys())
+                    if not worker_list:
+                        st.warning("No QA samples found for this report.")
+                    else:
+                        selected_qa_worker = st.selectbox(
+                            "Select Worker to Review:",
+                            options=worker_list,
+                            key=f'sup_qa_worker_select_{report_id}'
+                        )
+                        
+                        if selected_qa_worker and isinstance(report_data, pd.DataFrame):
+                            worker_sample_indices = qa_samples[selected_qa_worker]
+                            
+                            from qa_ui_components import render_qa_sample_badge
+                            worker_completed = report_data[
+                                (report_data['Assigned Worker'].astype(str).str.strip() == selected_qa_worker) &
+                                (report_data['Worker Status'].astype(str).str.strip() == 'Completed')
+                            ]
+                            render_qa_sample_badge(selected_qa_worker, len(worker_sample_indices), len(worker_completed))
+                            
+                            # Show worker QA dashboard
+                            try:
+                                worker_metrics = calculate_worker_qa_metrics(selected_qa_worker)
+                                from qa_ui_components import render_worker_qa_dashboard
+                                render_worker_qa_dashboard(selected_qa_worker, worker_metrics)
+                            except Exception:
+                                pass
+                            
+                            st.markdown("---")
+                            st.markdown("### Review Sampled Cases")
+                            
+                            # Case selector
+                            case_options = {}
+                            for idx in worker_sample_indices:
+                                if idx in report_data.index:
+                                    row = report_data.loc[idx]
+                                    case_id = row.get('Case Number', row.get('Case Row ID', f'Row {idx}'))
+                                    case_options[f"Case {case_id} (Row {idx})"] = idx
+                            
+                            selected_case_key = st.selectbox(
+                                "Select Case to Review:",
+                                options=list(case_options.keys()),
+                                key=f'sup_qa_case_select_{report_id}_{selected_qa_worker}'
+                            )
+                            
+                            if selected_case_key:
+                                selected_case_idx = case_options[selected_case_key]
+                                case_row = report_data.loc[selected_case_idx]
+                                
+                                # Check if already reviewed
+                                existing_review = get_qa_review(report_id, selected_qa_worker, selected_case_idx)
+                                
+                                if existing_review:
+                                    st.info(f"✅ This case was reviewed on {existing_review['review_date'][:10]} by {existing_review['reviewer_name']}")
+                                    
+                                    # Show previous review
+                                    with st.expander("View Previous Review", expanded=True):
+                                        from qa_ui_components import render_compliance_score_card, render_criteria_checklist
+                                        render_compliance_score_card(existing_review['compliance_score'])
+                                        render_criteria_checklist(existing_review['compliance_score']['criteria_results'])
+                                        
+                                        if existing_review.get('reviewer_notes'):
+                                            st.markdown("**Reviewer Notes:**")
+                                            st.info(existing_review['reviewer_notes'])
+                                else:
+                                    # Perform compliance check
+                                    if not report_source or report_source not in OHIO_COMPLIANCE_CRITERIA:
+                                        st.warning(f"Report source '{report_source}' not recognized. Cannot perform compliance check.")
+                                    else:
+                                        compliance_score = score_case_compliance(case_row, report_source)
+                                        
+                                        # Display score card
+                                        from qa_ui_components import render_compliance_score_card, render_criteria_checklist, render_qa_review_form
+                                        render_compliance_score_card(compliance_score)
+                                        
+                                        # Display criteria checklist
+                                        render_criteria_checklist(compliance_score['criteria_results'])
+                                        
+                                        # QA Review form
+                                        reviewer_notes = render_qa_review_form(
+                                            case_row,
+                                            report_source,
+                                            compliance_score,
+                                            _sup_reviewer_name
+                                        )
+                                        
+                                        if reviewer_notes:
+                                            # Save the review
+                                            store_qa_review(
+                                                report_id,
+                                                selected_qa_worker,
+                                                selected_case_idx,
+                                                compliance_score,
+                                                _sup_reviewer_name,
+                                                reviewer_notes
+                                            )
+                                            st.success(f"✅ QA review saved for Case {case_row.get('Case Number', selected_case_idx)}")
+                                            st.rerun()
 
     with sup_tab5:
+        render_report_intake_portal("supervisor_intake", "Supervisor")
+
+    with sup_tab6:
         render_help_ticket_kpi_tab("Supervisor", "supervisor")
         render_help_ticket_center(
             "Supervisor",
@@ -8613,10 +8995,10 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
             key_prefix='sup_ticket_center',
         )
 
-    with sup_tab6:
+    with sup_tab7:
         render_user_management_panel("supervisor")
 
-    with sup_tab7:
+    with sup_tab8:
         render_knowledge_base("Supervisor", "supervisor")
 
 elif role == "Support Officer":
@@ -9301,50 +9683,50 @@ elif role == "Support Officer":
                             if is_case_closure_report_type(report_type_value):
                                 report_source_value = 'CASE_CLOSURE'
 
-                            with st.expander("How to complete this report (checklist)", expanded=False):
-                                required_fields_text = ""
-                                if report_source_value == 'CASE_CLOSURE':
-                                    required_fields_text = (
-                                        "- **Case Closure** required when marking a row **Completed**: all **Y/N** fields, **Initials**, and **Comments** if closure is not proposed.\n"
-                                    )
-                                elif report_source_value == 'PS':
-                                    required_fields_text = (
-                                        "- **P-S** required when marking a row **Completed**: **Action Taken/Status**, **Case Narrated = Yes**, and **Comment** if Action Taken/Status = OTHER\n"
-                                    )
-                                elif report_source_value == '56':
-                                    required_fields_text = (
-                                        "- **56RA** required when marking a row **Completed**: **Date Report was Processed**, **Action Taken/Status**, **Case Narrated = Yes**, and **Comment** if Action Taken/Status = OTHER\n"
-                                    )
-                                else:
-                                    required_fields_text = (
-                                        "- **Locate** required when marking a row **Completed**: **Date Case Reviewed**, **Results of Review**, **Case Narrated = Yes**, and **Comment** for certain outcomes/closures\n"
-                                    )
-
+                            # ═══════════════════════════════════════════════════════════
+                            # ENHANCED UI: Report Type Badge & Dynamic Guidance
+                            # ═══════════════════════════════════════════════════════════
+                            
+                            # Display prominent report type indicator
+                            render_report_type_badge(report_source_value)
+                            
+                            # Show dynamic required fields panel (will update based on current row)
+                            st.markdown("### 📋 Processing Guidance")
+                            
+                            col_guide1, col_guide2 = st.columns([1, 1])
+                            
+                            with col_guide1:
+                                # Required fields panel - will be populated with current row data later
+                                render_required_fields_panel(report_source_value, None)
+                            
+                            with col_guide2:
+                                # Quick-copy narration templates specific to this report type
+                                render_narration_templates(report_source_value)
+                            
+                            # Comprehensive processing instructions (collapsible)
+                            with st.expander("📖 Complete Processing Instructions", expanded=False):
                                 st.markdown(
-                                    f"""
-1. Set **Case Row Filter** to **Pending / In Progress**
-2. Open and update each row assigned to you using the in-app editor (do NOT save report files to your local drives).
-3. Use **Worker Status** consistently:
+                                    """
+**Step-by-Step Workflow:**
+
+1. Set **Case Row Filter** to **Pending / In Progress** to see unfinished rows
+2. Edit fields directly in the table below using the in-app editor
+3. Use **Worker Status** to track your progress:
    - **Not Started**: you have not begun
    - **In Progress**: you are actively working the row
    - **Completed**: row is fully reviewed and ready for supervisor
-4. When marking a row **Completed**, fill the report-type required fields:
-{required_fields_text}
-5. Click **💾 Save Progress** frequently to persist edits to session state. Do not edit files offline; use the in-app editor and **Save Progress**.
-6. Submit only when **all** your assigned rows are **Completed** using the **✅ Submit Caseload as Complete** button.
 
-The app will block submission if any of your assigned rows are not marked **Completed**.
+4. **Before marking "Completed"**: ensure all required fields for this report type are filled (see Required Fields panel above)
 
----
+5. Click **💾 Save Progress** frequently to checkpoint your work
 
-**Sample narration templates (copy/paste):**
+6. When all assigned rows are **Completed**, use **✅ Submit Caseload as Complete**
 
-- **56RA Report:** Case pending GTU. Action taken: Scheduled GT. Next steps: follow up after appointment date.
-- **56RA Report:** PCR pending at court. Next hearing: __/__/____. Next steps: monitor docket and follow up.
-- **56RA Report:** COBO. Sent COBO letter(s) to all parties. Deadline: __/__/____.
-- **Locate Report:** Cleared BMV/SVES/dockets/ODRC/Work Number; no info. Contacted CP; no new address. Case in locate 2+ years with SSN; closed UNL.
-- **Locate Report:** Cleared databases; no info. No response from CP. Case in locate 6+ months without SSN; closed NAS.
-- **P-S Report:** Contacted client via phone/web portal. Action taken: CONTACT LETTER. Next steps: follow up by __/__/____.
+**Important Notes:**
+- Do NOT download and edit files offline - use the in-app editor only
+- The app will prevent submission if any assigned rows are incomplete
+- Required fields vary by report type - see the badge and panel above
+- Copy narration templates from the Quick-Copy panel to speed up processing
                                     """
                                 )
 
@@ -9576,41 +9958,15 @@ The app will block submission if any of your assigned rows are not marked **Comp
                                     column_config['Date Action Taken'] = st.column_config.DateColumn('Date Report was Processed')
 
                                 st.caption(
-                                    f"Sheet editor (source: {report_source_value}). Editable fields: "
-                                    + ", ".join([c for c in sheet_df.columns if c in editable_columns and c != 'Worker Status'])
+                                    f"📊 Editor for {report_source_value} reports | Editable: " +
+                                    ", ".join([c for c in sheet_df.columns if c in editable_columns and c != 'Worker Status'][:5]) +
+                                    ("..." if len([c for c in sheet_df.columns if c in editable_columns]) > 5 else "")
                                 )
 
-                                # Guidance panel for workers: status usage, required fields, and narration templates
-                                with st.expander("Worker Guidance & Narration Templates", expanded=False):
-                                    st.markdown(
-                                        """
-- **Worker Status**: Use the following statuses consistently:
-    - **Not Started**: you have not begun
-    - **In Progress**: you are actively working the row
-    - **Completed**: row is fully reviewed and ready for supervisor
-
-- **When marking a row "Completed"**: ensure required fields for the report type are filled.
-    - Locate required fields: **Date Case Reviewed**, **Results of Review**, **Case Narrated** = Yes, and **Comment** for certain outcomes/closures.
-
-- Use the per-row **Update** control (when shown) to apply edits for a single row. The app persists edits to session state automatically while you work.
-
-- **When all assigned rows are Completed**: use **✅ Submit Caseload as Complete** to finalize — the app validates completion and required fields before allowing submission.
-
-Sample narration templates (copy/paste):
-
-56RA Report: Case pending GTU. Action taken: Scheduled GT. Next steps: follow up after appointment date.
-
-56RA Report: PCR pending at court. Next hearing: //____. Next steps: monitor docket and follow up.
-
-56RA Report: COBO. Sent COBO letter(s) to all parties. Deadline: //____.
-
-Locate Report: Cleared BMV/SVES/dockets/ODRC/Work Number; no info. Contacted CP; no new address. Case in locate 2+ years with SSN; closed UNL.
-
-Locate Report: Cleared databases; no info. No response from CP. Case in locate 6+ months without SSN; closed NAS.
-
-P-S Report: Contacted client via phone/web portal. Action taken: CONTACT LETTER. Next steps: follow up by //____.
-"""
-                                                                        )
+                                st.info(
+                                    "💡 **Tip:** Click any cell to edit. Set 'Worker Status' to 'Completed' when all required fields are filled. "
+                                    "The app validates required fields automatically."
+                                )
 
                                 edited_sheet_df = st.data_editor(
                                     sheet_df,
@@ -9621,6 +9977,24 @@ P-S Report: Contacted client via phone/web portal. Action taken: CONTACT LETTER.
                                     column_config=column_config,
                                     key=f"so_sheet_editor_{selected_queue_key}_{report_source_value}_{row_filter}"
                                 )
+
+                                # ═══════════════════════════════════════════════════════════
+                                # ENHANCED UI: Per-Row Progress Tracking
+                                # ═══════════════════════════════════════════════════════════
+                                
+                                st.markdown("#### 📈 Row Completion Status")
+                                
+                                # Show progress for each visible row
+                                if len(sheet_df) <= 5:  # Show detailed progress for small batches
+                                    for idx in sheet_df.index:
+                                        row_data = sheet_df.loc[idx].to_dict()
+                                        case_id = row_data.get('Case Number', row_data.get('Case Row ID', f'Row {idx}'))
+                                        
+                                        with st.expander(f"📄 {case_id}", expanded=False):
+                                            render_row_progress_indicator(row_data, report_source_value)
+                                            render_required_fields_panel(report_source_value, row_data)
+                                else:
+                                    st.caption(f"Showing {len(sheet_df)} rows. Expand 'Required Fields' panel above to see completion criteria.")
 
                                 status_col = worker_rows['Worker Status'].astype(str)
                                 completion_rate = int((status_col.eq('Completed').sum() / len(worker_rows)) * 100) if len(worker_rows) else 0
@@ -9734,7 +10108,18 @@ P-S Report: Contacted client via phone/web portal. Action taken: CONTACT LETTER.
                                                 'worker_ack',
                                                 str(acting_so),
                                             )
+                                            
+                                            # ═══════════════════════════════════════════════════════════
+                                            # AUTO-TRIGGER QA SAMPLING (5 cases per worker per report)
+                                            # ═══════════════════════════════════════════════════════════
+                                            try:
+                                                auto_qa_sampling_on_submit(selected_report)
+                                            except Exception as qa_err:
+                                                # Don't block submission if QA sampling fails
+                                                pass
+                                            
                                             st.success(f"✓ Submitted {selected_report.get('report_id', 'report')} for supervisor review.")
+                                            st.info("🎯 QA samples automatically generated for this report.")
                                             st.rerun()
     
     # TAB 3: Support Tickets
