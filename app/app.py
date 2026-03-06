@@ -1063,6 +1063,10 @@ def _persist_app_state() -> None:
         # Help ticket workflow persistence (best-effort).
         "help_tickets": _json_safe_records(st.session_state.get("help_tickets", []), max_items=500),
         "help_ticket_log": _json_safe_records(st.session_state.get("help_ticket_log", []), max_items=1000),
+        # QA reviews, samples, and supervisor validations (best-effort persistence).
+        "qa_reviews": st.session_state.get("qa_reviews", {}),
+        "qa_samples": st.session_state.get("qa_samples", {}),
+        "supervisor_qa_validations": st.session_state.get("supervisor_qa_validations", {}),
     }
 
     try:
@@ -1088,6 +1092,20 @@ try:
     loaded_ticket_log = (_persisted_state or {}).get('help_ticket_log', [])
     if isinstance(loaded_ticket_log, list) and loaded_ticket_log and not st.session_state.get('help_ticket_log'):
         st.session_state.help_ticket_log = loaded_ticket_log
+except Exception:
+    pass
+
+# Load persisted QA data once per session (if present).
+try:
+    _loaded_qa_reviews = (_persisted_state or {}).get('qa_reviews', {})
+    if isinstance(_loaded_qa_reviews, dict) and _loaded_qa_reviews and not st.session_state.get('qa_reviews'):
+        st.session_state.qa_reviews = _loaded_qa_reviews
+    _loaded_qa_samples = (_persisted_state or {}).get('qa_samples', {})
+    if isinstance(_loaded_qa_samples, dict) and _loaded_qa_samples and not st.session_state.get('qa_samples'):
+        st.session_state.qa_samples = _loaded_qa_samples
+    _loaded_sup_validations = (_persisted_state or {}).get('supervisor_qa_validations', {})
+    if isinstance(_loaded_sup_validations, dict) and _loaded_sup_validations and not st.session_state.get('supervisor_qa_validations'):
+        st.session_state.supervisor_qa_validations = _loaded_sup_validations
 except Exception:
     pass
 
@@ -4613,6 +4631,585 @@ def save_unit_grouping(unit_name: str, supervisor_name: str, team_leads: list, s
     return True, f"✓ Unit '{target_unit}' grouping saved."
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════
+# BULK ROSTER UPLOAD  (Executive-only feature)
+#
+# Accepts xlsx / xls / csv files in EITHER:
+#   • Flat format      – one row per employee, explicit Department/Unit columns
+#   • Hierarchical     – section-header rows (e.g. "Establishment Unit #15")
+#                        auto-populate Dept/Unit for rows beneath them.
+#
+# Recognised column names (case-insensitive aliases):
+#   Name        : Employee | Name | Worker
+#   Title/Role  : Title | Role | Position
+#   Department  : Department | Dept     (or from section header)
+#   Unit        : Unit                  (or from section header)
+#   Caseload 1  : Caseload # | Caseload 1 | Caseload
+#   Caseload 2  : Caseload #2 | Caseload 2  (multi-number + flags stripped)
+# ═══════════════════════════════════════════════════════════════════════════
+
+_ROSTER_EXEC_ROLES = {
+    "Director",
+    "Deputy Director",
+    "Department Manager",
+    "Program Officer",
+    "Senior Administrative Officer",
+    "IT Administrator",
+}
+
+# Title → canonical EXPANDED_CORE_APP_ROLES value  (matched case-insensitively)
+_ROSTER_TITLE_TO_ROLE: dict[str, str] = {
+    "establishment manager":                    "Department Manager",
+    "department manager":                       "Department Manager",
+    "program officer":                          "Program Officer",
+    "administrative assistant":                 "Administrative Assistant",
+    "senior administrative officer":            "Senior Administrative Officer",
+    "director":                                 "Director",
+    "deputy director":                          "Deputy Director",
+    "supervisor":                               "Supervisor",
+    "team lead":                                "Team Lead",
+    "support officer":                          "Support Officer",
+    "client information specialist team lead":  "Client Information Specialist Team Lead",
+    "client info specialist team lead":         "Client Information Specialist Team Lead",
+    "client information specialist":            "Client Information Specialist",
+    "case information specialist team lead":    "Case Information Specialist Team Lead",
+    "case info specialist team lead":           "Case Information Specialist Team Lead",
+    "case information specialist":              "Case Information Specialist",
+    "it administrator":                         "IT Administrator",
+    "it admin":                                 "IT Administrator",
+}
+
+# Column header aliases → normalised internal name
+_ROSTER_COL_ALIASES: dict[str, str] = {
+    "employee":    "Name",
+    "name":        "Name",
+    "worker":      "Name",
+    "title":       "Title",
+    "role":        "Title",
+    "position":    "Title",
+    "department":  "Department",
+    "dept":        "Department",
+    "unit":        "Unit",
+    "caseload #":  "Caseload 1",
+    "caseload#":   "Caseload 1",
+    "caseload 1":  "Caseload 1",
+    "caseload":    "Caseload 1",
+    "caseload #2": "Caseload 2",
+    "caseload2":   "Caseload 2",
+    "caseload 2":  "Caseload 2",
+}
+
+_ROSTER_SECTION_RE = re.compile(r'\b(department|unit|office|section|desk|team)\b', re.IGNORECASE)
+_ROSTER_DEPT_RE    = re.compile(r'\bdepartment\b', re.IGNORECASE)
+
+# Roles that become the unit's supervisor entry
+_UNIT_SUPERVISOR_ROLES = {"Supervisor", "Senior Administrative Officer"}
+# Roles stored in unit's team_leads list
+_UNIT_TEAM_LEAD_ROLES  = {
+    "Team Lead",
+    "Client Information Specialist Team Lead",
+    "Case Information Specialist Team Lead",
+}
+# Roles stored in unit's support_officers list (team leads also go here)
+_UNIT_STAFF_ROLES = {
+    "Support Officer",
+    "Client Information Specialist",
+    "Case Information Specialist",
+} | _UNIT_TEAM_LEAD_ROLES
+
+
+def _normalize_roster_title(raw_title: str) -> str:
+    """Map a raw job title to a canonical EXPANDED_CORE_APP_ROLES value."""
+    return _ROSTER_TITLE_TO_ROLE.get(raw_title.strip().lower(), raw_title.strip())
+
+
+def _parse_caseload_cell(cell_val: str) -> list[str]:
+    """Parse a caseload cell that may contain multiple numbers, flags, or N/A.
+
+    Returns a list of normalised 6-digit caseload numbers.
+
+    Examples:
+        "181100"                    → ["181100"]
+        "181100, 181102 & 181199"   → ["181100", "181102", "181199"]
+        "181207  FVI"               → ["181207"]
+        "189001/189010"             → ["189001", "189010"]
+        "189002-INC"                → ["189002"]
+        "N/A" / ""                  → []
+    """
+    val = str(cell_val or "").strip()
+    if not val or val.upper() in ("N/A", "NA", "N.A.", "NONE", "-"):
+        return []
+    val = val.replace("&", ",").replace("/", ",")
+    caseload_re = re.compile(r'\b(18\d{4}|1[0-9]{3})\b')
+    found: list[str] = []
+    for token in val.split(","):
+        for m in caseload_re.findall(token):
+            norm = normalize_caseload_number(m)
+            if norm and norm not in found:
+                found.append(norm)
+    return found
+
+
+def _read_roster_file(uploaded_file) -> pd.DataFrame:
+    """Read a roster file (xlsx/xls/csv) in flat or hierarchical format.
+
+    Hierarchical format: rows where the Name cell contains a section keyword
+    (Department / Unit / etc.) and all other cells are blank act as section
+    headers that set the current Department or Unit for subsequent rows.
+
+    Always returns a flat DataFrame with columns:
+        Name | Title | Department | Unit | Caseload 1 | Caseload 2
+    """
+    fname = uploaded_file.name.lower()
+    if fname.endswith(".csv"):
+        raw = pd.read_csv(uploaded_file, header=None, dtype=str)
+    else:
+        raw = pd.read_excel(uploaded_file, header=None, dtype=str)
+    raw = raw.fillna("").astype(str).apply(lambda col: col.str.strip())
+
+    # ── 1. Find the actual header row ──────────────────────────────────
+    HEADER_TRIGGERS = {"employee", "name", "worker", "title", "role", "position"}
+    header_row_idx = 0
+    for idx, row in raw.iterrows():
+        if {str(v).lower().strip() for v in row if str(v).strip()} & HEADER_TRIGGERS:
+            header_row_idx = idx
+            break
+
+    # ── 2. Collect department name from pre-header rows if present ──────
+    initial_dept = ""
+    for i in range(header_row_idx):
+        non_empty = [str(v).strip() for v in raw.iloc[i] if str(v).strip()]
+        if non_empty and _ROSTER_DEPT_RE.search(non_empty[0]):
+            initial_dept = non_empty[0]
+
+    # ── 3. Normalise column aliases ─────────────────────────────────────
+    raw_hdrs  = [str(v).strip() for v in raw.iloc[header_row_idx]]
+    norm_hdrs = [_ROSTER_COL_ALIASES.get(h.lower(), h) for h in raw_hdrs]
+    data = raw.iloc[header_row_idx + 1:].copy()
+    data.columns = norm_hdrs
+
+    # ── 4. Walk rows, detect section headers, build flat output ─────────
+    current_dept = initial_dept
+    current_unit = ""
+    result_rows: list[dict] = []
+
+    for _, row in data.iterrows():
+        name_v  = str(row.get("Name", "")).strip()
+        title_v = str(row.get("Title", "")).strip()
+
+        # Section-header detection: Name cell looks like a section title
+        # and all other meaningful cells are blank / N/A.
+        if name_v and _ROSTER_SECTION_RE.search(name_v):
+            other_vals = [
+                v for c, v in row.items()
+                if c != "Name"
+                and str(v).strip()
+                and str(v).strip().upper() not in ("N/A", "NA", "NONE")
+            ]
+            if not other_vals:
+                if _ROSTER_DEPT_RE.search(name_v):
+                    current_dept = name_v
+                    current_unit = ""
+                else:
+                    current_unit = name_v
+                continue  # consumed as header
+
+        if not name_v and not title_v:
+            continue  # blank row
+
+        dept_v = str(row.get("Department", "")).strip() or current_dept
+        unit_v = str(row.get("Unit", "")).strip() or current_unit
+        cl1_v  = str(row.get("Caseload 1", "")).strip()
+        cl2_v  = str(row.get("Caseload 2", "")).strip()
+
+        result_rows.append({
+            "Name":       name_v,
+            "Title":      title_v,
+            "Department": dept_v,
+            "Unit":       unit_v,
+            "Caseload 1": cl1_v,
+            "Caseload 2": cl2_v,
+        })
+
+    return pd.DataFrame(
+        result_rows,
+        columns=["Name", "Title", "Department", "Unit", "Caseload 1", "Caseload 2"],
+    )
+
+
+def _build_roster_template_bytes() -> bytes:
+    """Return an xlsx roster template as bytes for users to download."""
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+        wb = openpyxl.Workbook()
+
+        # ── Flat-format sheet ────────────────────────────────────────────
+        ws = wb.active
+        ws.title = "Employee Roster"
+        FLAT_COLS = ["Name", "Title", "Department", "Unit", "Caseload 1", "Caseload 2"]
+        hdr_fill = PatternFill("solid", fgColor="1F4E79")
+        hdr_font = Font(color="FFFFFF", bold=True)
+        for ci, cname in enumerate(FLAT_COLS, start=1):
+            cell = ws.cell(row=1, column=ci, value=cname)
+            cell.fill = hdr_fill
+            cell.font = hdr_font
+            cell.alignment = Alignment(horizontal="center")
+            ws.column_dimensions[cell.column_letter].width = 28
+
+        sample_rows = [
+            ["Ashombia Hawkins",     "Department Manager",          "Establishment", "",                       "",       ""],
+            ["Stacy Slick-Williams", "Supervisor",                  "Establishment", "Establishment Unit #15", "181100", "181102, 181199"],
+            ["Anna K. Engler",       "Team Lead",                   "Establishment", "Establishment Unit #15", "181101", "181207"],
+            ["Joy G. Ogunmola",      "Support Officer",             "Establishment", "Establishment Unit #15", "181103", ""],
+            ["Robin L. Patterson",   "Supervisor",                  "Establishment", "Establishment Unit #16", "181200", ""],
+            ["Jeanne Sua",           "Supervisor",                  "Establishment", "Establishment Unit #17", "181300", "189001, 189010"],
+            ["Giselle Torres",       "Supervisor",                  "Interface",     "Interface Unit #23",     "",       ""],
+            ["Sierra Carter",        "Case Information Specialist", "Interface",     "Interface Unit #23",     "",       ""],
+        ]
+        for row_data in sample_rows:
+            ws.append(row_data)
+
+        # ── Instructions sheet ───────────────────────────────────────────
+        ws2 = wb.create_sheet("Instructions")
+        ws2["A1"] = "Column Instructions"
+        ws2["A1"].font = Font(bold=True, size=13)
+        notes = [
+            ("Name",
+             "Full name of the employee — must be unique. Required.\n"
+             "Accepted aliases: 'Employee', 'Worker'."),
+            ("Title",
+             "Job title. Required.  Accepted aliases: 'Role', 'Position'.\n"
+             "Accepted values: " + ", ".join(EXPANDED_CORE_APP_ROLES)),
+            ("Department",
+             "Department name (optional). May also be derived from a section-header row."),
+            ("Unit",
+             "Unit this person belongs to (optional). May also be derived from a section-header row."),
+            ("Caseload 1",
+             "Primary caseload number e.g. 181100. Leave blank or 'N/A' if none.\n"
+             "Accepted aliases: 'Caseload #', 'Caseload'."),
+            ("Caseload 2",
+             "Additional/secondary caseload(s). Multiple numbers separated by commas or '&'.\n"
+             "Annotation flags like FVI, INC, RE, SPANISH after the number are stripped.\n"
+             "Accepted alias: 'Caseload #2'."),
+        ]
+        for r, (col, note) in enumerate(notes, start=3):
+            ws2.cell(row=r, column=1, value=col).font = Font(bold=True)
+            ws2.cell(row=r, column=2, value=note)
+        ws2.column_dimensions["B"].width = 80
+
+        # ── Hierarchical example sheet ───────────────────────────────────
+        ws3 = wb.create_sheet("Hierarchical Example")
+        ws3["A1"] = "You may also upload your existing roster with section-header rows:"
+        ws3["A1"].font = Font(bold=True)
+        ws3.append([])
+        hier_rows = [
+            ["Establishment Department", "", "", ""],
+            ["Employee", "Title", "Caseload #", "Caseload #2"],
+            ["Ashombia Hawkins", "Establishment Manager", "N/A", "N/A"],
+            ["Establishment Unit #15", "", "", ""],
+            ["Stacy Slick-Williams", "Supervisor", "181100", "181100, 181102 & 181199"],
+            ["Anna K. Engler", "Team Lead", "181101", "181207  FVI"],
+            ["Joy G. Ogunmola", "Support Officer", "181103", "N/A"],
+        ]
+        for rr in hier_rows:
+            ws3.append(rr)
+        for cl in ["A", "B", "C", "D"]:
+            ws3.column_dimensions[cl].width = 32
+
+        import io
+        buf = io.BytesIO()
+        wb.save(buf)
+        return buf.getvalue()
+    except Exception:
+        import io
+        lines = ["Name,Title,Department,Unit,Caseload 1,Caseload 2"]
+        lines.append("Stacy Slick-Williams,Supervisor,Establishment,Establishment Unit #15,181100,181102")
+        return io.BytesIO("\n".join(lines).encode()).getvalue()
+
+
+def _render_roster_upload_panel(key_prefix: str) -> None:
+    """Render a collapsible roster upload panel (executive roles only)."""
+    caller_role = str(st.session_state.get("current_role") or "").strip()
+    if caller_role not in _ROSTER_EXEC_ROLES:
+        return
+
+    with st.expander("📥 Bulk Upload Employee Roster (Excel / CSV)", expanded=False):
+        st.markdown(
+            "Upload an Excel or CSV file to add or update multiple employees at once. "
+            "**Existing users are updated; new users are added.** "
+            "Caseload numbers are assigned automatically from the Caseload columns. "
+            "Both flat and hierarchical (section-header) formats are accepted. "
+            "Review the preview before applying."
+        )
+
+        dl_col, _ = st.columns([1, 3])
+        with dl_col:
+            st.download_button(
+                label="⬇️ Download Blank Template (.xlsx)",
+                data=_build_roster_template_bytes(),
+                file_name="employee_roster_template.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key=f"{key_prefix}_roster_template_dl",
+            )
+
+        uploaded_file = st.file_uploader(
+            "Upload roster (.xlsx / .xls / .csv) — flat or hierarchical format accepted",
+            type=["xlsx", "xls", "csv"],
+            key=f"{key_prefix}_roster_upload",
+        )
+
+        if uploaded_file is None:
+            st.caption("No file selected. Download the template above, fill it in, then upload here.")
+            return
+
+        # ── Parse ──────────────────────────────────────────────────────
+        try:
+            raw_df = _read_roster_file(uploaded_file)
+        except Exception as parse_err:
+            st.error(f"Could not read the file: {parse_err}")
+            return
+
+        if raw_df.empty:
+            st.warning("No employee rows found in the uploaded file. Please check the format.")
+            return
+
+        # ── Validate required columns ──────────────────────────────────
+        if "Name" not in raw_df.columns or "Title" not in raw_df.columns:
+            st.error(
+                "Could not detect 'Name' (or 'Employee') and 'Title' (or 'Role') columns. "
+                "Please use the template above for correct column headers."
+            )
+            return
+
+        # ── Normalise titles → canonical roles ─────────────────────────
+        raw_df["Role"] = raw_df["Title"].apply(_normalize_roster_title)
+
+        # ── Row-level validation ────────────────────────────────────────
+        valid_roles_set = set(EXPANDED_CORE_APP_ROLES)
+        row_errors: list[str] = []
+        for idx, row in raw_df.iterrows():
+            if not row["Name"]:
+                row_errors.append(f"Row {idx + 2}: Name is blank.")
+            if row["Role"] and row["Role"] not in valid_roles_set:
+                row_errors.append(
+                    f"Row {idx + 2}: Title '{row['Title']}' → '{row['Role']}' is not a recognised role. "
+                    f"Valid roles: {', '.join(EXPANDED_CORE_APP_ROLES)}"
+                )
+        if row_errors:
+            st.error("**Validation errors — fix these before applying:**")
+            for err in row_errors[:15]:
+                st.markdown(f"- {err}")
+            if len(row_errors) > 15:
+                st.caption(f"… and {len(row_errors) - 15} more errors.")
+            return
+
+        # ── Build diff preview ─────────────────────────────────────────
+        existing_by_name: dict[str, dict] = {
+            _name_key(u["name"]): u
+            for u in st.session_state.get("users", [])
+        }
+
+        preview_rows: list[dict] = []
+        for _, row in raw_df.iterrows():
+            name      = row["Name"]
+            role      = row["Role"]
+            dept      = row["Department"]
+            unit      = row["Unit"]
+            caseloads = _parse_caseload_cell(row["Caseload 1"]) + _parse_caseload_cell(row["Caseload 2"])
+            key       = _name_key(name)
+
+            if key in existing_by_name:
+                existing = existing_by_name[key]
+                changes: list[str] = []
+                if role and existing.get("role") != role:
+                    changes.append(f"Role: {existing.get('role', '—')} → {role}")
+                if dept and existing.get("department") != dept:
+                    changes.append(f"Dept: {existing.get('department', '—')} → {dept}")
+                if unit and existing.get("unit") != unit:
+                    changes.append(f"Unit: {existing.get('unit', '—')} → {unit}")
+                if caseloads:
+                    changes.append(f"Caseloads: {', '.join(caseloads)}")
+                action = "Update" if changes else "No change"
+                preview_rows.append({
+                    "Action":     action,
+                    "Name":       name,
+                    "Role":       role or existing.get("role", ""),
+                    "Department": dept or existing.get("department", ""),
+                    "Unit":       unit or existing.get("unit", ""),
+                    "Caseloads":  ", ".join(caseloads) if caseloads else "—",
+                    "Changes":    "; ".join(changes) if changes else "—",
+                })
+            else:
+                preview_rows.append({
+                    "Action":     "Add",
+                    "Name":       name,
+                    "Role":       role,
+                    "Department": dept,
+                    "Unit":       unit,
+                    "Caseloads":  ", ".join(caseloads) if caseloads else "—",
+                    "Changes":    "New user",
+                })
+
+        preview_df = pd.DataFrame(preview_rows)
+        add_count       = int((preview_df["Action"] == "Add").sum())
+        update_count    = int((preview_df["Action"] == "Update").sum())
+        no_change_count = int((preview_df["Action"] == "No change").sum())
+
+        st.markdown(
+            f"**Preview:** {add_count} new · {update_count} update(s) · {no_change_count} unchanged"
+        )
+
+        def _style_action(val: str) -> str:
+            if val == "Add":
+                return "background-color:#d4edda; color:#155724"
+            if val == "Update":
+                return "background-color:#fff3cd; color:#856404"
+            return ""
+
+        try:
+            styled = preview_df.style.applymap(_style_action, subset=["Action"])
+            st.dataframe(styled, use_container_width=True, hide_index=True)
+        except Exception:
+            st.dataframe(preview_df, use_container_width=True, hide_index=True)
+
+        # ── Options ────────────────────────────────────────────────────
+        st.divider()
+        remove_unlisted = st.checkbox(
+            "⚠️ Remove users NOT in this file (use with caution — deletes accounts not listed above)",
+            value=False,
+            key=f"{key_prefix}_roster_remove_unlisted",
+        )
+        if remove_unlisted:
+            uploaded_keys = {_name_key(r["Name"]) for r in preview_rows}
+            users_to_remove = [
+                u["name"]
+                for u in st.session_state.get("users", [])
+                if _name_key(u["name"]) not in uploaded_keys
+            ]
+            if users_to_remove:
+                st.warning(
+                    f"The following {len(users_to_remove)} user(s) **will be removed**:\n\n"
+                    + "\n".join(f"- {n}" for n in users_to_remove[:20])
+                    + ("\n- ..." if len(users_to_remove) > 20 else "")
+                )
+            else:
+                st.info("All existing users are in the uploaded file — no removals needed.")
+
+        confirm_apply = st.checkbox(
+            "✅ I have reviewed the preview and want to apply these changes",
+            value=False,
+            key=f"{key_prefix}_roster_confirm_apply",
+        )
+
+        if st.button(
+            "🚀 Apply Roster Upload",
+            key=f"{key_prefix}_roster_apply_btn",
+            disabled=not confirm_apply,
+        ):
+            try:
+                from .roles import role_has
+            except Exception:
+                from roles import role_has  # type: ignore
+            if not role_has(caller_role, "manage_users"):
+                st.error("Permission denied: your role cannot manage users.")
+                return
+
+            applied_add = applied_update = applied_remove = applied_caseloads = 0
+
+            for _, row in raw_df.iterrows():
+                name          = row["Name"]
+                role          = row["Role"]
+                dept          = row["Department"]
+                unit          = row["Unit"]
+                key           = _name_key(name)
+                all_caseloads = (
+                    _parse_caseload_cell(row["Caseload 1"])
+                    + _parse_caseload_cell(row["Caseload 2"])
+                )
+
+                # ── Upsert user record ──────────────────────────────────
+                if key in existing_by_name:
+                    for user in st.session_state.users:
+                        if _name_key(user["name"]) == key:
+                            old_user = dict(user)
+                            if role:
+                                user["role"] = role
+                            if dept:
+                                user["department"] = dept
+                            if unit:
+                                user["unit"] = unit
+                            _sync_user_to_units(old_user, user)
+                            applied_update += 1
+                            break
+                else:
+                    new_user = {
+                        "name":       name,
+                        "role":       role,
+                        "department": dept,
+                        "unit":       unit,
+                        "unit_role":  "",
+                    }
+                    st.session_state.users.append(new_user)
+                    _sync_user_to_units({}, new_user)
+                    applied_add += 1
+
+                # ── Link to unit (membership + supervisor/team lead slot) ─
+                if unit:
+                    _ensure_unit(unit)
+                    unit_data = st.session_state.units.setdefault(unit, {})
+                    if role in _UNIT_SUPERVISOR_ROLES:
+                        if not unit_data.get("supervisor"):
+                            unit_data["supervisor"] = name
+                    elif role in _UNIT_TEAM_LEAD_ROLES:
+                        tl_list = unit_data.setdefault("team_leads", [])
+                        if name not in tl_list:
+                            tl_list.append(name)
+                        so_list = unit_data.setdefault("support_officers", [])
+                        if name not in so_list:
+                            so_list.append(name)
+                    elif role in _UNIT_STAFF_ROLES:
+                        so_list = unit_data.setdefault("support_officers", [])
+                        if name not in so_list:
+                            so_list.append(name)
+
+                    # ── Assign caseloads directly to unit assignments ───
+                    if all_caseloads:
+                        assignments      = unit_data.setdefault("assignments", {})
+                        worker_cl_list   = assignments.setdefault(name, [])
+                        for cl in all_caseloads:
+                            norm = normalize_caseload_number(cl)
+                            if norm and norm not in worker_cl_list:
+                                worker_cl_list.append(norm)
+                                st.session_state.reports_by_caseload.setdefault(norm, [])
+                                applied_caseloads += 1
+
+                    st.session_state.units[unit] = unit_data
+
+            # ── Removals ───────────────────────────────────────────────
+            if remove_unlisted:
+                uploaded_keys = {_name_key(r["Name"]) for r in preview_rows}
+                original_users = list(st.session_state.users)
+                st.session_state.users = [
+                    u for u in original_users
+                    if _name_key(u["name"]) in uploaded_keys
+                ]
+                applied_remove = len(original_users) - len(st.session_state.users)
+                for removed_u in original_users:
+                    if _name_key(removed_u["name"]) not in uploaded_keys:
+                        _remove_user_from_units(removed_u["name"])
+
+            _persist_app_state()
+            parts = [f"**{applied_add}** added", f"**{applied_update}** updated"]
+            if applied_caseloads:
+                parts.append(f"**{applied_caseloads}** caseload(s) assigned")
+            if applied_remove:
+                parts.append(f"**{applied_remove}** removed")
+            st.success("✅ Roster applied: " + " · ".join(parts) + ".")
+            st.rerun()
+
+
 def render_user_management_panel(
     key_prefix: str,
     dept_scope: str | None = None,
@@ -5165,6 +5762,10 @@ def render_user_management_panel(
             st.session_state.pop(f"{key_prefix}_unit_summary_last_update", None)
     else:
         st.info("No units have been configured yet.")
+
+    st.divider()
+    _render_roster_upload_panel(key_prefix)
+    st.divider()
 
     st.write("**Add User**")
     col1, col2, col3 = st.columns(3)
@@ -8353,7 +8954,108 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                         selected_supervisor_department = str(_usr.get('department', '')).strip() or selected_supervisor_department
                         break
 
-                if caseload_view == "Department":
+                if caseload_view == "Unit":
+                    # ── Live Unit Detail ──────────────────────────────────────
+                    st.caption(f"Unit: {unit_name}  |  Supervisor: {unit.get('supervisor', '—')}")
+                    _ud_team_leads = list((unit or {}).get('team_leads', []) or [])
+                    _ud_officers   = list((unit or {}).get('support_officers', []) or [])
+                    _ud_all_staff  = [w for i, w in enumerate(_ud_officers + _ud_team_leads) if w and w not in (_ud_officers + _ud_team_leads)[:i]]
+                    # deduplicate preserving order
+                    _ud_seen: set = set()
+                    _ud_deduped: list = []
+                    for _w in _ud_officers + _ud_team_leads:
+                        if _w and _w not in _ud_seen:
+                            _ud_seen.add(_w)
+                            _ud_deduped.append(_w)
+                    _ud_assignments = (unit or {}).get('assignments', {}) or {}
+                    _ud_reports_map = st.session_state.get('reports_by_caseload', {}) or {}
+
+                    _ud_rows = []
+                    for _w in _ud_deduped:
+                        _is_tl = _w in _ud_team_leads
+                        _cls   = list(_ud_assignments.get(_w, []) or [])
+                        _total = 0
+                        _done  = 0
+                        _last_submitted: str = '—'
+                        for _cl in _cls:
+                            for _rep in (_ud_reports_map.get(str(_cl), []) or []):
+                                _df = _rep.get('data')
+                                if isinstance(_df, pd.DataFrame) and not _df.empty:
+                                    _total += len(_df)
+                                    if 'Worker Status' in _df.columns:
+                                        _done += int(_df['Worker Status'].eq('Completed').sum())
+                                    # track latest submission timestamp
+                                    for _ts_key in ('submitted_at', 'imported_at', 'uploaded_at'):
+                                        _ts_val = _rep.get(_ts_key)
+                                        if _ts_val and str(_ts_val) > _last_submitted.replace('—', ''):
+                                            try:
+                                                _last_submitted = pd.to_datetime(str(_ts_val), errors='coerce').strftime('%Y-%m-%d %H:%M') or '—'
+                                            except Exception:
+                                                pass
+                        _pct = round(_done / _total * 100, 1) if _total > 0 else None
+                        if _pct is not None:
+                            _status = '✅ Complete' if _pct >= 100.0 else ('⚠️ In Progress' if _pct > 0 else '🔴 Not Started')
+                        else:
+                            _status = '⬜ No Reports'
+                        _ud_rows.append({
+                            'Worker':            _w,
+                            'Role':              'Team Lead' if _is_tl else 'Support Officer',
+                            'Caseloads':         len(_cls),
+                            'Caseload #s':       ', '.join(sorted(str(c) for c in _cls)) if _cls else '(None)',
+                            'Cases Total':       _total if _total else '—',
+                            'Cases Completed':   _done if _total else '—',
+                            'Completion %':      f"{_pct:.1f}%" if _pct is not None else '—',
+                            'Status':            _status,
+                            'Last Submission':   _last_submitted,
+                        })
+                    # Add supervisor row at top
+                    _sup_name = str((unit or {}).get('supervisor', '')).strip()
+                    if _sup_name:
+                        _sup_cls = list(_ud_assignments.get(_sup_name, []) or [])
+                        _ud_rows.insert(0, {
+                            'Worker':          _sup_name,
+                            'Role':            'Supervisor',
+                            'Caseloads':       len(_sup_cls),
+                            'Caseload #s':     ', '.join(sorted(str(c) for c in _sup_cls)) if _sup_cls else '(None)',
+                            'Cases Total':     '—',
+                            'Cases Completed': '—',
+                            'Completion %':    '—',
+                            'Status':          '—',
+                            'Last Submission': '—',
+                        })
+                    if _ud_rows:
+                        _ud_df = pd.DataFrame(_ud_rows)
+                        # Colour-code status column
+                        def _ud_style(val: str) -> str:
+                            if '✅' in str(val):
+                                return 'background-color:#d4edda;color:#155724'
+                            if '⚠️' in str(val):
+                                return 'background-color:#fff3cd;color:#856404'
+                            if '🔴' in str(val):
+                                return 'background-color:#f8d7da;color:#721c24'
+                            return ''
+                        try:
+                            st.dataframe(
+                                _ud_df.style.applymap(_ud_style, subset=['Status']),
+                                use_container_width=True,
+                                hide_index=True,
+                            )
+                        except Exception:
+                            st.dataframe(_ud_df, use_container_width=True, hide_index=True)
+                        # Summary metrics
+                        _ud_total_cl = sum(r['Caseloads'] for r in _ud_rows)
+                        _ud_total_cs = sum(r['Cases Total'] for r in _ud_rows if isinstance(r['Cases Total'], int))
+                        _ud_done_cs  = sum(r['Cases Completed'] for r in _ud_rows if isinstance(r['Cases Completed'], int))
+                        _ud_pct_ov   = round(_ud_done_cs / _ud_total_cs * 100, 1) if _ud_total_cs > 0 else 0.0
+                        c1, c2, c3, c4 = st.columns(4)
+                        c1.metric("Unit Staff", str(len(_ud_rows)))
+                        c2.metric("Total Caseloads", str(_ud_total_cl))
+                        c3.metric("Cases Completed", f"{_ud_done_cs} / {_ud_total_cs}" if _ud_total_cs else "No reports yet")
+                        c4.metric("Unit Completion", f"{_ud_pct_ov:.1f}%" if _ud_total_cs else "—")
+                    else:
+                        st.info("No staff are assigned to this unit yet. Use the Unit Grouping section in Manage Users to add staff.")
+
+                elif caseload_view == "Department":
                     if not selected_supervisor_department:
                         st.info("Department could not be determined for this supervisor.")
                     else:
@@ -8365,11 +9067,24 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                             dept_assigned_total = sum(len(v or []) for v in dept_assignments.values())
                             dept_staff = list((dept_unit or {}).get('support_officers', []) or []) + list((dept_unit or {}).get('team_leads', []) or [])
                             dept_staff = [w for i, w in enumerate(dept_staff) if w and w not in dept_staff[:i]]
+                            # Live completion from reports
+                            _d_total = 0; _d_done = 0
+                            for _dw in dept_staff:
+                                for _dcl in (dept_assignments.get(_dw, []) or []):
+                                    for _drep in (st.session_state.get('reports_by_caseload', {}).get(str(_dcl), []) or []):
+                                        _ddf = _drep.get('data')
+                                        if isinstance(_ddf, pd.DataFrame) and not _ddf.empty:
+                                            _d_total += len(_ddf)
+                                            if 'Worker Status' in _ddf.columns:
+                                                _d_done += int(_ddf['Worker Status'].eq('Completed').sum())
                             dept_rows.append({
                                 'Unit': dept_unit_name,
                                 'Supervisor': str((dept_unit or {}).get('supervisor', '')).strip(),
                                 'Staff': len(dept_staff),
                                 'Assigned Caseloads': dept_assigned_total,
+                                'Cases Total': _d_total if _d_total else '—',
+                                'Cases Completed': _d_done if _d_total else '—',
+                                'Completion %': f"{round(_d_done/_d_total*100,1):.1f}%" if _d_total > 0 else '—',
                             })
                         st.caption(f"Department: {selected_supervisor_department}")
                         if dept_rows:
@@ -8382,21 +9097,29 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                     team_workers = list((unit or {}).get('support_officers', []) or []) + list((unit or {}).get('team_leads', []) or [])
                     team_workers = [w for i, w in enumerate(team_workers) if w and w not in team_workers[:i]]
                     assignments = (unit or {}).get('assignments', {}) or {}
+                    _iw_rmap = st.session_state.get('reports_by_caseload', {}) or {}
                     for worker in team_workers:
                         caseloads = list(assignments.get(worker, []) or [])
+                        _iw_total = 0; _iw_done = 0
+                        for _icl in caseloads:
+                            for _irep in (_iw_rmap.get(str(_icl), []) or []):
+                                _idf = _irep.get('data')
+                                if isinstance(_idf, pd.DataFrame) and not _idf.empty:
+                                    _iw_total += len(_idf)
+                                    if 'Worker Status' in _idf.columns:
+                                        _iw_done += int(_idf['Worker Status'].eq('Completed').sum())
                         worker_rows.append({
                             'Worker': worker,
                             'Assigned Caseload Count': len(caseloads),
                             'Assigned Caseloads': ', '.join(sorted([str(c) for c in caseloads])) if caseloads else '(None)',
+                            'Cases Total': _iw_total if _iw_total else '—',
+                            'Cases Completed': _iw_done if _iw_total else '—',
+                            'Completion %': f"{round(_iw_done/_iw_total*100,1):.1f}%" if _iw_total > 0 else '—',
                         })
                     if worker_rows:
                         st.dataframe(pd.DataFrame(worker_rows), use_container_width=True, hide_index=True)
                     else:
                         st.info("No individual worker caseload data available for this unit.")
-
-                st.markdown(f"**Unit:** {unit_name}")
-                st.markdown(f"**Team Lead(s):** {', '.join(unit.get('team_leads', []))}")
-                st.markdown(f"**Support Officers:** {', '.join(unit.get('support_officers', []))}")
 
                 # Default behavior for demos: any caseload that exists in the system but is not
                 # assigned to anyone is treated as owned by the supervisor.
@@ -8845,8 +9568,24 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
         _sup_own_unit_name, _sup_own_unit = _find_supervisor_unit_record(_sup_reviewer_name)
         
         if not _sup_own_unit_name:
-            st.info("You are not assigned as a supervisor for any unit. QA review is available to unit supervisors.")
-        else:
+            st.warning(
+                "⚠️ Your account is not mapped to a supervisor unit. "
+                "Ensure your display name exactly matches the supervisor name set on a unit (Settings → Manage Users → Unit Configuration). "
+                "You can still browse all submitted reports below."
+            )
+            # Fallback: let supervisor pick any unit so demo/misconfigured accounts still work
+            _fallback_units = list(st.session_state.get('units', {}).keys())
+            if _fallback_units:
+                _fb_unit_pick = st.selectbox(
+                    "Browse unit (fallback — your account is not mapped to one automatically):",
+                    options=['(Select)'] + _fallback_units,
+                    key='sup_qa_fallback_unit_pick'
+                )
+                if _fb_unit_pick and _fb_unit_pick != '(Select)':
+                    _sup_own_unit_name = _fb_unit_pick
+                    _sup_own_unit = st.session_state.units.get(_fb_unit_pick, {})
+                    st.caption(f"Browsing unit: **{_sup_own_unit_name}** (fallback mode)")
+        if _sup_own_unit_name and _sup_own_unit is not None:
             _sup_unit_member_keys = {
                 _name_key(n)
                 for n in [
@@ -8979,24 +9718,76 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                     qa_samples = selected_qa_report['qa_samples']
                     
                     # Determine report source for compliance checking
+                    # Priority: canonical_data > Report Source column > report_type field > filename > column heuristic
                     report_source = ''
                     canonical_df = report.get('canonical_data')
                     if isinstance(canonical_df, pd.DataFrame) and not canonical_df.empty and 'report_source' in canonical_df.columns:
                         report_source = str(canonical_df['report_source'].dropna().astype(str).iloc[0]).strip()
-                    
+
                     if not report_source and isinstance(report_data, pd.DataFrame) and 'Report Source' in report_data.columns:
                         non_blank = report_data['Report Source'].astype(str).replace('nan', '').str.strip()
                         report_source = str(non_blank[non_blank != ''].iloc[0]).strip() if any(non_blank != '') else ''
-                    
-                    # Normalize report source
-                    if report_source.upper() in ['56RA', '56', 'EST', 'ESTABLISHMENT']:
+
+                    # Fallback 1: report_type field on the report dict
+                    if not report_source:
+                        _rt = str(report.get('report_type', '') or '').strip().upper()
+                        if '56' in _rt or 'EST' in _rt or 'ESTABLISHMENT' in _rt:
+                            report_source = '56'
+                        elif 'PS' in _rt or 'P-S' in _rt or 'PARENTING' in _rt or 'PATERNITY' in _rt:
+                            report_source = 'PS'
+                        elif 'LOC' in _rt:
+                            report_source = 'LOCATE'
+                        elif 'CLOSURE' in _rt:
+                            report_source = 'CASE_CLOSURE'
+
+                    # Fallback 2: original filename keywords
+                    if not report_source:
+                        _fname = str(
+                            report.get('original_filename') or report.get('filename') or report.get('file_name') or ''
+                        ).lower()
+                        if '56' in _fname or 'ra56' in _fname or 'establishment' in _fname:
+                            report_source = '56'
+                        elif 'ps_' in _fname or '_ps.' in _fname or 'parenting' in _fname or 'paternity' in _fname:
+                            report_source = 'PS'
+                        elif 'locate' in _fname or 'loc_' in _fname:
+                            report_source = 'LOCATE'
+                        elif 'closure' in _fname:
+                            report_source = 'CASE_CLOSURE'
+
+                    # Fallback 3: column-name heuristic on the report dataframe
+                    if not report_source and isinstance(report_data, pd.DataFrame):
+                        _cols = {c.strip() for c in report_data.columns}
+                        if 'Date Action Taken' in _cols and 'Action Taken/Status' in _cols:
+                            report_source = '56'
+                        elif 'Action Taken/Status' in _cols and 'Date Case Reviewed' not in _cols and 'Date Action Taken' not in _cols:
+                            report_source = 'PS'
+                        elif 'Results of Review' in _cols or 'Case Closure Code' in _cols:
+                            report_source = 'LOCATE'
+                        elif {'All F&Rs filed?', 'Did you propose closure?'}.intersection(_cols):
+                            report_source = 'CASE_CLOSURE'
+
+                    # Normalize variants to canonical keys
+                    _rs_upper = report_source.upper()
+                    if _rs_upper in ('56RA', '56', 'EST', 'ESTABLISHMENT'):
                         report_source = '56'
-                    elif report_source.upper() in ['PS', 'P-S', 'PARENTING', 'PATERNITY']:
+                    elif _rs_upper in ('PS', 'P-S', 'PARENTING', 'PATERNITY'):
                         report_source = 'PS'
-                    elif report_source.upper() in ['LOC', 'LOCATE']:
+                    elif _rs_upper in ('LOC', 'LOCATE'):
                         report_source = 'LOCATE'
-                    elif 'closure' in str(report.get('report_type', '')).lower():
+                    elif _rs_upper in ('CASE_CLOSURE', 'CLOSURE', 'CASE CLOSURE'):
                         report_source = 'CASE_CLOSURE'
+
+                    # Last resort: let supervisor manually pick the report type
+                    if not report_source or report_source not in ('56', 'PS', 'LOCATE', 'CASE_CLOSURE'):
+                        _manual_src = st.selectbox(
+                            "⚠️ Could not detect report type automatically. Select it manually:",
+                            options=['LOCATE', 'PS', '56', 'CASE_CLOSURE'],
+                            key=f'sup_qa_manual_src_{report_id}'
+                        )
+                        report_source = _manual_src
+                        st.caption(f"Using manually selected report type: **{report_source}**")
+                    else:
+                        st.caption(f"Report type detected: **{report_source}**")
                     
                     # Show QA status badge
                     try:
@@ -9015,7 +9806,62 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                     # Worker selector for QA review
                     worker_list = list(qa_samples.keys())
                     if not worker_list:
-                        st.warning("No QA samples found for this report.")
+                        st.warning(
+                            "No QA samples found for this report. "
+                            "This happens when the report has no rows with both 'Assigned Worker' set and 'Worker Status = Completed'."
+                        )
+                        # Offer manual regeneration or fallback to all completed workers
+                        _regen_col1, _regen_col2 = st.columns(2)
+                        with _regen_col1:
+                            if st.button("🔄 Force Regenerate QA Samples", key=f'sup_qa_force_regen_{report_id}'):
+                                try:
+                                    auto_qa_sampling_on_submit(report)
+                                    _regenerated = get_qa_samples(report_id)
+                                    if _regenerated:
+                                        st.success(f"✅ Generated samples for {len(_regenerated)} worker(s). Refreshing...")
+                                        st.rerun()
+                                    else:
+                                        st.error(
+                                            "Still no samples. The report data may have no rows with "
+                                            "'Assigned Worker' filled in AND 'Worker Status' = 'Completed'. "
+                                            "Ask the support officer to save/resubmit."
+                                        )
+                                except Exception as _e:
+                                    st.error(f"Regeneration error: {_e}")
+                        with _regen_col2:
+                            # Allow supervisor to manually pick a worker from completed rows as a fallback
+                            if isinstance(report_data, pd.DataFrame) and not report_data.empty:
+                                _all_workers = []
+                                if 'Assigned Worker' in report_data.columns:
+                                    _all_workers = sorted(
+                                        report_data['Assigned Worker'].astype(str).str.strip()
+                                        .replace('', pd.NA).dropna().unique().tolist()
+                                    )
+                                if _all_workers:
+                                    _manual_worker = st.selectbox(
+                                        "Or manually select worker to review:",
+                                        options=['(Select)'] + _all_workers,
+                                        key=f'sup_qa_manual_worker_{report_id}'
+                                    )
+                                    if _manual_worker and _manual_worker != '(Select)':
+                                        if st.button("Use this worker", key=f'sup_qa_use_manual_{report_id}'):
+                                            try:
+                                                from qa_compliance import generate_and_store_qa_samples
+                                                _tmp_report = dict(report)
+                                                _tmp_df = report_data.copy()
+                                                if 'Worker Status' not in _tmp_df.columns:
+                                                    _tmp_df['Worker Status'] = 'Completed'
+                                                _tmp_df.loc[
+                                                    _tmp_df['Assigned Worker'].astype(str).str.strip() == _manual_worker,
+                                                    'Worker Status'
+                                                ] = 'Completed'
+                                                _tmp_report['data'] = _tmp_df
+                                                _tmp_report['status'] = 'Submitted for Review'
+                                                generate_and_store_qa_samples(_tmp_report, sample_size=5)
+                                                st.success(f"Samples set for {_manual_worker}. Refreshing...")
+                                                st.rerun()
+                                            except Exception as _e:
+                                                st.error(f"Error: {_e}")
                     else:
                         selected_qa_worker = st.selectbox(
                             "Select Worker to Review:",
@@ -9109,6 +9955,7 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                                                 _sup_reviewer_name,
                                                 reviewer_notes
                                             )
+                                            _persist_app_state()
                                             st.success(f"✅ QA review saved for Case {case_row.get('Case Number', selected_case_idx)}")
                                             st.rerun()
                             
@@ -9174,6 +10021,7 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                                             validation_result['status'],
                                             validation_result['notes'],
                                         )
+                                        _persist_app_state()
                                         st.success(f"✅ Validation saved: {validation_result['status']}")
                                         st.rerun()
                                 
