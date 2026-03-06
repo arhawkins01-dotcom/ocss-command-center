@@ -666,3 +666,211 @@ def auto_qa_sampling_on_submit(report_dict: Dict):
     # Only sample when moving to "Submitted for Review" status
     if 'submitted' in report_status or 'review' in report_status:
         generate_and_store_qa_samples(report_dict, sample_size=5)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SUPERVISOR QA VALIDATION & SUMMARY TRACKING
+# Per-Worker QA Results with Full Case Details
+# ═══════════════════════════════════════════════════════════════════════════
+
+def init_supervisor_qa_storage():
+    """Initialize supervisor QA validation storage."""
+    if 'supervisor_qa_validations' not in st.session_state:
+        st.session_state.supervisor_qa_validations = {}
+    if 'worker_qa_summaries' not in st.session_state:
+        st.session_state.worker_qa_summaries = {}
+
+
+def store_supervisor_qa_validation(
+    report_id: str,
+    worker_name: str,
+    supervisor_name: str,
+    validation_status: str,
+    validation_notes: str = '',
+    validation_date: Optional[str] = None,
+) -> None:
+    """
+    Store supervisor's validation of worker's QA findings.
+    
+    validation_status: 'Approved', 'Challenge', or 'Needs Review'
+    Stores per-worker validation metadata for supervisor summary reports.
+    """
+    init_supervisor_qa_storage()
+    
+    validation_key = f"{report_id}_{worker_name}"
+    validation_date = validation_date or datetime.now().isoformat()
+    
+    st.session_state.supervisor_qa_validations[validation_key] = {
+        'report_id': report_id,
+        'worker_name': worker_name,
+        'supervisor_name': supervisor_name,
+        'validation_status': validation_status,  # Approved | Challenge | Needs Review
+        'validation_notes': validation_notes,
+        'validation_date': validation_date,
+    }
+
+
+def get_supervisor_qa_validation(report_id: str, worker_name: str) -> Optional[Dict]:
+    """Retrieve supervisor's validation for a worker's QA results."""
+    init_supervisor_qa_storage()
+    validation_key = f"{report_id}_{worker_name}"
+    return st.session_state.supervisor_qa_validations.get(validation_key)
+
+
+def get_worker_qa_summary(
+    report_id: str,
+    worker_name: str,
+    report_data: pd.DataFrame,
+) -> Dict[str, Any]:
+    """
+    Generate comprehensive QA summary for a specific worker in a report.
+    
+    Returns:
+        {
+            'worker_name': str,
+            'report_id': str,
+            'total_completed': int,
+            'total_sampled': int,
+            'avg_compliance': float,
+            'pass_rate': float,
+            'cases': [
+                {
+                    'case_number': str,
+                    'case_type': str,
+                    'compliance_score': float,
+                    'status': str (Passed/Failed),
+                    'actions_taken': str,
+                    'comments': str,
+                    'reviewed': bool,
+                    'reviewer': str,
+                }
+            ],
+            'supervisor_validation': Optional[Dict],
+        }
+    """
+    init_qa_storage()
+    init_supervisor_qa_storage()
+    
+    # Filter to completed rows for this worker
+    worker_completed = report_data[
+        (report_data['Assigned Worker'].astype(str).str.strip() == worker_name) &
+        (report_data['Worker Status'].astype(str).str.strip() == 'Completed')
+    ]
+    
+    total_completed = len(worker_completed)
+    
+    # Get QA samples for this worker
+    qa_samples = get_qa_samples(report_id)
+    worker_sample_indices = qa_samples.get(worker_name, [])
+    total_sampled = len(worker_sample_indices)
+    
+    # Get all QA reviews for this worker
+    worker_reviews = [
+        review for review in st.session_state.qa_reviews.values()
+        if review['report_id'] == report_id and review['worker_name'] == worker_name
+    ]
+    
+    # Build case-level details
+    cases = []
+    total_compliance = 0.0
+    max_compliance = 0.0
+    passed_count = 0
+    
+    for idx in worker_sample_indices:
+        if idx in report_data.index:
+            row = report_data.loc[idx]
+            case_number = str(row.get('Case Number', row.get('Case Row ID', f'Row {idx}')))
+            
+            # Get QA review if exists
+            review = next((r for r in worker_reviews if r['row_index'] == idx), None)
+            
+            # Extract actions taken based on report type
+            actions_taken = row.get('Action Taken/Status', '')
+            if not actions_taken:
+                actions_taken = row.get('Results of Review', '')
+            
+            case_detail = {
+                'case_number': case_number,
+                'case_type': str(row.get('Case Type', row.get('Case Mode', 'N/A'))),
+                'date_processed': str(row.get('Date Action Taken', row.get('Date Case Reviewed ', ''))),
+                'actions_taken': str(actions_taken),
+                'comments': str(row.get('Comment', row.get('Comments', ''))),
+                'qa_flag': str(row.get('QA Flag', '')),
+                'reviewed': review is not None,
+                'reviewer': review['reviewer_name'] if review else '',
+                'review_date': review['review_date'] if review else '',
+            }
+            
+            if review:
+                compliance_pct = review['compliance_score'].get('percentage', 0.0)
+                case_detail['compliance_score'] = compliance_pct
+                case_detail['status'] = 'Passed' if compliance_pct >= 75.0 else 'Failed'
+                total_compliance += compliance_pct
+                max_compliance += 100.0
+                if compliance_pct >= 75.0:
+                    passed_count += 1
+            else:
+                case_detail['compliance_score'] = None
+                case_detail['status'] = 'Pending Review'
+            
+            cases.append(case_detail)
+    
+    # Calculate aggregated metrics
+    avg_compliance = (total_compliance / max_compliance * 100) if max_compliance > 0 else 0.0
+    pass_rate = (passed_count / len(worker_reviews) * 100) if len(worker_reviews) > 0 else 0.0
+    
+    # Get supervisor validation if exists
+    supervisor_validation = get_supervisor_qa_validation(report_id, worker_name)
+    
+    return {
+        'worker_name': worker_name,
+        'report_id': report_id,
+        'total_completed': total_completed,
+        'total_sampled': total_sampled,
+        'cases_reviewed': len(worker_reviews),
+        'avg_compliance': round(avg_compliance, 1),
+        'pass_rate': round(pass_rate, 1),
+        'cases': cases,
+        'supervisor_validation': supervisor_validation,
+    }
+
+
+def generate_supervisor_qa_summary_dataframe(
+    report_id: str,
+    report_data: pd.DataFrame,
+    qa_samples: Dict[str, List[int]],
+) -> pd.DataFrame:
+    """
+    Generate a comprehensive summary dataframe for supervisor review.
+    One row per QA case showing all worker completion details.
+    """
+    init_qa_storage()
+    
+    summary_rows = []
+    
+    for worker_name, sample_indices in qa_samples.items():
+        for idx in sample_indices:
+            if idx in report_data.index:
+                row = report_data.loc[idx]
+                
+                # Get QA review
+                qa_review = get_qa_review(report_id, worker_name, idx)
+                
+                summary_rows.append({
+                    'Report ID': report_id,
+                    'Worker': worker_name,
+                    'Case Number': str(row.get('Case Number', row.get('Case Row ID', ''))),
+                    'Case Type': str(row.get('Case Type', row.get('Case Mode', ''))),
+                    'Actions Taken': str(row.get('Action Taken/Status', row.get('Results of Review', ''))),
+                    'Comments': str(row.get('Comment', row.get('Comments', ''))),
+                    'QA Flag': str(row.get('QA Flag', '')),
+                    'Compliance %': qa_review['compliance_score']['percentage'] if qa_review else 'Pending',
+                    'Status': 'Passed' if (qa_review and qa_review['compliance_score']['percentage'] >= 75.0) else ('Failed' if qa_review else 'Pending'),
+                    'Reviewed By': qa_review['reviewer_name'] if qa_review else '',
+                    'Review Date': qa_review['review_date'][:10] if qa_review else '',
+                })
+    
+    if summary_rows:
+        return pd.DataFrame(summary_rows)
+    else:
+        return pd.DataFrame()

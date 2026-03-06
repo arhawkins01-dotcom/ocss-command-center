@@ -445,18 +445,36 @@ def _name_alias_keys(value: str) -> set[str]:
     if not text:
         return set()
 
-    tokens = [token for token in re.findall(r"[a-z0-9]+", text) if token]
-    if not tokens:
-        return set()
+    # If a login identity is an email, include local-part aliases so
+    # values like "stacy.slick-williams@agency.org" match seeded names.
+    candidates = [text]
+    if '@' in text:
+        local_part = text.split('@', 1)[0].strip()
+        if local_part:
+            candidates.append(local_part)
 
-    strict_key = ''.join(tokens)
-    keys = {strict_key} if strict_key else set()
+    keys: set[str] = set()
+    for candidate in candidates:
+        tokens = [token for token in re.findall(r"[a-z0-9]+", candidate) if token]
+        if not tokens:
+            continue
 
-    if len(tokens) >= 3:
-        compact_tokens = [tokens[0]] + [token for token in tokens[1:-1] if len(token) > 1] + [tokens[-1]]
-        compact_key = ''.join(compact_tokens)
-        if compact_key:
-            keys.add(compact_key)
+        strict_key = ''.join(tokens)
+        if strict_key:
+            keys.add(strict_key)
+
+        # Common alias: first + last (ignores middle names/initials).
+        if len(tokens) >= 2:
+            first_last = tokens[0] + tokens[-1]
+            if first_last:
+                keys.add(first_last)
+
+        # Middle-initial-insensitive compaction.
+        if len(tokens) >= 3:
+            compact_tokens = [tokens[0]] + [token for token in tokens[1:-1] if len(token) > 1] + [tokens[-1]]
+            compact_key = ''.join(compact_tokens)
+            if compact_key:
+                keys.add(compact_key)
 
     return {key for key in keys if key}
 
@@ -3082,21 +3100,47 @@ def _find_unit_for_person(person: str) -> str | None:
 def _find_supervisor_unit_record(supervisor_name: str) -> tuple[str | None, dict | None]:
     """Resolve the supervisor's unit robustly using normalized identity and user fallback."""
     supervisor_name = str(supervisor_name or '').strip()
-    if not supervisor_name:
+    current_user_name = str(st.session_state.get('current_user', '') or '').strip()
+
+    candidates: list[str] = []
+    if supervisor_name:
+        candidates.append(supervisor_name)
+    if current_user_name and current_user_name not in candidates:
+        candidates.append(current_user_name)
+
+    if not candidates:
         return None, None
 
-    supervisor_keys = _name_alias_keys(supervisor_name)
-    if not supervisor_keys:
-        return None, None
-    for unit_name, unit in st.session_state.get('units', {}).items():
-        if supervisor_keys.intersection(_name_alias_keys(unit.get('supervisor', ''))):
-            return str(unit_name), unit
+    for candidate_name in candidates:
+        supervisor_keys = _name_alias_keys(candidate_name)
+        if not supervisor_keys:
+            continue
 
-    fallback_unit_name = _find_unit_for_person(supervisor_name)
-    if fallback_unit_name:
-        fallback_unit = st.session_state.get('units', {}).get(fallback_unit_name)
-        if isinstance(fallback_unit, dict):
-            return str(fallback_unit_name), fallback_unit
+        for unit_name, unit in st.session_state.get('units', {}).items():
+            if supervisor_keys.intersection(_name_alias_keys(unit.get('supervisor', ''))):
+                return str(unit_name), unit
+
+        fallback_unit_name = _find_unit_for_person(candidate_name)
+        if fallback_unit_name:
+            fallback_unit = st.session_state.get('units', {}).get(fallback_unit_name)
+            if isinstance(fallback_unit, dict):
+                return str(fallback_unit_name), fallback_unit
+
+        # Last-resort fallback: map candidate to supervisor user profile + unit field.
+        for user in st.session_state.get('users', []) or []:
+            try:
+                if str(user.get('role', '')).strip() != 'Supervisor':
+                    continue
+                if not supervisor_keys.intersection(_name_alias_keys(user.get('name', ''))):
+                    continue
+                user_unit = str(user.get('unit', '') or '').strip()
+                if not user_unit:
+                    continue
+                unit_ref = st.session_state.get('units', {}).get(user_unit)
+                if isinstance(unit_ref, dict):
+                    return user_unit, unit_ref
+            except Exception:
+                continue
 
     return None, None
 
@@ -8803,32 +8847,116 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
         if not _sup_own_unit_name:
             st.info("You are not assigned as a supervisor for any unit. QA review is available to unit supervisors.")
         else:
+            _sup_unit_member_keys = {
+                _name_key(n)
+                for n in [
+                    _sup_own_unit.get('supervisor', ''),
+                    *(_sup_own_unit.get('team_leads', []) or []),
+                    *(_sup_own_unit.get('support_officers', []) or []),
+                ]
+                if str(n).strip()
+            }
+
+            def _report_matches_supervisor_unit(report_obj: dict, caseload_value: str, owner_unit_name: str | None) -> tuple[bool, str]:
+                # Primary route: caseload owner unit
+                if owner_unit_name == _sup_own_unit_name:
+                    return True, 'caseload-owner'
+
+                # Fallback route: any assigned worker on the report belongs to this supervisor unit.
+                report_df = report_obj.get('data')
+                if isinstance(report_df, pd.DataFrame) and not report_df.empty:
+                    try:
+                        normalized_df, _, _ = normalize_support_report_dataframe(report_df, caseload_value)
+                    except Exception:
+                        normalized_df = report_df
+
+                    if 'Assigned Worker' in normalized_df.columns:
+                        assigned_keys = {
+                            _name_key(v)
+                            for v in normalized_df['Assigned Worker'].fillna('').astype(str).tolist()
+                            if str(v).strip()
+                        }
+                        if assigned_keys.intersection(_sup_unit_member_keys):
+                            return True, 'assigned-worker'
+
+                return False, ''
+
+            # ═══════════════════════════════════════════════════════════════════════════
+            # DEBUG PANEL - Show all reports in unit and their status
+            # ═══════════════════════════════════════════════════════════════════════════
+            with st.expander("🔍 Debug: Unit Reports Status", expanded=False):
+                st.markdown(f"**Supervisor Unit:** {_sup_own_unit_name}")
+                st.markdown(f"**Unit Caseloads:** {', '.join(_sup_own_unit.get('caseload_numbers', []))}")
+                
+                debug_rows = []
+                for caseload, reports in (st.session_state.get('reports_by_caseload', {}) or {}).items():
+                    owner_unit, owner_person = get_caseload_owner(caseload)
+                    for rep_idx, report in enumerate(reports):
+                        in_scope, match_reason = _report_matches_supervisor_unit(report, str(caseload), owner_unit)
+                        if not in_scope:
+                            continue
+                        report_id = str(report.get('report_id', ''))
+                        qa_samples = get_qa_samples(report_id)
+                        debug_rows.append({
+                            'Caseload': caseload,
+                            'Report ID': report_id,
+                            'Status': str(report.get('status', 'N/A')).lower(),
+                            'Report Type': str(report.get('report_type', 'N/A')),
+                            'Has QA Samples': '✅' if qa_samples else '❌',
+                            'Assigned Worker': owner_person or 'N/A',
+                            'Match Reason': match_reason,
+                        })
+                
+                if debug_rows:
+                    debug_df = pd.DataFrame(debug_rows)
+                    st.dataframe(debug_df, use_container_width=True, hide_index=True)
+                else:
+                    st.info("No reports found for this unit.")
+            
             # Find submitted reports in this unit
             submitted_reports = []
             for caseload, reports in (st.session_state.get('reports_by_caseload', {}) or {}).items():
                 owner_unit, owner_person = get_caseload_owner(caseload)
-                if owner_unit == _sup_own_unit_name:
-                    for rep_idx, report in enumerate(reports):
-                        if str(report.get('status', '')).lower() in ['submitted for review', 'under review', 'submitted']:
-                            # Check if this report has QA samples
-                            report_id = str(report.get('report_id', ''))
-                            qa_samples = get_qa_samples(report_id)
-                            if qa_samples:
-                                submitted_reports.append({
-                                    'caseload': caseload,
-                                    'report_idx': rep_idx,
-                                    'report': report,
-                                    'qa_samples': qa_samples,
-                                })
+                for rep_idx, report in enumerate(reports):
+                    in_scope, match_reason = _report_matches_supervisor_unit(report, str(caseload), owner_unit)
+                    if not in_scope:
+                        continue
+                    if str(report.get('status', '')).lower() in ['submitted for review', 'under review', 'submitted']:
+                        # Include submitted reports even if samples are missing.
+                        # If missing, try to generate on read so supervisors can still access the report.
+                        report_id = str(report.get('report_id', ''))
+                        qa_samples = get_qa_samples(report_id)
+                        if not qa_samples:
+                            try:
+                                auto_qa_sampling_on_submit(report)
+                                qa_samples = get_qa_samples(report_id)
+                            except Exception:
+                                qa_samples = {}
+                        submitted_reports.append({
+                            'caseload': caseload,
+                            'report_idx': rep_idx,
+                            'report': report,
+                            'qa_samples': qa_samples,
+                            'match_reason': match_reason,
+                        })
             
             if not submitted_reports:
                 st.info(
-                    "**No reports with QA samples available yet.**\n\n"
-                    "QA samples are automatically generated when workers submit caseloads for review. "
-                    "Once workers submit their work, you'll see reports here for QA review."
+                    "**No submitted reports are available yet for your unit.**\n\n"
+                    "Workers must submit caseloads for review before they appear here."
                 )
             else:
                 st.success(f"✅ {len(submitted_reports)} report(s) available for QA review in your unit.")
+
+                missing_samples = [
+                    sr for sr in submitted_reports
+                    if not sr.get('qa_samples')
+                ]
+                if missing_samples:
+                    st.warning(
+                        f"{len(missing_samples)} submitted report(s) do not yet have QA samples. "
+                        "Open the report to review details; samples will generate once completed rows are available."
+                    )
                 
                 # Report selector
                 report_options = {}
@@ -8983,6 +9111,74 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                                             )
                                             st.success(f"✅ QA review saved for Case {case_row.get('Case Number', selected_case_idx)}")
                                             st.rerun()
+                            
+                            # ═══════════════════════════════════════════════════════════
+                            # SUPERVISOR QA SUMMARY & VALIDATION
+                            # ═══════════════════════════════════════════════════════════
+                            st.markdown("---")
+                            
+                            with st.expander("📊 Worker QA Summary & Validation", expanded=False):
+                                try:
+                                    from qa_compliance import (
+                                        get_worker_qa_summary,
+                                        generate_supervisor_qa_summary_dataframe,
+                                        store_supervisor_qa_validation,
+                                    )
+                                    from qa_ui_components import (
+                                        render_worker_qa_summary_header,
+                                        render_worker_qa_cases_table,
+                                        render_supervisor_qa_validation_form,
+                                        render_worker_performance_scorecard,
+                                    )
+                                    
+                                    # Generate per-worker QA summary
+                                    worker_summary = get_worker_qa_summary(
+                                        report_id,
+                                        selected_qa_worker,
+                                        report_data
+                                    )
+                                    
+                                    # Render summary header with metrics
+                                    render_worker_qa_summary_header(worker_summary)
+                                    
+                                    st.markdown("---")
+                                    
+                                    # Render summary table
+                                    render_worker_qa_cases_table(worker_summary)
+                                    
+                                    st.markdown("---")
+                                    
+                                    # Render performance scorecard
+                                    render_worker_performance_scorecard(
+                                        selected_qa_worker,
+                                        worker_summary['total_completed'],
+                                        worker_summary['avg_compliance'],
+                                        worker_summary['pass_rate'],
+                                    )
+                                    
+                                    st.markdown("---")
+                                    
+                                    # Render supervisor validation form
+                                    validation_result = render_supervisor_qa_validation_form(
+                                        selected_qa_worker,
+                                        worker_summary,
+                                        _sup_reviewer_name,
+                                    )
+                                    
+                                    if validation_result:
+                                        # Store supervisor validation
+                                        store_supervisor_qa_validation(
+                                            report_id,
+                                            selected_qa_worker,
+                                            _sup_reviewer_name,
+                                            validation_result['status'],
+                                            validation_result['notes'],
+                                        )
+                                        st.success(f"✅ Validation saved: {validation_result['status']}")
+                                        st.rerun()
+                                
+                                except Exception as e:
+                                    st.error(f"Error loading QA summary: {str(e)}")
 
     with sup_tab5:
         render_report_intake_portal("supervisor_intake", "Supervisor")

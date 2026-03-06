@@ -308,3 +308,207 @@ def render_report_qa_status_badge(report_id: str, qa_samples: Dict, qa_reviews_c
         """,
         unsafe_allow_html=True
     )
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SUPERVISOR QA SUMMARY COMPONENTS
+# ═══════════════════════════════════════════════════════════════════════════
+
+def render_worker_qa_summary_header(summary: Dict[str, Any]) -> None:
+    """Render header section for worker QA summary."""
+    worker_name = summary.get('worker_name', 'Unknown Worker')
+    total_completed = summary.get('total_completed', 0)
+    total_sampled = summary.get('total_sampled', 0)
+    avg_compliance = summary.get('avg_compliance', 0.0)
+    pass_rate = summary.get('pass_rate', 0.0)
+    
+    st.markdown(f"### 👤 QA Summary: {worker_name}")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Cases Completed", total_completed, label_visibility="collapsed")
+        st.caption("Cases Completed")
+    with col2:
+        st.metric("Cases Sampled", total_sampled, label_visibility="collapsed")
+        st.caption("Cases Sampled")
+    with col3:
+        compliance_color = "🟢" if avg_compliance >= 90 else "🟡" if avg_compliance >= 75 else "🔴"
+        st.metric(f"{compliance_color} Compliance", f"{avg_compliance}%", label_visibility="collapsed")
+        st.caption("Avg Compliance %")
+    with col4:
+        pass_color = "🟢" if pass_rate >= 85 else "🟡" if pass_rate >= 70 else "🔴"
+        st.metric(f"{pass_color} Pass Rate", f"{pass_rate}%", label_visibility="collapsed")
+        st.caption("Cases Passed")
+
+
+def render_worker_qa_cases_table(summary: Dict[str, Any]) -> None:
+    """Render detailed table of sampled cases with QA findings."""
+    cases = summary.get('cases', [])
+    
+    if not cases:
+        st.info("No cases have been reviewed yet.")
+        return
+    
+    # Build dataframe from cases
+    display_data = []
+    for case in cases:
+        display_data.append({
+            'Case #': case.get('case_number', ''),
+            'Type': case.get('case_type', ''),
+            'Actions Taken': case.get('actions_taken', ''),
+            'Comments': case.get('comments', ''),
+            'QA Flag': case.get('qa_flag', ''),
+            'Compliance': f"{case.get('compliance_score', 'Pending')}%" if isinstance(case.get('compliance_score'), (int, float)) else case.get('status', 'Pending'),
+            'Reviewed': '✅' if case.get('reviewed') else '⏳',
+            'Reviewer': case.get('reviewer', ''),
+        })
+    
+    df = pd.DataFrame(display_data)
+    
+    st.markdown("#### 📋 Sampled Cases")
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+
+def render_supervisor_qa_validation_form(
+    worker_name: str,
+    summary: Dict[str, Any],
+    validator_name: str,
+) -> Optional[Dict]:
+    """
+    Render supervisor validation form for accepting/challenging QA findings.
+    
+    Returns validation data when submitted, None otherwise.
+    """
+    st.markdown("#### ✅ Supervisor Validation")
+    
+    existing_validation = summary.get('supervisor_validation')
+    
+    if existing_validation:
+        st.info(f"✅ Already validated on {existing_validation['validation_date'][:10]} by {existing_validation['supervisor_name']}")
+        st.markdown(f"**Status:** {existing_validation['validation_status']}")
+        if existing_validation.get('validation_notes'):
+            st.markdown(f"**Notes:** {existing_validation['validation_notes']}")
+        return None
+    
+    validation_col1, validation_col2 = st.columns([2, 2])
+    
+    with validation_col1:
+        validation_status = st.radio(
+            "Validation Status",
+            options=["Approved", "Challenge", "Needs Review"],
+            horizontal=True,
+            label_visibility="collapsed"
+        )
+    
+    with validation_col2:
+        pass  # Reserved for future options
+    
+    validation_notes = st.text_area(
+        "Validation Notes (optional)",
+        placeholder="Document reasons, concerns, or coaching notes...",
+        height=100,
+        label_visibility="collapsed"
+    )
+    
+    if st.button("✅ Submit Validation", key=f"sup_qa_validation_{worker_name}"):
+        return {
+            'status': validation_status,
+            'notes': validation_notes,
+            'validator': validator_name,
+        }
+    
+    return None
+
+
+def render_supervisor_qa_summary_table(
+    report_id: str,
+    summary_df: pd.DataFrame,
+) -> None:
+    """Render comprehensive supervisor summary table for all workers."""
+    if summary_df.empty:
+        st.info("No QA summary data available yet.")
+        return
+    
+    st.markdown("#### 📊 QA Summary by Case")
+    
+    # Apply conditional formatting for compliance scores
+    def _format_compliance(val):
+        if isinstance(val, str):
+            if val.endswith('%'):
+                try:
+                    score = float(val.rstrip('%'))
+                    if score >= 90:
+                        color = 'background-color: #90EE90'
+                    elif score >= 75:
+                        color = 'background-color: #FFFFE0'
+                    else:
+                        color = 'background-color: #FFB6C6'
+                    return color
+                except:
+                    return ''
+        return ''
+    
+    # Display table
+    st.dataframe(
+        summary_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Compliance %": st.column_config.TextColumn(width="small"),
+            "Status": st.column_config.TextColumn(width="small"),
+        }
+    )
+
+
+def render_worker_performance_scorecard(
+    worker_name: str,
+    total_completed: int,
+    avg_compliance: float,
+    pass_rate: float,
+) -> None:
+    """Render worker performance scorecard with coaching recommendations."""
+    
+    # Determine scorecard color based on performance
+    if avg_compliance >= 90 and pass_rate >= 85:
+        card_color = "#4CAF50"
+        emoji = "⭐"
+        status = "EXCELLENT"
+        recommendation = "Continue strong work. Consider peer mentoring."
+    elif avg_compliance >= 75 and pass_rate >= 70:
+        card_color = "#FFC107"
+        emoji = "👍"
+        status = "ACCEPTABLE"
+        recommendation = "Meets standards. Target improvements in flagged criteria."
+    else:
+        card_color = "#F44336"
+        emoji = "⚠️"
+        status = "NEEDS IMPROVEMENT"
+        recommendation = "Schedule coaching session to address compliance gaps."
+    
+    st.markdown(
+        f"""
+        <div style="
+            background: linear-gradient(135deg, {card_color}20 0%, {card_color}40 100%);
+            border-left: 5px solid {card_color};
+            border-radius: 8px;
+            padding: 16px;
+            margin: 12px 0;
+        ">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <div style="font-size: 24px; font-weight: 700; color: {card_color};">
+                        {emoji} {status}
+                    </div>
+                    <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                        {recommendation}
+                    </div>
+                </div>
+                <div style="text-align: right; color: {card_color}; font-weight: 600;">
+                    <div style="font-size: 18px;">📊 {avg_compliance}% Compliance</div>
+                    <div style="font-size: 14px; margin-top: 4px;">{total_completed} Cases | {pass_rate}% Pass Rate</div>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
