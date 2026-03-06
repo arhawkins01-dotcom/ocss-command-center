@@ -6,6 +6,14 @@ import io
 import os
 import json
 
+# Alert System
+try:
+    from app.alert_system import AlertLevel, create_alert, get_alert_manager
+    from app.alert_ui import render_alert_badge, render_active_alerts, render_alert_dashboard
+    ALERT_SYSTEM_AVAILABLE = True
+except ImportError:
+    ALERT_SYSTEM_AVAILABLE = False
+
 # Page configuration
 st.set_page_config(
     page_title="OCSS Command Center",
@@ -63,9 +71,19 @@ if 'units' not in st.session_state:
             }
         }
     }
+# Initialize Alert Manager if available
+if ALERT_SYSTEM_AVAILABLE:
+    alert_manager = get_alert_manager()
+
 # Sidebar - Role Selection
 st.sidebar.title("🎯 OCSS Command Center")
 st.sidebar.success("✅ **System Status: OPEN** - Ready for Operations")
+
+# Alert Badge in Sidebar
+if ALERT_SYSTEM_AVAILABLE:
+    st.sidebar.markdown("####")
+    render_alert_badge(position="sidebar")
+
 st.sidebar.markdown("---")
 
 role = st.sidebar.radio(
@@ -156,6 +174,15 @@ if role == "Director":
             num_reports = st.number_input("Number of Reports", min_value=1, max_value=10, value=1)
         
         if st.button("🔄 Execute Reassignment", key="director_reassign"):
+            if ALERT_SYSTEM_AVAILABLE:
+                create_alert(
+                    title="Reports Reassigned",
+                    message=f"{num_reports} report(s) reassigned from {from_worker} to {to_worker}",
+                    level=AlertLevel.INFO,
+                    category="assignment",
+                    metadata={'from': from_worker, 'to': to_worker, 'count': num_reports},
+                    persistent=True
+                )
             st.success(f"✓ {num_reports} report(s) reassigned from {from_worker} to {to_worker}")
     
     with dir_tab3:
@@ -208,6 +235,14 @@ elif role == "Program Officer":
             uploaded_file = st.file_uploader("Choose an Excel file", type=['xls', 'xlsx', 'csv'])
             
             if uploaded_file:
+                if ALERT_SYSTEM_AVAILABLE:
+                    create_alert(
+                        title="File Uploaded",
+                        message=f"File '{uploaded_file.name}' uploaded successfully",
+                        level=AlertLevel.INFO,
+                        category="file_operations",
+                        metadata={'filename': uploaded_file.name, 'size': f"{uploaded_file.size / 1024:.1f} KB"}
+                    )
                 st.success(f"✅ File uploaded: {uploaded_file.name}")
                 
                 # Read Excel file
@@ -216,8 +251,25 @@ elif role == "Program Officer":
                         df = pd.read_csv(uploaded_file)
                     else:
                         df = pd.read_excel(uploaded_file)
+                    if ALERT_SYSTEM_AVAILABLE:
+                        create_alert(
+                            title="File Parsed",
+                            message=f"File contains {len(df)} rows and {len(df.columns)} columns",
+                            level=AlertLevel.INFO,
+                            category="file_operations",
+                            metadata={'rows': len(df), 'columns': len(df.columns)}
+                        )
                     st.info(f"📊 File has {len(df)} rows and {len(df.columns)} columns")
                 except Exception as e:
+                    if ALERT_SYSTEM_AVAILABLE:
+                        create_alert(
+                            title="File Processing Error",
+                            message=f"Unable to read file: {str(e)}",
+                            level=AlertLevel.ERROR,
+                            category="file_operations",
+                            persistent=True,
+                            metadata={'error': str(e), 'filename': uploaded_file.name}
+                        )
                     st.error(f"Error reading file: {str(e)}")
                     df = None
                 
@@ -243,6 +295,15 @@ elif role == "Program Officer":
                     # Add to caseload-specific list for Support Officer access
                     st.session_state.reports_by_caseload[selected_caseload].append(report_entry)
                     
+                    if ALERT_SYSTEM_AVAILABLE:
+                        create_alert(
+                            title="Report Processed",
+                            message=f"Report {report_entry['report_id']} processed and assigned to Support Officer",
+                            level=AlertLevel.INFO,
+                            category="processing",
+                            metadata={'report_id': report_entry['report_id'], 'caseload': selected_caseload},
+                            persistent=True
+                        )
                     st.success(f"✓ Report {report_entry['report_id']} processed and assigned to Support Officer!")
                     st.balloons()
         
@@ -423,8 +484,24 @@ elif role == "Supervisor":
                         if caseload_choice in st.session_state.units[unit_name]['assignments'].get(from_worker, []):
                             st.session_state.units[unit_name]['assignments'][from_worker].remove(caseload_choice)
                             st.session_state.units[unit_name]['assignments'].setdefault(to_worker, []).append(caseload_choice)
+                            if ALERT_SYSTEM_AVAILABLE:
+                                create_alert(
+                                    title="Caseload Moved",
+                                    message=f"Caseload {caseload_choice} moved from {from_worker} to {to_worker} in unit {unit_name}",
+                                    level=AlertLevel.INFO,
+                                    category="assignment",
+                                    metadata={'caseload': caseload_choice, 'from': from_worker, 'to': to_worker, 'unit': unit_name},
+                                    persistent=True
+                                )
                             st.success(f"✓ Caseload {caseload_choice} moved from {from_worker} to {to_worker}")
                         else:
+                            if ALERT_SYSTEM_AVAILABLE:
+                                create_alert(
+                                    title="Caseload Not Found",
+                                    message=f"Caseload {caseload_choice} not assigned to {from_worker}",
+                                    level=AlertLevel.ERROR,
+                                    category="assignment"
+                                )
                             st.error("Selected caseload not found for the source worker")
 
                     st.divider()
@@ -487,7 +564,16 @@ elif role == "Supervisor":
                             else:
                                 # Assign to the pull_worker within this unit
                                 st.session_state.units[unit_name].setdefault('assignments', {}).setdefault(pull_worker, []).append(pull_caseload)
-                                st.success(f"✓ Caseload {pull_caseload} claimed by {pull_worker} in unit '{unit_name}'")
+                                if ALERT_SYSTEM_AVAILABLE:
+                                    create_alert(
+                                        title="Caseload Claimed",
+                                        message=f"Caseload {pull_caseload} claimed by {pull_worker} in unit '{unit_name}'",
+                                        level=AlertLevel.INFO,
+                                        category="assignment",
+                                        metadata={'caseload': pull_caseload, 'worker': pull_worker, 'unit': unit_name},
+                                        persistent=True
+                                    )
+                                st.success(f"✓ Caseload {pull_caseload} claimed by {pull_worker} in unit '{unit_name}'"
                 else:
                     st.info("No team members assigned yet for this supervisor")
             else:
@@ -1064,6 +1150,14 @@ elif role == "Support Officer":
         description = st.text_area("Issue Description", placeholder="Describe the problem...")
     
         if st.button("📝 Create Ticket", key="new_support_ticket"):
+            if ALERT_SYSTEM_AVAILABLE:
+                create_alert(
+                    title="Support Ticket Created",
+                    message=f"Ticket created for {establishment} with {priority} priority",
+                    level=AlertLevel.INFO,
+                    category="support",
+                    metadata={'establishment': establishment, 'priority': priority, 'issue_type': issue_type}
+                )
             st.success(f"✓ Ticket created for {establishment} - {priority}")
     
     # Training Resources
@@ -1128,6 +1222,12 @@ elif role == "IT Administrator":
         **Exports Archive**: `S:\\OCSS\\CommandCenter\\Exports`
         """
         st.info(config_info)
+        
+        # Alert Dashboard (if system available)
+        if ALERT_SYSTEM_AVAILABLE:
+            st.divider()
+            st.subheader("📢 System Alerts & Events")
+            render_alert_dashboard(alert_manager)
     
     with it_tab2:
         st.subheader("👥 User & Caseload Management")
@@ -1171,6 +1271,14 @@ elif role == "IT Administrator":
             new_dept = st.selectbox("Department", ["OCSS North", "OCSS South", "OCSS Central", "OCSS East", "OCSS West"])
         
         if st.button("➕ Add User"):
+            if ALERT_SYSTEM_AVAILABLE:
+                create_alert(
+                    title="User Added",
+                    message=f"User '{new_user}' added as {new_role} in {new_dept}",
+                    level=AlertLevel.INFO,
+                    category="user_management",
+                    metadata={'user': new_user, 'role': new_role, 'department': new_dept}
+                )
             st.success(f"✓ User '{new_user}' added as {new_role} in {new_dept}")
         
         # Bulk Caseload Assignment
