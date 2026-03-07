@@ -1740,6 +1740,258 @@ The app validates completion and required fields before allowing submission.
     
 
 
+def _summarize_operational_state() -> dict:
+    """Return sidebar-friendly operational summary metrics."""
+    units = st.session_state.get('units', {}) or {}
+    reports_by_caseload = st.session_state.get('reports_by_caseload', {}) or {}
+    ingestion_events = st.session_state.get('report_ingestion_events', []) or []
+
+    total_reports = 0
+    completed_reports = 0
+    pending_reports = 0
+    unassigned_reports = 0
+    last_update: datetime | None = None
+
+    for reports in reports_by_caseload.values():
+        for report in (reports or []):
+            if not isinstance(report, dict):
+                continue
+            total_reports += 1
+
+            status_value = str(report.get('status', '') or '').strip().lower()
+            if 'completed' in status_value or 'finished' in status_value:
+                completed_reports += 1
+            else:
+                pending_reports += 1
+
+            assigned_worker = str(report.get('assigned_worker', '') or '').strip()
+            if not assigned_worker:
+                unassigned_reports += 1
+
+            candidate_dates = [
+                _parse_dt(report.get('uploaded_at')),
+                _parse_dt(report.get('timestamp')),
+                _parse_dt(report.get('imported_at')),
+            ]
+            for dt_value in candidate_dates:
+                if dt_value and (last_update is None or dt_value > last_update):
+                    last_update = dt_value
+
+    for event in ingestion_events:
+        if not isinstance(event, dict):
+            continue
+        ts = _parse_dt(event.get('timestamp'))
+        if ts and (last_update is None or ts > last_update):
+            last_update = ts
+
+    return {
+        'units': int(len(units)),
+        'total_reports': int(total_reports),
+        'pending_reports': int(pending_reports),
+        'completed_reports': int(completed_reports),
+        'unassigned_reports': int(unassigned_reports),
+        'last_update': last_update,
+    }
+
+
+def _render_sidebar_quick_stats() -> None:
+    """Render a live quick-stats panel in the sidebar."""
+    stats = _summarize_operational_state()
+    last_update = stats.get('last_update')
+    if isinstance(last_update, datetime):
+        last_update_label = last_update.strftime('%b %d, %I:%M %p')
+    else:
+        last_update_label = 'No uploads yet'
+
+    st.sidebar.markdown(
+        "\n".join([
+            "### Quick Stats",
+            f"- **Units**: {stats.get('units', 0)}",
+            f"- **Reports Pending**: {stats.get('pending_reports', 0)}",
+            f"- **Reports Completed**: {stats.get('completed_reports', 0)}",
+            f"- **Unassigned Reports**: {stats.get('unassigned_reports', 0)}",
+            f"- **Last Update**: {last_update_label}",
+        ])
+    )
+
+
+def _demo_mode_enabled() -> bool:
+    """Return whether presentation-safe demo mode is active."""
+    return bool(st.session_state.get('demo_mode_enabled', False))
+
+
+def _render_demo_mode_toggle() -> None:
+    """Render a sidebar toggle for presentation-safe demo behavior."""
+    enabled = st.sidebar.toggle(
+        "Presentation-safe Demo Mode",
+        value=_demo_mode_enabled(),
+        key='demo_mode_enabled',
+        help="When enabled, dashboards use safe fallback chart baselines when live data is sparse.",
+    )
+    if enabled:
+        st.sidebar.caption("Demo mode is active: fallback baselines are enabled for key charts.")
+
+
+def _render_executive_risk_summary(viewer_name: str, viewer_unit_role: str) -> None:
+    """Show a top-level risk snapshot that answers what/where/action quickly."""
+    all_alerts = _build_escalation_alerts_df()
+    viewer_alerts = _filter_alerts_for_viewer(
+        all_alerts,
+        viewer_role='Director',
+        viewer_name=viewer_name,
+        scope_unit=None,
+        viewer_unit_role=viewer_unit_role,
+    )
+
+    st.subheader("Operational Risk Snapshot")
+    if viewer_alerts.empty:
+        st.success(
+            "What is happening: Current reports are within escalation thresholds. "
+            "Where is the risk: No active escalation items. "
+            "Action needed: Continue routine monitoring."
+        )
+        return
+
+    df = viewer_alerts.copy()
+    days_overdue = pd.to_numeric(df.get('Days Overdue', pd.Series(dtype='float64')), errors='coerce').fillna(0)
+    unassigned = df.get('Unassigned', pd.Series([False] * len(df))).astype(bool)
+
+    due_at = pd.to_datetime(df.get('Due At', pd.Series(dtype='str')), errors='coerce')
+    days_to_due = (due_at.dt.normalize() - pd.Timestamp.now().normalize()).dt.days
+
+    critical_count = int(((days_overdue >= 7) | unassigned).sum())
+    high_count = int(((days_overdue >= 1) & (days_overdue < 7) & (~unassigned)).sum())
+    approaching_count = int(((days_to_due >= 0) & (days_to_due <= 2)).fillna(False).sum())
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.metric("Active Escalations", int(len(df)))
+    with c2:
+        st.metric("Critical Risk", critical_count)
+    with c3:
+        st.metric("High Risk", high_count)
+    with c4:
+        st.metric("Due in 48 Hours", approaching_count)
+
+    if critical_count > 0:
+        st.error(
+            "What is happening: Critical escalation items are active. "
+            "Where is the risk: unassigned or 7+ day overdue reports. "
+            "Action needed: reassign ownership and clear oldest items first."
+        )
+    elif high_count > 0:
+        st.warning(
+            "What is happening: Elevated operational risk is present. "
+            "Where is the risk: overdue reports under 7 days. "
+            "Action needed: supervisor follow-up and near-term completion plan."
+        )
+    else:
+        st.info(
+            "What is happening: Escalations are currently controlled. "
+            "Where is the risk: approaching due dates. "
+            "Action needed: maintain monitoring and early intervention."
+        )
+
+
+def _render_monthly_submissions_chart(
+    department: str | None = None,
+    month_labels: list[str] | None = None,
+) -> None:
+    """Render a resilient monthly submissions chart with safe fallbacks."""
+    audit_log = st.session_state.get('upload_audit_log', []) or []
+    reports_by_caseload = st.session_state.get('reports_by_caseload', {}) or {}
+
+    month_counts = pd.Series(dtype='int64')
+
+    if month_labels:
+        try:
+            _labels = [str(v).strip() for v in (month_labels or []) if str(v).strip()]
+            if _labels:
+                month_counts = pd.Series(_labels).value_counts().sort_index()
+        except Exception:
+            month_counts = pd.Series(dtype='int64')
+
+    if month_counts.empty and audit_log:
+        try:
+            audit_df = pd.DataFrame(audit_log)
+            if department and 'owning_department' in audit_df.columns:
+                audit_df = audit_df[audit_df['owning_department'].astype(str).str.strip() == str(department).strip()]
+            uploaded_at = pd.to_datetime(audit_df.get('uploaded_at', pd.Series(dtype='str')), errors='coerce')
+            month_counts = uploaded_at.dropna().dt.to_period('M').value_counts().sort_index()
+        except Exception:
+            month_counts = pd.Series(dtype='int64')
+
+    if month_counts.empty:
+        imported_dates: list[datetime] = []
+        for reports in reports_by_caseload.values():
+            for report in (reports or []):
+                if not isinstance(report, dict):
+                    continue
+                if department and str(report.get('owning_department', '')).strip() != str(department).strip():
+                    continue
+                dt_value = _parse_dt(report.get('imported_at')) or _parse_dt(report.get('uploaded_at')) or _parse_dt(report.get('timestamp'))
+                if dt_value:
+                    imported_dates.append(dt_value)
+
+        if imported_dates:
+            imported_series = pd.Series(pd.to_datetime(imported_dates, errors='coerce')).dropna()
+            month_counts = imported_series.dt.to_period('M').value_counts().sort_index()
+
+    if month_counts.empty:
+        fallback_months = pd.date_range(end=datetime.now(), periods=6, freq='ME')
+        fallback_values = [0] * len(fallback_months)
+        if _demo_mode_enabled():
+            fallback_values = [42, 45, 47, 44, 49, 51]
+            st.caption("Demo mode baseline is displayed for presentation reliability.")
+        else:
+            st.caption("No submission timestamps available yet. Displaying baseline for the last 6 months.")
+        fallback_df = pd.DataFrame({'Submissions': fallback_values}, index=fallback_months.strftime('%b %Y'))
+        st.bar_chart(fallback_df)
+        return
+
+    month_index = [period.to_timestamp().strftime('%b %Y') for period in month_counts.index]
+    chart_df = pd.DataFrame({'Submissions': month_counts.values}, index=month_index)
+    st.bar_chart(chart_df)
+
+
+def _safe_table_or_demo(
+    df,
+    empty_message: str,
+    demo_columns: list[str] | None = None,
+    demo_rows: list[dict] | None = None,
+    **kwargs,
+) -> None:
+    """Render a DataFrame with optional demo-mode fallback rows when empty."""
+    safe_df = _safe_df(df)
+    if not safe_df.empty:
+        safe_st_dataframe(safe_df, **kwargs)
+        return
+
+    if _demo_mode_enabled():
+        fallback_df = pd.DataFrame(demo_rows or [])
+        if fallback_df.empty and demo_columns:
+            fallback_record = {}
+            for col in demo_columns:
+                label = str(col or '').strip()
+                lower = label.lower()
+                if '%' in label:
+                    fallback_record[label] = '75.0%'
+                elif any(token in lower for token in ['total', 'count', 'cases', 'caseload', 'staff', 'alerts']):
+                    fallback_record[label] = 0
+                elif any(token in lower for token in ['date', 'submission', 'updated']):
+                    fallback_record[label] = datetime.now().strftime('%Y-%m-%d')
+                else:
+                    fallback_record[label] = 'Demo'
+            fallback_df = pd.DataFrame([fallback_record], columns=demo_columns)
+
+        if not fallback_df.empty:
+            st.caption("Demo mode: showing baseline table data for presentation stability.")
+            safe_st_dataframe(fallback_df, **kwargs)
+            return
+
+    st.info(empty_message)
+
+
 def _build_unit_assignments_df() -> pd.DataFrame:
     """Build a flat dataframe of unit -> assignee -> caseload rows from session state."""
     rows: list[dict] = []
@@ -3818,6 +4070,111 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
     def _caseload_to_series_group_label(caseload: str) -> str:
         return caseload_series_group_label(caseload)
 
+    def _validate_intake_inputs(
+        uploaded_file_obj,
+        caseload_items,
+        selected_caseload_values: list[str],
+        analysis_lookup: dict,
+        report_type_value: str,
+        owning_department_value: str,
+        report_frequency_value: str,
+        period_year_value,
+        period_value_value: str,
+    ) -> tuple[list[str], list[str]]:
+        """Validate report intake inputs before processing."""
+        errors: list[str] = []
+        warnings: list[str] = []
+
+        if uploaded_file_obj is None:
+            errors.append("Upload a report file before processing.")
+
+        if not caseload_items:
+            errors.append("No caseload data was detected in the uploaded file.")
+
+        selected = [str(v).strip() for v in (selected_caseload_values or []) if str(v).strip()]
+        if not selected:
+            errors.append("Select at least one caseload to process.")
+
+        if not str(report_type_value or '').strip():
+            errors.append("Select a report type before processing.")
+        if not str(owning_department_value or '').strip():
+            errors.append("Select an owning department before processing.")
+
+        valid_frequencies = {'Monthly', 'Quarterly', 'Bi-Annual'}
+        freq = str(report_frequency_value or '').strip()
+        if freq not in valid_frequencies:
+            errors.append("Select a valid report frequency.")
+
+        try:
+            year_int = int(period_year_value)
+            if year_int < 2020 or year_int > 2100:
+                errors.append("Period year must be between 2020 and 2100.")
+        except Exception:
+            errors.append("Period year must be a valid number.")
+
+        period_str = str(period_value_value or '').strip().upper()
+        if freq == 'Monthly' and not re.fullmatch(r"(0[1-9]|1[0-2])", period_str):
+            errors.append("Monthly uploads require a month value between 01 and 12.")
+        elif freq == 'Quarterly' and period_str not in {'Q1', 'Q2', 'Q3', 'Q4'}:
+            errors.append("Quarterly uploads require Q1, Q2, Q3, or Q4.")
+        elif freq == 'Bi-Annual' and period_str not in {'H1', 'H2'}:
+            errors.append("Bi-Annual uploads require H1 or H2.")
+
+        available_caseloads = set()
+        for item in (caseload_items or []):
+            if isinstance(item, (tuple, list)) and len(item) == 2:
+                caseload_value = item[0]
+                data_frame = item[1]
+            elif isinstance(item, dict):
+                caseload_value = item.get('caseload')
+                data_frame = item.get('df')
+            else:
+                caseload_value = None
+                data_frame = None
+
+            caseload_key = str(caseload_value or '').strip()
+            if not caseload_key:
+                continue
+            available_caseloads.add(caseload_key)
+
+            if isinstance(data_frame, pd.DataFrame) and data_frame.empty:
+                warnings.append(f"Caseload {caseload_key} contains no rows and will be skipped.")
+
+        invalid_selected = sorted(list({c for c in selected if c not in available_caseloads}))
+        if invalid_selected:
+            errors.append(
+                "Selected caseloads are not present in the current file: " + ", ".join(invalid_selected)
+            )
+
+        for caseload_key in selected:
+            analysis = analysis_lookup.get(caseload_key, {}) if isinstance(analysis_lookup, dict) else {}
+            recognized = int((analysis or {}).get('recognized_headers', 0) or 0)
+            if recognized == 0:
+                errors.append(
+                    f"Caseload {caseload_key} does not contain recognized report headers. "
+                    "Use a supported template or mapped column names."
+                )
+
+            qa_summary = (analysis or {}).get('qa_summary') or {}
+            invalid_date_count = int(qa_summary.get('invalid_service_due_date', 0) or 0) + int(qa_summary.get('invalid_action_taken_date', 0) or 0)
+            if invalid_date_count > 0:
+                warnings.append(
+                    f"Caseload {caseload_key} has {invalid_date_count} row(s) with invalid date formats. "
+                    "Review date columns after processing."
+                )
+
+        # File size warning only; ingestion still allowed.
+        try:
+            size_bytes = int(getattr(uploaded_file_obj, 'size', 0) or 0)
+        except Exception:
+            size_bytes = 0
+        if size_bytes > 25 * 1024 * 1024:
+            warnings.append(
+                "Large file detected (>25MB). Processing may take longer; keep this tab open until completion."
+            )
+
+        return _dedupe_preserve_order(errors), _dedupe_preserve_order(warnings)
+
     col1, col2 = st.columns([2, 1])
 
     with col1:
@@ -4054,7 +4411,15 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
                 st.subheader("Step 2 — Process")
                 st.caption("Processing creates caseload work queues and makes the report available to workers.")
 
-            can_process = bool(uploaded_file and caseload_data and selected_caseloads)
+            can_process = bool(
+                uploaded_file
+                and caseload_data
+                and selected_caseloads
+                and str(report_type or '').strip()
+                and str(owning_department or '').strip()
+                and str(report_frequency or '').strip()
+                and str(period_value or '').strip()
+            )
             if st.button(
                 "Process Report",
                 key=f"{key_prefix}_process_report",
@@ -4068,9 +4433,22 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
                 assignment_failure_total = 0
                 duplicate_blocked_total = 0
                 duplicate_matches_total = 0
-                # Only process if at least one caseload is selected and data exists
-                if not caseload_data or not selected_caseloads:
-                    warnings.append("Upload a valid Excel/CSV report and select at least one caseload before processing.")
+                validation_errors, validation_warnings = _validate_intake_inputs(
+                    uploaded_file_obj=uploaded_file,
+                    caseload_items=caseload_data,
+                    selected_caseload_values=selected_caseloads,
+                    analysis_lookup=analysis_by_caseload,
+                    report_type_value=report_type,
+                    owning_department_value=owning_department,
+                    report_frequency_value=report_frequency,
+                    period_year_value=period_year,
+                    period_value_value=str(period_value),
+                )
+                warnings.extend(validation_warnings)
+
+                # Only process if validated inputs are available.
+                if validation_errors:
+                    warnings.extend(validation_errors)
                 else:
                     # Iterate over selected caseloads and process each
                     with st.spinner("Processing report intake..."):
@@ -4084,6 +4462,10 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
                                 sheet_name = item.get('sheet_name', '') if isinstance(item, dict) else ''
 
                             if not caseload or not isinstance(base_df, pd.DataFrame):
+                                continue
+
+                            if base_df.empty:
+                                warnings.append(f"Caseload {caseload} contains no rows and was skipped.")
                                 continue
 
                             if caseload not in selected_caseloads:
@@ -6935,13 +7317,8 @@ try:
 except Exception:
     pass
 
-st.sidebar.markdown("""
-### Quick Stats
-- **Units**: 45
-- **Reports Pending**: 12
-- **Reports Completed**: 389
-- **Last Update**: Today
-""")
+_render_demo_mode_toggle()
+_render_sidebar_quick_stats()
 
 _render_global_report_intake_if_allowed(selected_role, role)
 
@@ -6959,6 +7336,11 @@ if role in ["Director", "Deputy Director"]:
 
     if _exec_viewer_unit_role == 'Deputy Director' and _exec_deputy_departments:
         st.caption("Deputy Director scope: " + ", ".join(_exec_deputy_departments))
+
+    _render_executive_risk_summary(
+        viewer_name=_exec_viewer_name,
+        viewer_unit_role=_exec_viewer_unit_role,
+    )
     
     # Tabs for Director
     dir_tab1, dir_tab2, dir_tab3, dir_tab4, dir_tab5, dir_tab6, dir_tab7, dir_tab8 = st.tabs([
@@ -7032,31 +7414,7 @@ if role in ["Director", "Deputy Director"]:
 
             # Monthly submissions chart – derived from upload_audit_log when available
             st.subheader("Monthly Report Submissions")
-            _audit_log = st.session_state.get('upload_audit_log', []) or []
-            if _audit_log:
-                _audit_df = pd.DataFrame(_audit_log)
-                _audit_df['_month'] = pd.to_datetime(_audit_df.get('uploaded_at', pd.Series(dtype=str)), errors='coerce').dt.strftime('%b %Y')
-                _month_counts = _audit_df.groupby('_month').size().reset_index(name='Submissions')
-                st.bar_chart(_month_counts.set_index('_month'))
-            else:
-                # Fall back to counts from reports_by_caseload imported_at field
-                _imported_months = []
-                for _rlist in st.session_state.get('reports_by_caseload', {}).values():
-                    for _r in (_rlist or []):
-                        _cd = _r.get('canonical_df') if isinstance(_r.get('canonical_df'), pd.DataFrame) else None
-                        _ia = _r.get('imported_at') or (_cd['imported_at'].iloc[0] if _cd is not None and 'imported_at' in _cd.columns and not _cd.empty else None)
-                        if _ia:
-                            try:
-                                _imported_months.append(pd.to_datetime(str(_ia), errors='coerce').strftime('%b %Y'))
-                            except Exception:
-                                pass
-                if _imported_months:
-                    _mc = pd.Series(_imported_months).value_counts().sort_index()
-                    st.bar_chart(_mc.rename('Submissions'))
-                else:
-                    _months_fb = pd.date_range(start='2025-09-01', periods=6, freq='ME').strftime('%b %Y').tolist()
-                    _subs_fb = [45, 48, 52, 50, 58, 62]
-                    st.bar_chart(pd.DataFrame({'Submissions': _subs_fb}, index=_months_fb))
+            _render_monthly_submissions_chart(department=None)
 
         else:
             # Department-level KPIs selected by Director/Deputy
@@ -7156,10 +7514,20 @@ if role in ["Director", "Deputy Director"]:
         caseload_status_df = _build_caseload_work_status_df(scope_unit=None)
         if not caseload_status_df.empty and _exec_deputy_departments:
             caseload_status_df = caseload_status_df[caseload_status_df['Unit'].isin(_exec_scoped_units) | (caseload_status_df['Overall Status'] == 'Unassigned')]
-        if caseload_status_df.empty:
-            st.info("No caseload work status available yet.")
-        else:
-            st.dataframe(caseload_status_df, use_container_width=True, hide_index=True)
+        _safe_table_or_demo(
+            caseload_status_df,
+            empty_message="No caseload work status available yet.",
+            demo_columns=['Caseload', 'Assigned To', 'Unit', 'Overall Status', 'Completion %'],
+            demo_rows=[{
+                'Caseload': '181000',
+                'Assigned To': 'Demo Worker',
+                'Unit': 'Establishment Unit 1',
+                'Overall Status': 'In Progress',
+                'Completion %': '72.0%',
+            }],
+            use_container_width=True,
+            hide_index=True,
+        )
 
         # Escalation alerts (Director/Deputy/Department Manager views are driven by Unit Role).
         viewer_name = _exec_viewer_name
@@ -7230,7 +7598,21 @@ if role in ["Director", "Deputy Director"]:
              # Fallback if no workers defined
             workers_data = pd.DataFrame(columns=['Worker Name', 'Unit', 'Caseloads Assigned', 'Total Cases', 'Completed', 'Completion %', 'Avg Time/Report'])
 
-        st.dataframe(workers_data, use_container_width=True)
+        _safe_table_or_demo(
+            workers_data,
+            empty_message="No worker workload data is available yet.",
+            demo_columns=['Worker Name', 'Unit', 'Caseloads Assigned', 'Total Cases', 'Completed', 'Completion %', 'Avg Time/Report'],
+            demo_rows=[{
+                'Worker Name': 'Demo Worker',
+                'Unit': 'Establishment Unit 1',
+                'Caseloads Assigned': 3,
+                'Total Cases': 96,
+                'Completed': 68,
+                'Completion %': '70.8%',
+                'Avg Time/Report': '1.8 hrs',
+            }],
+            use_container_width=True,
+        )
         
         # Workload Distribution Chart
         st.subheader("Workload Distribution by Worker")
@@ -7751,10 +8133,7 @@ elif role == "Program Officer":
 
         # Monthly submissions chart from live data
         st.subheader("Monthly Report Submissions")
-        if scoped_months:
-            st.bar_chart(pd.Series(scoped_months).value_counts().sort_index().rename('Submissions'))
-        else:
-            st.info("No submissions found for current filter selection.")
+        _render_monthly_submissions_chart(month_labels=scoped_months)
 
         st.subheader("Filtered Support Staff Snapshot")
         if scoped_workers:
@@ -7763,13 +8142,30 @@ elif role == "Program Officer":
                 lambda r: round((float(r['Completed Cases']) / float(r['Total Cases']) * 100), 1) if float(r['Total Cases']) > 0 else 0.0,
                 axis=1,
             )
-            st.dataframe(
+            _safe_table_or_demo(
                 _po_workers_df.sort_values(by=['Department', 'Unit', 'Support Staff']),
+                empty_message="No support staff records matched the current filters.",
+                demo_columns=['Support Staff', 'Unit', 'Department', 'Assigned Caseloads', 'Total Cases', 'Completed Cases', 'Completion %'],
                 use_container_width=True,
                 hide_index=True,
             )
         else:
-            st.info("No support staff records matched the current filters.")
+            _safe_table_or_demo(
+                pd.DataFrame(),
+                empty_message="No support staff records matched the current filters.",
+                demo_columns=['Support Staff', 'Unit', 'Department', 'Assigned Caseloads', 'Total Cases', 'Completed Cases', 'Completion %'],
+                demo_rows=[{
+                    'Support Staff': 'Demo Staff',
+                    'Unit': 'Establishment Unit 1',
+                    'Department': 'Establishment',
+                    'Assigned Caseloads': 2,
+                    'Total Cases': 54,
+                    'Completed Cases': 39,
+                    'Completion %': '72.2%',
+                }],
+                use_container_width=True,
+                hide_index=True,
+            )
 
         # Strategic Insights – data-driven
         st.subheader("📌 Strategic Insights")
@@ -7882,9 +8278,27 @@ The report type you select at ingestion determines which fields Support Officers
             if po_filter_support_staff != 'All Support Staff':
                 caseload_status_df = caseload_status_df[caseload_status_df['Assigned To'] == po_filter_support_staff]
         if caseload_status_df.empty:
-            st.info("No caseload work status available yet.")
+            _safe_table_or_demo(
+                pd.DataFrame(),
+                empty_message="No caseload work status available yet.",
+                demo_columns=['Caseload', 'Assigned To', 'Unit', 'Overall Status', 'Completion %'],
+                demo_rows=[{
+                    'Caseload': '181001',
+                    'Assigned To': 'Demo Officer',
+                    'Unit': 'Establishment Unit 2',
+                    'Overall Status': 'Pending',
+                    'Completion %': '40.0%',
+                }],
+                use_container_width=True,
+                hide_index=True,
+            )
         else:
-            st.dataframe(caseload_status_df, use_container_width=True, hide_index=True)
+            _safe_table_or_demo(
+                caseload_status_df,
+                empty_message="No caseload work status available yet.",
+                use_container_width=True,
+                hide_index=True,
+            )
         
         # Aggregate stats from all units for Program Officer
         po_team_rows_data = [] # Rename to avoid conflict if any
@@ -7944,7 +8358,20 @@ The report type you select at ingestion determines which fields Support Officers
         else:
             officers_data_display = pd.DataFrame(columns=['Officer Name', 'Unit', 'Total Assigned Cases', 'Completed Cases', 'Completion %', 'Avg Time/Report'])
         
-        st.dataframe(officers_data_display, use_container_width=True)
+        _safe_table_or_demo(
+            officers_data_display,
+            empty_message="No officer caseload performance data is available yet.",
+            demo_columns=['Officer Name', 'Unit', 'Total Assigned Cases', 'Completed Cases', 'Completion %', 'Avg Time/Report'],
+            demo_rows=[{
+                'Officer Name': 'Demo Officer',
+                'Unit': 'Establishment Unit 1',
+                'Total Assigned Cases': 88,
+                'Completed Cases': 57,
+                'Completion %': '64.8%',
+                'Avg Time/Report': '1.7 hrs',
+            }],
+            use_container_width=True,
+        )
         
         # Processing metrics
         col1, col2, col3 = st.columns(3)
@@ -8199,14 +8626,7 @@ elif role == 'Department Manager':
                 st.metric("CQI Alignments", str(kpis['cqi_alignments']))
 
             st.subheader("Monthly Report Submissions")
-            _dm_audit = st.session_state.get('upload_audit_log', []) or []
-            if _dm_audit:
-                _dm_adf = pd.DataFrame(_dm_audit)
-                _dm_adf['_month'] = pd.to_datetime(_dm_adf.get('uploaded_at', pd.Series(dtype=str)), errors='coerce').dt.strftime('%b %Y')
-                st.bar_chart(_dm_adf.groupby('_month').size().rename('Submissions'))
-            else:
-                _dm_fb_m = pd.date_range(start='2025-09-01', periods=6, freq='ME').strftime('%b %Y').tolist()
-                st.bar_chart(pd.DataFrame({'Submissions': [45, 48, 52, 50, 58, 62]}, index=_dm_fb_m))
+            _render_monthly_submissions_chart(department=None)
 
             # Strategic Insights – data-driven (agency view)
             st.subheader("📌 Strategic Insights")
@@ -8260,9 +8680,23 @@ elif role == 'Department Manager':
             )
             with st.expander("Alerts (Department Escalation)", expanded=False):
                 if viewer_alerts.empty:
-                    st.info("No department escalation alerts right now.")
+                    _safe_table_or_demo(
+                        pd.DataFrame(),
+                        empty_message="No department escalation alerts right now.",
+                        demo_columns=['Report ID', 'Caseload', 'Unit', 'Assigned To', 'Days Since Upload', 'Days Overdue'],
+                        demo_rows=[{
+                            'Report ID': 'RPT-DEMO-001',
+                            'Caseload': '181002',
+                            'Unit': 'Establishment Unit 3',
+                            'Assigned To': 'Demo Worker',
+                            'Days Since Upload': 2,
+                            'Days Overdue': 0,
+                        }],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
                 else:
-                    st.dataframe(viewer_alerts.head(25).astype(str), use_container_width=True, hide_index=True)
+                    _safe_table_or_demo(viewer_alerts.head(25).astype(str), empty_message="No department escalation alerts right now.", use_container_width=True, hide_index=True)
 
             # Department KPI tiles with deltas vs targets
             _dm_kpi_department = selected_departments[0] if len(selected_departments) == 1 else None
@@ -8288,26 +8722,7 @@ elif role == 'Department Manager':
 
             # Monthly submissions chart (department-scoped)
             st.subheader("Monthly Report Submissions (Department)")
-            _dm_d_audit = st.session_state.get('upload_audit_log', []) or []
-            if _dm_d_audit:
-                _dm_d_adf = pd.DataFrame(_dm_d_audit)
-                _dm_d_adf['_month'] = pd.to_datetime(_dm_d_adf.get('uploaded_at', pd.Series(dtype=str)), errors='coerce').dt.strftime('%b %Y')
-                st.bar_chart(_dm_d_adf.groupby('_month').size().rename('Submissions'))
-            else:
-                _dm_d_imported = []
-                for _dm_cl in st.session_state.get('reports_by_caseload', {}).values():
-                    for _dm_r in (_dm_cl or []):
-                        _dm_ia = _dm_r.get('imported_at') or ''
-                        if _dm_ia:
-                            try:
-                                _dm_d_imported.append(pd.to_datetime(str(_dm_ia), errors='coerce').strftime('%b %Y'))
-                            except Exception:
-                                pass
-                if _dm_d_imported:
-                    st.bar_chart(pd.Series(_dm_d_imported).value_counts().sort_index().rename('Submissions'))
-                else:
-                    _dm_d_fb_m = pd.date_range(start='2025-09-01', periods=6, freq='ME').strftime('%b %Y').tolist()
-                    st.bar_chart(pd.DataFrame({'Submissions': [45, 48, 52, 50, 58, 62]}, index=_dm_d_fb_m))
+            _render_monthly_submissions_chart(department=_dm_kpi_department)
 
             # Caseload work status (department-scoped)
             with st.expander("Caseload Work Status", expanded=False):
@@ -8315,9 +8730,15 @@ elif role == 'Department Manager':
                 if not caseload_status_df.empty and managed_units:
                     caseload_status_df = caseload_status_df[caseload_status_df['Unit'].isin(managed_units) | (caseload_status_df['Overall Status'] == 'Unassigned')]
                 if caseload_status_df.empty:
-                    st.info("No caseload work status available yet for this department.")
+                    _safe_table_or_demo(
+                        pd.DataFrame(),
+                        empty_message="No caseload work status available yet for this department.",
+                        demo_columns=['Caseload', 'Assigned To', 'Unit', 'Overall Status', 'Completion %'],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
                 else:
-                    st.dataframe(caseload_status_df, use_container_width=True, hide_index=True)
+                    _safe_table_or_demo(caseload_status_df, empty_message="No caseload work status available yet for this department.", use_container_width=True, hide_index=True)
 
             # Strategic Insights – department-scoped
             st.subheader("📌 Strategic Insights")
@@ -8416,9 +8837,18 @@ elif role == 'Department Manager':
 
         if worker_metrics:
             workers_data = pd.DataFrame(worker_metrics)
-            st.dataframe(workers_data, use_container_width=True)
+            _safe_table_or_demo(
+                workers_data,
+                empty_message="No caseload work status available yet for this department.",
+                use_container_width=True,
+            )
         else:
-            st.info("No caseload work status available yet for this department.")
+            _safe_table_or_demo(
+                pd.DataFrame(),
+                empty_message="No caseload work status available yet for this department.",
+                demo_columns=['Worker Name', 'Unit', 'Caseloads Assigned', 'Total Cases', 'Completed', 'Completion %', 'Avg Time/Report'],
+                use_container_width=True,
+            )
 
         # Department-scoped reassignment UI (same-unit reassignment for simplicity)
         st.subheader("📋 Reassign Caseloads Between Department Workers")
@@ -8547,7 +8977,12 @@ elif role == 'Department Manager':
             if _dept_sel_worker != "All Workers":
                 _dept_filtered_df = _dept_filtered_df[_dept_filtered_df['Worker'] == _dept_sel_worker]
 
-            st.dataframe(_dept_filtered_df, use_container_width=True, hide_index=True)
+                _safe_table_or_demo(
+                    _dept_filtered_df,
+                    empty_message="No worker performance records match the selected filters.",
+                    use_container_width=True,
+                    hide_index=True,
+                )
 
             # Completion rate chart
             st.subheader("Completion Rate by Worker")
@@ -8660,32 +9095,19 @@ elif role in ["Supervisor", "Senior Administrative Officer"]:
 
             # Monthly submissions chart
             st.subheader(f"Monthly Report Submissions ({scope_label})")
-            _s_audit = st.session_state.get('upload_audit_log', []) or []
-            if _s_audit:
-                _s_adf = pd.DataFrame(_s_audit)
-                _s_adf['_month'] = pd.to_datetime(_s_adf.get('uploaded_at', pd.Series(dtype=str)), errors='coerce').dt.strftime('%b %Y')
-                st.bar_chart(_s_adf.groupby('_month').size().rename('Submissions'))
-            else:
-                _s_imp = []
-                for _s_rl in st.session_state.get('reports_by_caseload', {}).values():
-                    for _s_r in (_s_rl or []):
-                        _s_ia = _s_r.get('imported_at') or ''
-                        if _s_ia:
-                            try:
-                                _s_imp.append(pd.to_datetime(str(_s_ia), errors='coerce').strftime('%b %Y'))
-                            except Exception:
-                                pass
-                if _s_imp:
-                    st.bar_chart(pd.Series(_s_imp).value_counts().sort_index().rename('Submissions'))
-                else:
-                    _s_fb = pd.date_range(start='2025-09-01', periods=6, freq='ME').strftime('%b %Y').tolist()
-                    st.bar_chart(pd.DataFrame({'Submissions': [45, 48, 52, 50, 58, 62]}, index=_s_fb))
+            _render_monthly_submissions_chart(department=None)
 
             # Performance table
             if unit_rows:
                 st.subheader(f"{scope_label} Performance")
                 _s_df = pd.DataFrame(unit_rows)
-                st.dataframe(_s_df, use_container_width=True, hide_index=True)
+                _safe_table_or_demo(
+                    _s_df,
+                    empty_message=f"No {scope_label.lower()} performance data is available.",
+                    demo_columns=[chart_index_col, 'Staff', 'Total Cases', 'Completed', 'Completion %'],
+                    use_container_width=True,
+                    hide_index=True,
+                )
                 st.subheader(f"Completion Rate by {chart_index_col}")
                 try:
                     _s_cdf = _s_df.copy()
