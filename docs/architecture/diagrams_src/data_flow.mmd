@@ -1,0 +1,38 @@
+flowchart TD
+    Start[ODJFS Operational Reports<br/>56RA, P-S, Locate] --> Upload[Program Officer<br/>Upload and Metadata]
+
+    Upload --> Ingest[Report Ingestion<br/>Validation and Deduplication]
+
+    Ingest --> Normalize[Normalization Engine<br/>Pandas Processing]
+
+    Normalize --> Route{Route to<br/>Caseload}
+
+    Route --> C1[Downtown Establishment<br/>Caseload 181000]
+    Route --> C2[Midtown Enforcement<br/>Caseload 181001]
+    Route --> C3[Uptown Collections<br/>Caseload 181002]
+
+    C1 --> Alerts[Alert Engine<br/>Due Soon, Overdue]
+    C2 --> Alerts
+    C3 --> Alerts
+
+    C1 --> Process[Support Officer<br/>Row Processing]
+    C2 --> Process
+    C3 --> Process
+
+    Process --> QA[QA Validation<br/>Compliance Check]
+
+    QA --> Complete{Complete &<br/>Compliant?}
+
+    Complete -->|No| Process
+    Complete -->|Yes| Dashboard[Leadership Dashboards<br/>KPIs and Metrics]
+
+    Dashboard --> Export[Export Services<br/>Excel, Word, CSV]
+
+    Complete -->|Yes| SOR[Systems of Record<br/>SETS, OnBase]
+
+    style Start fill:#e1f5ff
+    style Normalize fill:#d4edda
+    style Alerts fill:#fff3cd
+    style QA fill:#ffeaa7
+    style Dashboard fill:#d4edda
+    style SOR fill:#e2e3e5

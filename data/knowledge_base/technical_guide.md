@@ -1,6 +1,6 @@
 # OCSS Command Center — Technical Guide
 
-Last Updated: 2026-03-03
+Last Updated: 2026-03-09
 
 ---
 
@@ -21,10 +21,254 @@ Recent implementation updates (2026-03-03):
 - Administrative specialist roles are separated from Support Officer caseload dashboards and use administrative intake/ticket workflows.
 - Support Officer/Team Lead authenticated sessions are identity-locked to the signed-in worker, and KPI/Throughput tracker tables are filtered to that worker only.
 
+Recent implementation updates (2026-03-09):
+- Support Officer processing UI now includes report-type badges, dynamic required-field guidance, narration templates, and per-row progress indicators to reduce completion errors.
+
 **Project Status:** Production-Ready (v1.0.0)  
 **Framework:** Streamlit 1.x with Python 3.8+  
 **Deployment:** Single-server containerized application  
 **Target Launch:** Ready for IT Department Review
+
+---
+
+## Architecture & Data Flow (Enterprise View)
+
+This section combines the platform architecture and enterprise workflow flow into a single review-ready reference for technical guide, slides, and IT review packets.
+
+### Diagram 1: OCSS Command Center Enterprise System Architecture
+
+```text
+┌──────────────────────────────────────────────────────────────────┐
+│ OCSS USERS / CLIENT LAYER                                        │
+│                                                                  │
+│ Director | Deputy Director | Program Officers | Supervisors     │
+│ Team Leads | Support Officers | Administrative Specialists      │
+│                                                                  │
+│ Access via Modern Web Browser (Chrome / Edge / Firefox)          │
+└───────────────────────────────┬────────────────────────────────────┘
+                                │
+                                │ HTTPS
+                                ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ REVERSE PROXY / AUTH LAYER                                       │
+│                                                                  │
+│ County Gateway / NGINX                                           │
+│                                                                  │
+│ • SSL/TLS Encryption                                             │
+│ • Single Sign-On Authentication                                  │
+│ • Security Filtering                                             │
+│                                                                  │
+└───────────────────────────────┬────────────────────────────────────┘
+                                │
+                                ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ OCSS COMMAND CENTER APPLICATION                                  │
+│                                                                  │
+│ Python + Streamlit Web Application                               │
+│                                                                  │
+│ Core Components                                                  │
+│                                                                  │
+│ • Role-Based Access Control                                      │
+│ • Report Ingestion Engine                                        │
+│ • Caseload Management Engine                                     │
+│ • KPI & Performance Dashboards                                   │
+│ • QA & Compliance Metrics                                        │
+│ • Help Ticket Center                                             │
+│ • Knowledge Base                                                 │
+│                                                                  │
+│ Runtime Services                                                 │
+│                                                                  │
+│ • Session State Management                                       │
+│ • Data Validation                                                │
+│ • Escalation Alert Logic                                         │
+│ • Due-Date Clock Processing                                      │
+│                                                                  │
+└───────────────────────────┬───────────────┬──────────────────────┘
+                            │               │
+                            │               │
+                            ▼               ▼
+        ┌──────────────────────┐ ┌─────────────────────────┐
+        │ REPORT PROCESSING    │ │ APPLICATION STATE       │
+        │                      │ │                         │
+        │ Pandas Data Engine   │ │ Persistent Storage      │
+        │                      │ │                         │
+        │ • Excel Parsing      │ │ • Organizational Config │
+        │ • CSV Imports        │ │ • User Assignments      │
+        │ • Row Processing     │ │ • Help Tickets          │
+        │ • KPI Aggregation    │ │ • Alert Acknowledges    │
+        │                      │ │                         │
+        └──────────────┬───────┘ └──────────────┬──────────┘
+                       │                        │
+                       ▼                        ▼
+           ┌──────────────────────┐ ┌──────────────────────┐
+           │ FILE STORAGE         │ │ EXPORT SERVICES      │
+           │                      │ │                      │
+           │ Uploaded Reports     │ │ Excel Exports        │
+           │ CSV Imports          │ │ Word Leadership Pack  │
+           │ Processing Logs      │ │ CSV Downloads        │
+           │                      │ │                      │
+           └──────────────┬───────┘ └──────────────┬───────┘
+                          │                        │
+                          ▼                        ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ EXISTING OCSS SYSTEM ECOSYSTEM                                   │
+│                                                                  │
+│ • SETS Child Support System                                      │
+│ • Hyland OnBase                                                  │
+│ • ODJFS Operational Reports (56RA / P-S / Locate)                │
+│                                                                  │
+│ The Command Center enhances operational workflow visibility      │
+│ and leadership oversight while official case records remain      │
+│ within the authorized systems of record.                         │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Diagram 2: OCSS Command Center Enterprise Data Flow
+
+```text
+┌──────────────────────────────────────────────────────────────────────┐
+│ SOURCE REPORT / INPUT LAYER                                          │
+│ ODJFS / OCSS Operational Reports                                     │
+│ • 56RA Report • P-S Report • Locate Report • Approved Excel / CSV    │
+└───────────────────────────────┬──────────────────────────────────────┘
+                                │ Upload / Import
+                                ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ PROGRAM OFFICER INGESTION WORKFLOW                                   │
+│ Upload & Processing Module                                            │
+│ • File selection • Report type • Period metadata                     │
+│ • Duplicate/content-hash check • Ingestion registry • Warnings       │
+└───────────────────────────────┬──────────────────────────────────────┘
+                                │
+                                ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ REPORT NORMALIZATION ENGINE                                           │
+│ Python / Pandas Processing                                            │
+│ • Parse Excel/CSV • Normalize columns • Schema map                   │
+│ • Assign report IDs • Compute due clocks/escalation windows          │
+│ • Route report to assigned caseload                                  │
+└───────────────────────────────┬──────────────────────────────────────┘
+                                │
+               ┌────────────────┼────────────────┐
+               │                │                │
+               ▼                ▼                ▼
+┌─────────────────────┐ ┌─────────────────┐ ┌─────────────────────────┐
+│ CASELOAD ASSIGNMENT │ │ ALERTS ENGINE   │ │ INGESTION AUDIT LAYER   │
+│ • Unit/worker route │ │ • Due soon      │ │ • Upload timestamp      │
+│ • Queue ownership   │ │ • Overdue       │ │ • Source file name      │
+│ • Team lead visibility││ • Escalations  │ │ • Content hash/ID       │
+└───────────┬─────────┘ └────────┬────────┘ └────────────┬────────────┘
+            │                    │                       │
+            └──────────────┬─────┴───────────────┬───────┘
+                           │                     │
+                           ▼                     ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ SUPPORT OFFICER / TEAM LEAD PROCESSING                               │
+│ Assigned Reports Workflow                                             │
+│ • Caseload queue • Row-by-row processing • Required-field guidance   │
+│ • Report-type badges • Narration templates • Progress indicators     │
+│ • Save to session state • Submit completed work                      │
+└───────────────────────────────┬──────────────────────────────────────┘
+                                │
+                                ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ VALIDATION & QUALITY CONTROL                                          │
+│ • Block incomplete submission                                          │
+│ • Identify pending/in-progress rows                                   │
+│ • Trigger QA sampling for eligible completed rows                     │
+│ • Route to supervisory QA review                                      │
+│ • Feed QA/compliance metrics to leadership dashboards                 │
+└───────────────────────────────┬──────────────────────────────────────┘
+                                │
+               ┌────────────────┼────────────────┐
+               │                │                │
+               ▼                ▼                ▼
+┌─────────────────────┐ ┌──────────────────┐ ┌────────────────────────┐
+│ LEADERSHIP METRICS  │ │ EXPORT SERVICES  │ │ SUPPORT TICKET CENTER  │
+│ • KPI dashboards    │ │ • Excel exports  │ │ • Issue intake         │
+│ • Team performance  │ │ • Word packets   │ │ • Auto-routing         │
+│ • Caseload status   │ │ • CSV downloads  │ │ • Assignment tracking  │
+│ • Throughput + QA   │ │                  │ │ • Ticket KPIs          │
+└───────────┬─────────┘ └────────┬─────────┘ └────────────┬───────────┘
+            │                    │                        │
+            └──────────────┬─────┴──────────────┬─────────┘
+                           │                    │
+                           ▼                    ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ LIMITED PERSISTENCE / SYSTEM STATE                                   │
+│ Persisted: org config, caseload assignment settings, tickets, alerts │
+│ Session-only: active report work, row state, temporary workflow data │
+└───────────────────────────────┬──────────────────────────────────────┘
+                                │
+                                ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ OFFICIAL OCSS / STATE SYSTEMS OF RECORD                              │
+│ SETS Child Support System, Hyland OnBase, ODJFS/OCSS structures      │
+│ Command Center supports governance workflow and visibility only.      │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+Figure: OCSS Command Center Enterprise Data Flow
+This diagram illustrates how operational reports are ingested, normalized, routed, processed, validated, and surfaced through leadership dashboards while maintaining the Command Center's role as a companion workflow governance platform rather than an official system of record.
+
+### Plain-Language Narrative for IT Review
+
+1. Source report intake begins with Program Officer uploads of approved operational report files (56RA, P-S, Locate, approved Excel/CSV).
+2. Ingestion control identifies report type, applies period metadata, checks duplicates/content hash, creates ingestion records, and surfaces warnings.
+3. Normalization standardizes column/schema structure, assigns report IDs, computes due clocks/escalation timing, and routes work to caseload ownership.
+4. Support Officers and Team Leads process assigned report rows with report-type guidance, templates, and row-level progress controls.
+5. Validation blocks incomplete completion attempts and triggers QA sampling/review for eligible completed rows.
+6. Leadership and operations outputs feed KPI dashboards, QA/compliance views, export services, and support ticket analytics.
+7. Persistence remains intentionally bounded: limited administrative state is saved, while authoritative case records stay in agency systems of record.
+
+### Authoritative Data Boundary
+
+The OCSS Command Center enhances workflow coordination, processing visibility, and operational oversight. Official child support case records and authoritative case actions remain governed by existing authorized agency systems, including SETS and OnBase.
+
+### Data Security Model
+
+The application does not persist case-level data within a platform database.
+
+Operational model:
+- Source reports originate from existing OCSS systems.
+- Data is processed in-memory during active user sessions.
+- Only organizational configuration and support tickets are persisted to disk.
+- Official case records remain within authorized state child support systems.
+
+This design ensures the Command Center functions as a workflow management and reporting companion, not a system of record.
+
+### Authentication & Access Control
+
+The application supports three authentication modes:
+
+| Mode | Purpose |
+|------|---------|
+| none | Development and testing environments |
+| secrets | Credential-based login |
+| header | Single Sign-On integration via reverse proxy |
+
+Production deployments should use header authentication mode to align with county identity provider integration.
+
+### Infrastructure Impact
+
+The OCSS Command Center is designed to operate within existing county server infrastructure.
+
+The application requires:
+- One internal application server
+- No external cloud dependencies
+- Standard HTTPS reverse proxy configuration
+- Integration with existing authentication systems (SSO header mode)
+
+### Recommended Next Step
+
+Approval is requested to deploy the OCSS Command Center in a county IT staging environment for pilot testing.
+
+The pilot will allow:
+- Infrastructure validation
+- Authentication integration
+- Limited user testing within OCSS units
+
+Following successful pilot validation, the system can proceed to controlled production deployment.
 
 ---
 
@@ -187,26 +431,28 @@ Worker Self-Pull is intentionally restricted to **Director / Program Officer** a
 
 ### 2.2 Caseload Structure
 
-Reports are organized by **Caseload Numbers** (unique identifiers):
+Reports are organized by **Caseload IDs** (unique identifiers) and routed to OCSS operational units:
 
-| Caseload ID | Name | Reports | Student Population |
-|------------|------|---------|-------------------|
-| **181000** | Downtown Elementary | 2 | 245 Students |
-| **181001** | Midtown Middle School | 2 | 520 Students |
-| **181002** | Uptown High School | 1 | 1200 Students |
+| Caseload ID | Unit Assignment | Report Types |
+|------------|-----------------|--------------|
+| **181000** | Downtown Establishment | 56RA / P-S / Locate |
+| **181001** | Midtown Enforcement | 56RA / P-S / Locate |
+| **181002** | Uptown Collections | 56RA / P-S / Locate |
+
+Caseload routing, due-date computation, and escalation timing are derived from uploaded ODJFS/OCSS operational reports and assignment configuration in the application.
 
 ### 2.3 Report Fields & Data Processing
 
-Each report contains **7-9 editable fields** with automatic type detection:
+Report processing is schema-driven by report type (56RA, P-S, Locate, and approved operational files):
 
-**Example Report (181000-001):**
-- Total Students: 245 (numeric, editable)
-- Staff: 15 (numeric, editable)
-- Classrooms: 12 (numeric, editable)
-- Completion %: 85 (numeric, editable)
-- Grade Levels: 3-5 (text, editable)
-- Assessment Date: 2/15/2026 (text, editable)
-- Quality Score: 94 (numeric, editable)
+- Input parsing: Excel/CSV files are parsed and normalized into a common processing structure.
+- Field normalization: Column names are standardized and mapped to expected workflow fields.
+- Workflow metadata: Report IDs, due-date clocks, and escalation windows are computed at ingestion.
+- Row-level processing: Support Officers update required fields, narration, and completion status per row.
+- Validation controls: Submission is blocked when rows remain Pending/In Progress.
+- QA integration: Eligible completed rows are sampled and routed to supervisory QA review.
+
+Common data elements processed include report metadata (report type, period, ingestion ID, content hash), assignment metadata (caseload, unit, worker), workflow status (Pending/In Progress/Completed), and QA/compliance tracking fields.
 
 ### 2.4 Data Export & Download
 
@@ -238,6 +484,24 @@ Director/Program Officer views include a caseload rollup table that combines ass
 #### 2.5.3 Logic & Validation
 - **Caseload Reassignment:** Directors and Supervisors can now functionally move caseloads between workers. This updates the underlying session state immediately, reflecting changes across all dashboards.
 - **Submission Safety:** Support Officers cannot submit a caseload as "Complete" if any row remains in "Pending" or "In Progress" status. A warning is displayed, ensuring data completeness before supervisory review.
+
+### 2.6 Support Officer QA UI Enhancements
+
+Support Officer row-level workflow now includes in-context QA-oriented UI helpers:
+
+- **Report Type Badge:** Color-coded header indicator for LOCATE, P-S, 56RA, and Case Closure.
+- **Required Fields Panel:** Dynamic, report-type-aware checklist including conditional requirements.
+- **Narration Templates:** Quick-copy templates scoped to report type for consistent documentation.
+- **Row Progress Indicator:** Completion percentage and missing-field feedback before marking a row complete.
+
+Implementation notes:
+- Reusable UI logic is implemented in `app/support_officer_ui_helpers.py`.
+- Components are integrated in Support Officer processing sections in `app/app.py`.
+- These enhancements complement existing validation logic by improving pre-submit guidance.
+
+QA system linkage:
+- After a completed caseload is submitted, automatic QA sampling runs for eligible completed rows.
+- Supervisor QA reviews occur in `🎯 QA Review`, and aggregate leadership metrics appear in `🎯 QA & Compliance`.
 
 **User Management (Unit Role column):**
 User Management displays a derived **Unit Role** column:
@@ -542,29 +806,17 @@ docker logs ocss-app
 
 ---
 
-## 12. Cost Estimation
+## 12. Infrastructure Impact
 
-### 12.1 Infrastructure Costs
+The OCSS Command Center is designed to operate within the existing county server infrastructure.
 
-| Item | Cost | Notes |
-|------|------|-------|
-| **Server (VM)** | $200-500/month | 4-core, 16GB RAM |
-| **Database (if cloud)** | $100-300/month | PostgreSQL managed |
-| **File Storage (S3)** | $20-50/month | 100GB storage |
-| **SSL Certificate** | $50-100/year | Auto-renewal |
-| **Monitoring Tools** | $100-200/month | Optional but recommended |
-| **Backup Storage** | $30-50/month | Redundant backups |
-| **Total Monthly** | **$450-1,200** | Varies by scale |
+The application requires:
+- One internal application server
+- No external cloud dependencies
+- Standard HTTPS reverse proxy configuration
+- Integration with existing authentication systems (SSO header mode)
 
-### 12.2 Development/Support Costs
-
-| Item | Cost | Notes |
-|------|------|-------|
-| **Initial Setup** | $2,000-5,000 | One-time |
-| **Pre-Launch Testing** | $1,000-2,000 | One-time |
-| **Training & Documentation** | $1,000-3,000 | One-time |
-| **Monthly Support** | $1,000-2,000 | Ongoing |
-| **Quarterly Enhancements** | $3,000-5,000 | Per quarter |
+This design ensures the Command Center functions as a workflow management and reporting companion, not a system of record. Official case records remain in SETS and OnBase.
 
 ---
 

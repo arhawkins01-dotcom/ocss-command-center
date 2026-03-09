@@ -188,7 +188,7 @@ Use Case: Team Leads coordinate day-to-day processing, mentor Support Officers, 
 
 **📤 Upload & Processing Tab**
 
-1. **Select Caseload**: Choose the target caseload (181000, 181001, 181002, etc.)
+1. **Select Caseload**: Choose the target caseload (181000 Downtown Establishment, 181001 Midtown Enforcement, etc.)
 2. **Upload File**: Click "Browse files" and select an Excel (.xlsx) or CSV file
 3. **Review Preview**: The system displays:
    - File name and size
@@ -513,7 +513,7 @@ Create and manage organizational units:
 
 1. Select **Program Officer** role
 2. Go to **📤 Upload & Processing** tab
-3. Select target caseload (e.g., 181000)
+3. Select target caseload (e.g., 181000 Downtown Establishment)
 4. Click **"Browse files"**
 5. Select Excel or CSV file
 6. Review preview

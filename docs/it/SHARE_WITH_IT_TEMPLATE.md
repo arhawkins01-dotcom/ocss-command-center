@@ -54,7 +54,7 @@ Try these quick scenarios (15-20 minutes total):
 
 **Scenario 1: Report Processing**
 1. Select "Support Officer" from the sidebar
-2. Open Caseload "181000 - Downtown Elementary"
+2. Open Caseload "181000 - Downtown Establishment"
 3. Click on a report card to expand
 4. Edit a field and click "Update Report"
 5. Download the CSV

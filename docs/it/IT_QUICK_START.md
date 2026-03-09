@@ -45,7 +45,7 @@ Select any role from the sidebar to test:
 
 1. Select **Support Officer** from sidebar
 2. Click **Tab 1: Caseload Dashboard**
-3. Select Caseload **181000 - Downtown Elementary**
+3. Select Caseload **181000 - Downtown Establishment**
 4. Click the first report expander to view details
 5. Edit a field (e.g., change "Total Students" from 245 to 250)
 6. Click **💾 Update Report** button

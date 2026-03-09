@@ -98,6 +98,7 @@ Just look in the Supervisor role dropdown—every unit gets a supervisor automat
 
 ## 📖 Full Documentation
 
+- **User Manual (QA UI steps):** [USER_MANUAL.md](USER_MANUAL.md) — See **Report Intake & Processing -> QA UI Enhancements in My Assigned Reports**
 - **Detailed Setup:** [QA_SUPERVISOR_SETUP.md](QA_SUPERVISOR_SETUP.md)
 - **Complete Guide:** [QA_DEMO_WALKTHROUGH.md](QA_DEMO_WALKTHROUGH.md)
 - **Technical Spec:** [QA_COMPLIANCE_SYSTEM_COMPLETE.md](QA_COMPLIANCE_SYSTEM_COMPLETE.md)

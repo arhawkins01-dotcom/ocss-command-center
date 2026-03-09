@@ -204,7 +204,7 @@ These sample reports map to the 24 Ohio compliance criteria implemented in the Q
 1. **Upload Sample Report**
    - Go to: Program Officer → Report Intake Portal
    - Upload: `sample_locate_report.xlsx` (or CSV)
-   - Select: Caseload 181000
+   - Select: Caseload 181000 Downtown Establishment
 
 2. **View in Support Officer Dashboard**
    - Support Officer → My Assigned Reports

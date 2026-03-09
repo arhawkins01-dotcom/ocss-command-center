@@ -163,15 +163,15 @@ Reports are organized by **Caseload Numbers** (unique identifiers):
 
 | Caseload ID | Name | Reports | Student Population |
 |------------|------|---------|-------------------|
-| **181000** | Downtown Elementary | 2 | 245 Students |
-| **181001** | Midtown Middle School | 2 | 520 Students |
-| **181002** | Uptown High School | 1 | 1200 Students |
+| **181000** | Downtown Establishment | 2 Support Officers | Paternity/Order Establishment |
+| **181001** | Midtown Enforcement | 2 Support Officers | Order Enforcement/Compliance |
+| **181002** | Uptown Collections | 1 Support Officer | Payment Collections/Locate |
 
 ### 2.3 Report Fields & Data Processing
 
 Each report contains **7-9 editable fields** with automatic type detection:
 
-**Example Report (181000-001):**
+**Example Report (RPT-181000-001):**
 - Total Students: 245 (numeric, editable)
 - Staff: 15 (numeric, editable)
 - Classrooms: 12 (numeric, editable)

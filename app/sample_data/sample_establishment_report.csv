@@ -1,26 +1,26 @@
 Case_ID,Worker,Status,Date_Filed,Establishment,Case_Type,Priority,Completion_Percentage
-CASE-2026-0001,Michael Chen,Pending,2026-01-22,Uptown High School,Enforcement,Medium,3
-CASE-2026-0002,Michael Chen,In Progress,2025-12-04,Midtown Middle School,Review,Low,2
-CASE-2026-0003,Michael Chen,Pending,2025-12-23,Uptown High School,Modification,Medium,26
-CASE-2026-0004,Sarah Johnson,Under Review,2026-02-13,Midtown Middle School,Establishment,High,56
-CASE-2026-0005,Amanda Wilson,In Progress,2026-02-03,Uptown High School,Review,Medium,99
-CASE-2026-0006,David Martinez,Pending,2026-01-08,Midtown Middle School,Establishment,Medium,40
-CASE-2026-0007,Jessica Brown,Pending,2026-01-11,Downtown Elementary,Modification,High,92
-CASE-2026-0008,Michael Chen,Completed,2026-01-31,Midtown Middle School,Modification,Low,51
-CASE-2026-0009,David Martinez,Pending,2025-12-24,Uptown High School,Establishment,High,13
-CASE-2026-0010,Sarah Johnson,Completed,2025-12-01,Downtown Elementary,Modification,Medium,29
-CASE-2026-0011,Michael Chen,Under Review,2025-12-14,Uptown High School,Establishment,Low,28
-CASE-2026-0012,David Martinez,Pending,2026-01-31,Downtown Elementary,Enforcement,High,93
-CASE-2026-0013,Sarah Johnson,In Progress,2025-12-12,Midtown Middle School,Enforcement,Medium,59
-CASE-2026-0014,Michael Chen,Pending,2025-11-20,Midtown Middle School,Review,High,47
-CASE-2026-0015,David Martinez,In Progress,2025-12-09,Midtown Middle School,Establishment,Low,31
-CASE-2026-0016,Sarah Johnson,Pending,2026-01-29,Downtown Elementary,Review,High,30
-CASE-2026-0017,Amanda Wilson,Completed,2026-01-24,Downtown Elementary,Establishment,Low,74
-CASE-2026-0018,Michael Chen,Completed,2025-11-28,Midtown Middle School,Modification,High,25
-CASE-2026-0019,Jessica Brown,Under Review,2025-12-01,Midtown Middle School,Establishment,Medium,51
-CASE-2026-0020,Amanda Wilson,In Progress,2025-11-28,Downtown Elementary,Establishment,Medium,60
-CASE-2026-0021,Amanda Wilson,Completed,2025-12-14,Uptown High School,Establishment,Low,14
-CASE-2026-0022,Sarah Johnson,Completed,2026-02-17,Midtown Middle School,Modification,High,21
-CASE-2026-0023,Amanda Wilson,In Progress,2026-01-29,Midtown Middle School,Review,Medium,23
-CASE-2026-0024,Michael Chen,In Progress,2026-02-14,Downtown Elementary,Modification,Medium,54
-CASE-2026-0025,Sarah Johnson,Under Review,2025-12-11,Downtown Elementary,Establishment,Medium,66
+CASE-2026-0001,David Martinez,Pending,2026-01-19,Uptown Collections,Establishment,Low,89
+CASE-2026-0002,Sarah Johnson,Completed,2026-03-04,Downtown Establishment,Enforcement,Low,37
+CASE-2026-0003,Amanda Wilson,In Progress,2026-03-01,Midtown Enforcement,Modification,Low,37
+CASE-2026-0004,Jessica Brown,Under Review,2026-01-23,Midtown Enforcement,Modification,Low,20
+CASE-2026-0005,Jessica Brown,Completed,2026-02-15,Uptown Collections,Review,Medium,36
+CASE-2026-0006,Michael Chen,Under Review,2026-02-17,Midtown Enforcement,Enforcement,Medium,62
+CASE-2026-0007,David Martinez,Completed,2026-01-04,Uptown Collections,Enforcement,High,83
+CASE-2026-0008,Michael Chen,Under Review,2026-02-21,Downtown Establishment,Modification,Medium,94
+CASE-2026-0009,David Martinez,Under Review,2025-12-18,Midtown Enforcement,Establishment,High,45
+CASE-2026-0010,David Martinez,Under Review,2026-01-13,Midtown Enforcement,Review,High,36
+CASE-2026-0011,Amanda Wilson,Pending,2026-03-01,Midtown Enforcement,Review,High,85
+CASE-2026-0012,Jessica Brown,Completed,2026-01-10,Midtown Enforcement,Establishment,High,17
+CASE-2026-0013,Sarah Johnson,Under Review,2025-12-21,Uptown Collections,Review,High,76
+CASE-2026-0014,Michael Chen,Completed,2026-01-11,Midtown Enforcement,Establishment,Low,44
+CASE-2026-0015,David Martinez,Pending,2026-01-03,Uptown Collections,Review,Medium,51
+CASE-2026-0016,Michael Chen,In Progress,2026-01-04,Midtown Enforcement,Review,High,89
+CASE-2026-0017,Sarah Johnson,Completed,2025-12-09,Midtown Enforcement,Establishment,High,76
+CASE-2026-0018,Michael Chen,In Progress,2025-12-14,Uptown Collections,Modification,Medium,1
+CASE-2026-0019,Michael Chen,Completed,2026-01-11,Midtown Enforcement,Enforcement,Medium,18
+CASE-2026-0020,Michael Chen,Pending,2026-03-03,Midtown Enforcement,Modification,Medium,30
+CASE-2026-0021,Michael Chen,Pending,2026-02-02,Uptown Collections,Enforcement,Low,95
+CASE-2026-0022,Michael Chen,Under Review,2025-12-17,Midtown Enforcement,Review,Low,69
+CASE-2026-0023,Michael Chen,Completed,2026-03-08,Downtown Establishment,Establishment,Medium,53
+CASE-2026-0024,Michael Chen,Under Review,2026-02-22,Midtown Enforcement,Establishment,Medium,86
+CASE-2026-0025,David Martinez,Pending,2025-12-14,Downtown Establishment,Review,High,34

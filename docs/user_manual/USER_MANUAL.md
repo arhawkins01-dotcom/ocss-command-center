@@ -1,11 +1,12 @@
 # OCSS Command Center — User Manual
 
-Version: 1.3.0
-Last Updated: 2026-03-03
+Version: 1.3.1
+Last Updated: 2026-03-09
 
 ---
 
 ## Change Log
+- 2026-03-09 — Added Support Officer QA UI enhancement guidance (report-type badge, required-fields panel, narration templates, and row progress indicator) plus supervisor QA review navigation notes.
 - 2026-02-27 — Consolidated manual, clarified role workflows, standardized UI label `💾 Save Progress` across instructions.
 - 2026-03-02 — Documented Help Ticket Center workflow (auto-routing/assignment, statuses, IT actions) and updated instructions for Executive Intake step flow + Support Officer completion UX.
 - 2026-03-03 — Simplified sidebar role selection (Role Group + Role dropdown), added Administrative role workflow distinction (non-caseload), and documented Program Officer agency-wide KPI filters (Department, Unit, Support Staff) synchronized across KPI/Caseload/Performance tabs.
@@ -97,7 +98,7 @@ Each role has a tailored view and permission set. Below are concise responsibili
 - Security behavior:
   - When authenticated, identity is locked to the signed-in Support Officer/Team Lead profile.
   - `Support Officer KPI Tracker (Assigned Reports)` and `Support Officer Throughput` show only the signed-in worker's rows.
-  - In no-auth/demo mode, `Act as Support Officer / Team Lead` remains available for simulation.
+  - In no-auth/testing mode, `Act as Support Officer / Team Lead` remains available for simulation and validation.
 
 ### IT Administrator
 - Purpose: User and unit management, audit logs, system health, backups
@@ -165,6 +166,24 @@ Follow this per-row checklist for reliable narration and consistent status:
 Tip:
 - If you are viewing `Pending / In Progress` rows, completed rows will be hidden by the filter.
 
+### QA UI Enhancements in My Assigned Reports
+Support Officer processing now includes built-in QA guidance directly in the row workflow:
+
+1. Confirm report type using the color badge at the top of the processing area:
+  - LOCATE (blue), P-S (green), 56RA (orange), Case Closure (purple)
+2. Review the dynamic Required Fields panel before editing the row.
+3. Use Quick-Copy Narration Templates for the current report type when applicable.
+4. Enter/verify required fields in the data editor and set `Case Narrated` to `Yes` when complete.
+5. Check the per-row progress indicator:
+  - Green means row is ready for completion
+  - Orange means partially complete
+  - Red means key items are still missing
+6. Click `💾 Save Progress` and then set `Worker Status` to `Completed` only after required fields are satisfied.
+
+Supervisor/QA note:
+- After caseload submission, QA samples are generated automatically for eligible completed rows.
+- Supervisors review those sampled rows in the `🎯 QA Review` tab.
+
 ### Conditional Submit
 - When all rows assigned to the Support Officer are `Completed`, the Supervisor-level `✅ Submit Caseload as Complete` button becomes available. The app validates required fields for specific report types (56RA, P-S, Locate) and blocks submission until rules are satisfied.
 
@@ -225,7 +244,7 @@ The Help Ticket Center is the single workflow for reporting issues (upload probl
 - **IT Administrator**: `🆘 Ticket KPIs` tab (includes IT actions)
 
 ### Submitting a ticket
-1. Enter your name and pick an Establishment, Priority, and Issue Category.
+1. Enter your name and pick an OCSS Unit (Establishment), Priority, and Issue Category.
 2. Describe the issue and click `Submit Help Ticket`.
 3. The system adds a **Suggested resolution** to speed triage.
 4. **Auto-routing / auto-assign:** if one or more IT Administrators exist in User Management, the ticket is auto-assigned to an IT Administrator and starts in `Assigned` status.
@@ -257,7 +276,7 @@ Common issues and quick fixes:
 
 - I don't see my caseloads:
   - Authenticated mode: verify your signed-in account is mapped to a Support Officer/Team Lead user profile.
-  - No-auth/demo mode: select your name in `Act as Support Officer / Team Lead`.
+  - No-auth/testing mode: select your name in `Act as Support Officer / Team Lead`.
 - Upload preview looks wrong: verify `.xlsx`/`.csv` format and column headers.
 - Duplicate ingestion blocked: confirm metadata and enable `Allow ingestion` if intentional.
 - Can't pull a caseload: ensure you have permission and that `Simulate Current Worker` matches `Pull As`.
@@ -274,7 +293,7 @@ If the page won't load:
 
 ## Screenshots & Training Aids
 
-Placeholders for screenshots and short videos help new users. Suggested assets:
+Screenshots and short videos help new users. Suggested assets:
 
 - Dashboard overview (roles and main tiles)
 - Upload & preview walkthrough

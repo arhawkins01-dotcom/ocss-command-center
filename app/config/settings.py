@@ -399,9 +399,9 @@ for _unit_name, _preset in _DEFAULT_UNIT_ROSTERS.items():
 
 # Caseload Configuration
 DEFAULT_CASELOADS = {
-    '181000': 'Downtown Elementary',
-    '181001': 'Midtown Middle School',
-    '181002': 'Uptown High School'
+    '181000': 'Downtown Establishment',
+    '181001': 'Midtown Enforcement',
+    '181002': 'Uptown Collections'
 }
 
 # Role Configuration

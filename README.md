@@ -1,87 +1,178 @@
 
-# OCSS Establishment Command Center
+# OCSS Command Center
 
-Internal Director Command Center Web Application for the Cuyahoga County Office of Child Support Services.
+**Operational Workflow Governance Platform for Cuyahoga County Office of Child Support Services**
 
-## Purpose
-This repository contains the source code, governance documentation, and deployment materials for the
-OCSS Establishment Command Center — a server‑hosted internal web application designed to:
+[![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.x-FF4B4B.svg)](https://streamlit.io/)
+[![License](https://img.shields.io/badge/License-County%20Internal-green.svg)]()
 
-- Centralize Excel report imports
-- Standardize supervisor workflows
-- Provide Director‑level KPI analytics
-- Support CQI and SAVES governance alignment
+---
 
-## 🚀 Quick Start
+## Overview
 
-### ✅ Latest Enhancements Included (v1.3.0)
+The **OCSS Command Center** is an internal operational governance platform designed to improve report workflow transparency, performance monitoring, and leadership oversight across OCSS units.
 
-**👉 [See What's Included Guide](WHATS_INCLUDED.md)** - Complete list of all features already in the Streamlit app!
+Built with Python and Streamlit, the system operates as a companion application that enhances workflow visibility and operational governance while maintaining official case data within existing authorized systems (SETS, OnBase).
 
-Recent updates now in this repo include:
-- Simplified role picker (`Role Group` + `Select Your Role`) with last-role default.
-- Program Officer retained on legacy dashboard with agency-wide filters (Department, Unit, Support Staff) synced across KPI/Caseload/Performance tabs.
-- Administrative specialist workflow split from Support Officer caseload dashboard (intake + tickets + KB).
-- Updated manuals/technical guides in both `docs/` and `data/knowledge_base/`.
+### Key Capabilities
 
-### Deploy to Streamlit Cloud
-**GitHub URL:** https://github.com/arhawkins01-dotcom/ocss-command-center
-**Main file path:** `app/app.py` ⭐
+- **Report Workflow Management** - Centralized ingestion and processing of 56RA, P-S, and Locate reports
+- **Caseload Oversight** - Unit-based work queue routing and assignment tracking
+- **Leadership Analytics** - Real-time KPI dashboards for Director and Program Officer visibility
+- **QA & Compliance** - Automated quality assurance with Ohio OAC/ORC/OCSE compliance criteria
+- **Help Ticket Center** - Internal issue tracking and resolution workflow
+- **Knowledge Base** - Embedded technical documentation and user guides
 
-👉 **[See Streamlit Cloud Deployment Guide](STREAMLIT_CLOUD_DEPLOYMENT.md)** for step-by-step instructions.
+---
 
-📂 **[Main File Path Visual Guide](MAIN_FILE_PATH.md)** - Clear explanation of the correct path
+## Quick Start
 
 ### Local Development
+
 ```bash
+# Install dependencies
 pip install -r app/requirements.txt
+
+# Run application
 ./scripts/start_app.sh
 ```
 
-### IT + Developer Demo Prep
+### County-Hosted Deployment
 
-- Runbook: `docs/IT_DEVELOPER_DEMO_RUNBOOK.md`
-- Day-of checklist: `docs/DEMO_DAY_CHECKLIST.md`
-- Preflight: `./scripts/demo_preflight.sh`
+For internal production deployment to county infrastructure:
 
-### QA & Compliance System
+- **IT Deployment Guide:** [docs/it/IT_IMPLEMENTATION_GUIDE.md](docs/it/IT_IMPLEMENTATION_GUIDE.md)
+- **Security Overview:** [docs/it/SECURITY_AND_DEPLOYMENT_BRIEF.md](docs/it/SECURITY_AND_DEPLOYMENT_BRIEF.md)
+- **Windows Deployment:** [deploy/windows/](deploy/windows/)
 
-**New in v1.4.0:** Automated Quality Assurance with Ohio OAC/ORC/OCSE compliance tracking
+---
 
-- **Auto-sampling:** 5 cases per worker per report (automatic on submission)
-- **Supervisors:** QA Review tab with Ohio compliance criteria
-- **Executives:** QA & Compliance dashboard with agency-wide metrics
-- **Documentation:** `docs/QA_COMPLIANCE_SYSTEM_COMPLETE.md`
+## Documentation
 
-**Key Features:**
-- ✅ Ohio-specific compliance criteria (OAC 5101:12, ORC 3111.04, OCSE guidance)
-- ✅ Automated case sampling (deterministic, reproducible)
-- ✅ Real-time compliance scoring and trending
-- ✅ Executive KPI integration for strategic oversight
+### For IT & Technical Staff
 
-## Production Hosting
-⚠️ Production does NOT run from GitHub.
+- **[Enterprise Architecture Guide](docs/architecture/OCSS_Command_Center_Architecture_Guide.md)** - Complete system architecture and data flow
+- **[System Architecture Diagram](docs/architecture/architecture_diagram.md)** - Visual system architecture
+- **[Data Flow Diagram](docs/architecture/data_flow_diagram.md)** - End-to-end data processing flow
+- **[IT Implementation Guide](docs/it/IT_IMPLEMENTATION_GUIDE.md)** - Deployment instructions
+- **[Security & Deployment Brief](docs/it/SECURITY_AND_DEPLOYMENT_BRIEF.md)** - Security model and infrastructure requirements
 
-The live application runs internally from:
+### For Leadership & Directors
 
-S:\OCSS\CommandCenter\App\
+- **[Executive Summary](docs/director/EXECUTIVE_SUMMARY.md)** - High-level business case and benefits
+- **[Director Overview](docs/director/README_DIRECTOR_OVERVIEW.md)** - Leadership role and capabilities
+- **[Command Center Brief](docs/director/DIRECTOR_ONE_PAGE_BRIEF.md)** - One-page executive brief
 
-GitHub is used only for:
-- Version control
-- Documentation
-- Update management
+### For End Users
 
-### Deployment Options
+- **[User Manual](docs/user_manual/USER_MANUAL.md)** - Complete end-user documentation
+- **[Technical Guide](docs/user_manual/TECHNICAL_GUIDE.md)** - Detailed system functionality
+- **[QA System Guide](docs/training/QA_COMPLIANCE_SYSTEM_COMPLETE.md)** - Quality assurance workflows
 
-1. **Streamlit Cloud** (Web-based) - See [STREAMLIT_CLOUD_DEPLOYMENT.md](STREAMLIT_CLOUD_DEPLOYMENT.md)
-2. **Internal Server** (Windows) - See [deploy/DEPLOYMENT_GUIDE.md](deploy/DEPLOYMENT_GUIDE.md)
+---
 
 ## Repository Structure
-/app              → Application source code
-/deploy           → Server deployment scripts
-/docs/director    → Executive governance materials
-/docs/it          → Technical deployment guidance
 
-Generated: February 14, 2026
+```
+ocss-command-center/
+│
+├── app/                    # Application source code
+│   ├── app.py             # Main Streamlit application
+│   ├── auth.py            # Authentication module
+│   ├── report_engine.py   # Report processing engine
+│   └── requirements.txt   # Python dependencies
+│
+├── docs/                   # Documentation
+│   ├── architecture/      # System architecture & diagrams
+│   ├── director/          # Executive governance materials
+│   ├── it/                # IT deployment & security guides
+│   ├── user_manual/       # End-user documentation
+│   └── training/          # Training & QA materials
+│
+├── deploy/                 # Deployment configurations
+│   ├── docker/            # Docker deployment (future)
+│   ├── nginx/             # Reverse proxy configs (future)
+│   └── windows/           # Windows server deployment
+│
+├── data/                   # Runtime data
+│   ├── knowledge_base/    # In-app documentation
+│   ├── state/             # Application state files
+│   └── sample_reports/    # Sample data for testing
+│
+├── exports/                # Generated reports
+├── logs/                   # Application logs
+└── tests/                  # Automated tests
+```
 
-Last updated: March 3, 2026
+---
+
+## Technology Stack
+
+- **Framework:** Python 3.9+ with Streamlit 1.x
+- **Data Processing:** Pandas
+- **Authentication:** County SSO header mode (production) | No-auth testing mode (development)
+- **Deployment:** County-hosted internal application server
+- **Database:** File-based persistence (JSON)
+
+---
+
+## System Boundaries
+
+### What the Command Center Provides
+
+- Operational workflow visibility and governance
+- Report processing and caseload assignment
+- Leadership KPI dashboards and analytics
+- QA compliance tracking and metrics
+
+### What Remains in Official Systems of Record
+
+- **SETS Child Support System** - Official case records
+- **Hyland OnBase** - Case documentation
+- **ODJFS Infrastructure** - State reporting data
+
+The Command Center operates as a **companion governance platform**, not a replacement for authorized case management systems.
+
+---
+
+## Deployment Model
+
+### Production Environment
+
+- **Hosting:** County-hosted internal application server
+- **Network:** Internal county network only (no external internet exposure)
+- **Authentication:** SSO header mode integration with county authentication infrastructure
+- **Persistence:** File-based storage (organizational config, help tickets, alert acknowledgments)
+
+### Development Environment
+
+- **Local Development:** No-auth testing mode for development and validation
+- **Demo Environment:** Streamlit Cloud for demonstrations (see [STREAMLIT_CLOUD_DEPLOYMENT.md](STREAMLIT_CLOUD_DEPLOYMENT.md))
+
+---
+
+## Latest Release: v1.4.0
+
+### New Features
+
+- **Automated QA System** - 5-case sampling per worker with Ohio compliance criteria
+- **Enhanced Role-Based Access** - Simplified role picker with last-role memory
+- **Administrative Specialist Workflow** - Dedicated intake and ticket management interface
+- **Improved Support Officer UI** - Enhanced caseload dashboard with progress tracking
+
+**[See What's Included Guide](WHATS_INCLUDED.md)** for complete feature list.
+
+---
+
+## Support & Contact
+
+**Project Lead:** Ashombia R. Hawkins  
+**Organization:** Cuyahoga County Office of Child Support Services  
+**For IT Questions:** See [docs/it/README_IT_DEPLOYMENT.md](docs/it/README_IT_DEPLOYMENT.md)
+
+---
+
+**Last Updated:** March 9, 2026  
+**Version:** 1.4.0  
+**Status:** Ready for IT Review

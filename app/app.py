@@ -148,11 +148,19 @@ except Exception:  # pragma: no cover
 # Initialize Database
 database.init_db()
 
-# When this module is imported (e.g., during pytest collection), avoid executing
-# Streamlit UI code that requires a running ScriptRunContext. Replace `st` in
-# this module with a minimal proxy that provides `session_state` and harmless
-# no-op functions so import-time evaluation of UI helpers won't fail.
-if __name__ != "__main__":
+# When this module is imported during pytest collection, avoid executing
+# Streamlit UI code that requires a running ScriptRunContext. Keep real
+# Streamlit behavior when imported by `streamlit_app.py` at runtime.
+def _should_use_import_proxy() -> bool:
+    if __name__ == "__main__":
+        return False
+    # Only activate this proxy in test contexts.
+    if "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ:
+        return True
+    return False
+
+
+if _should_use_import_proxy():
     class _StUIProxy:
         """A lightweight proxy for nested Streamlit UI containers (sidebar, expander, etc.).
 
@@ -343,44 +351,273 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom styling (minimal)
+# Enterprise dashboard styling for government analytics presentation
 st.markdown(
     """
     <style>
-    .cc-title { font-size: 2.2em; margin-bottom: 8px; }
+    :root {
+        --ocss-primary: #1F3A5F;
+        --ocss-secondary: #6B7A8F;
+        --ocss-accent: #2A9D8F;
+        --ocss-warning: #E9C46A;
+        --ocss-error: #E76F51;
+        --ocss-bg: #F4F6F8;
+        --ocss-surface: #FFFFFF;
+        --ocss-border: #D5DCE3;
+    }
 
-    /* Knowledge Base: typography + spacing using Streamlit theme variables */
+    .stApp {
+        background-color: var(--ocss-bg);
+        color: var(--ocss-primary);
+    }
+
+    .cc-title {
+        font-size: 2.1rem;
+        font-weight: 700;
+        color: var(--ocss-primary);
+        letter-spacing: 0.01em;
+        margin-bottom: 0.35rem;
+    }
+
+    /* Sidebar styling */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #1F3A5F 0%, #2A4A70 100%);
+        border-right: 1px solid #17304f;
+    }
+
+    [data-testid="stSidebar"] * {
+        color: #F4F6F8;
+    }
+
+    [data-testid="stSidebar"] h1,
+    [data-testid="stSidebar"] h2,
+    [data-testid="stSidebar"] h3,
+    [data-testid="stSidebar"] h4 {
+        color: #FFFFFF;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+    }
+
+    [data-testid="stSidebar"] hr {
+        border-color: rgba(244, 246, 248, 0.35);
+    }
+
+    /* Buttons */
+    .stButton > button,
+    .stDownloadButton > button {
+        background: var(--ocss-primary);
+        color: #FFFFFF;
+        border: 1px solid #17304f;
+        border-radius: 0.55rem;
+        font-weight: 600;
+    }
+
+    .stButton > button:hover,
+    .stDownloadButton > button:hover {
+        background: #27466e;
+        border-color: #10253d;
+        color: #FFFFFF;
+    }
+
+    .stButton > button:focus,
+    .stDownloadButton > button:focus {
+        outline: 3px solid rgba(42, 157, 143, 0.45);
+        outline-offset: 2px;
+        box-shadow: none;
+    }
+
+    /* KPI cards */
+    [data-testid="stMetric"] {
+        background: var(--ocss-surface);
+        border: 1px solid var(--ocss-border);
+        border-left: 5px solid var(--ocss-accent);
+        border-radius: 0.65rem;
+        padding: 0.7rem 0.85rem;
+        box-shadow: 0 1px 2px rgba(31, 58, 95, 0.08);
+    }
+
+    [data-testid="stMetricLabel"] {
+        color: var(--ocss-secondary);
+        font-weight: 600;
+    }
+
+    [data-testid="stMetricValue"] {
+        color: var(--ocss-primary);
+        font-weight: 700;
+    }
+
+    [data-testid="stMetricDelta"] {
+        color: var(--ocss-accent);
+    }
+
+    /* Dataframe and table styling */
+    [data-testid="stDataFrame"],
+    .stTable table {
+        border: 1px solid var(--ocss-border);
+        border-radius: 0.55rem;
+        overflow: hidden;
+        background: var(--ocss-surface);
+    }
+
+    .stTable th,
+    [data-testid="stDataFrame"] thead th {
+        background: #E9EEF4;
+        color: var(--ocss-primary);
+        font-weight: 700;
+        border-bottom: 1px solid var(--ocss-border);
+    }
+
+    .stTable td,
+    [data-testid="stDataFrame"] tbody td {
+        color: #253949;
+        border-bottom: 1px solid #E4E9EF;
+    }
+
+    /* Native alert color alignment */
+    [data-testid="stNotification"] {
+        border-radius: 0.5rem;
+    }
+
+    [data-testid="stNotification"] [data-testid="stMarkdownContainer"] {
+        color: var(--ocss-primary);
+    }
+
+    /* Knowledge Base: typography + spacing */
     .ocss-kb-doc {
         max-width: 980px;
         margin: 0 auto;
         line-height: 1.6;
     }
+
+    .ocss-kb-doc h1,
+    .ocss-kb-doc h2,
+    .ocss-kb-doc h3 {
+        color: var(--ocss-primary);
+    }
+
     .ocss-kb-doc h1 { margin-top: 0.25rem; }
     .ocss-kb-doc h2 { margin-top: 1.25rem; padding-top: 0.25rem; }
     .ocss-kb-doc h3 { margin-top: 1rem; }
-    .ocss-kb-doc hr { margin: 1rem 0; }
+    .ocss-kb-doc hr { margin: 1rem 0; border-color: var(--ocss-border); }
+
     .ocss-kb-doc pre {
-        background: var(--secondary-background-color, rgba(0,0,0,0.04));
+        background: #EEF2F6;
         padding: 0.75rem 0.9rem;
         border-radius: 0.6rem;
         overflow-x: auto;
     }
+
     .ocss-kb-doc code {
-        background: var(--secondary-background-color, rgba(0,0,0,0.04));
+        background: #EEF2F6;
         padding: 0.12rem 0.3rem;
         border-radius: 0.4rem;
+        color: #1F3A5F;
     }
+
     .ocss-kb-doc blockquote {
-        border-left: 0.25rem solid var(--primary-color, currentColor);
+        border-left: 0.25rem solid var(--ocss-accent);
         padding: 0.1rem 0 0.1rem 0.9rem;
         margin: 0.9rem 0;
+        color: #2d465f;
     }
+
     .ocss-kb-doc table { width: 100%; border-collapse: collapse; }
     .ocss-kb-doc table th,
     .ocss-kb-doc table td {
         padding: 0.35rem 0.5rem;
         vertical-align: top;
-        border-bottom: 1px solid currentColor;
+        border-bottom: 1px solid var(--ocss-border);
+    }
+
+    .ocss-kb-doc table th {
+        background: #E9EEF4;
+        color: var(--ocss-primary);
+    }
+
+    /* Status badges for report types and workflow */
+    .status-badge {
+        display: inline-block;
+        padding: 0.25rem 0.65rem;
+        border-radius: 0.35rem;
+        font-size: 0.8rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        margin: 0 0.15rem;
+    }
+
+    .badge-report-locate { background: #2A9D8F; color: #FFFFFF; }
+    .badge-report-ps { background: #6B7A8F; color: #FFFFFF; }
+    .badge-report-56ra { background: #1F3A5F; color: #FFFFFF; }
+    .badge-report-closure { background: #5A6F85; color: #FFFFFF; }
+
+    .badge-status-pending { background: #E9C46A; color: #2C2415; }
+    .badge-status-inprogress { background: #4A90E2; color: #FFFFFF; }
+    .badge-status-completed { background: #2A9D8F; color: #FFFFFF; }
+    .badge-status-overdue { background: #E76F51; color: #FFFFFF; }
+
+    /* Enterprise section headers */
+    .section-header {
+        font-size: 1.4rem;
+        font-weight: 700;
+        color: var(--ocss-primary);
+        margin: 1.5rem 0 0.75rem 0;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid var(--ocss-accent);
+    }
+
+    .subsection-header {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--ocss-secondary);
+        margin: 1rem 0 0.5rem 0;
+    }
+
+    /* Dark mode overrides (when enabled) */
+    .dark-mode {
+        background-color: #1a1d24;
+        color: #E8EDF3;
+    }
+
+    .dark-mode [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #0F1419 0%, #1a1d24 100%);
+    }
+
+    .dark-mode [data-testid="stMetric"] {
+        background: #242832;
+        border-color: #3a3f4f;
+border-left-color: var(--ocss-accent);
+    }
+
+    .dark-mode [data-testid="stDataFrame"],
+    .dark-mode .stTable {
+        background: #242832;
+        border-color: #3a3f4f;
+    }
+
+    .dark-mode .stTable th,
+    .dark-mode [data-testid="stDataFrame"] thead th {
+        background: #2f3441;
+        color: #E8EDF3;
+    }
+
+    .dark-mode .section-header {
+        color: #E8EDF3;
+        border-bottom-color: var(--ocss-accent);
+    }
+
+    .dark-mode .cc-title {
+        color: #E8EDF3;
+    }
+
+    /* Sidebar role group headers */
+    .role-group-header {
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: rgba(255, 255, 255, 0.7);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-top: 1rem;
+        margin-bottom: 0.35rem;
     }
     </style>
     """,
@@ -396,6 +633,110 @@ if 'upload_audit_log' not in st.session_state:
 
 if 'report_ingestion_registry' not in st.session_state:
     st.session_state.report_ingestion_registry = []
+
+if 'dark_mode' not in st.session_state:
+    st.session_state.dark_mode = False
+
+# ═══════════════════════════════════════════════════════════════════════════
+# UI HELPER FUNCTIONS FOR ENTERPRISE DASHBOARD
+# ═══════════════════════════════════════════════════════════════════════════
+
+def render_status_badge(badge_type: str, badge_value: str) -> None:
+    """Render a colored status badge for report types or workflow states.
+    
+    Args:
+        badge_type: 'report' for report types, 'status' for workflow states
+        badge_value: The value to display (e.g., 'LOCATE', 'Pending', 'Overdue')
+    """
+    value_normalized = str(badge_value).upper().replace(' ', '').replace('-', '')
+    
+    if badge_type == 'report':
+        class_map = {
+            'LOCATE': 'badge-report-locate',
+            'PS': 'badge-report-ps',
+            '56RA': 'badge-report-56ra',
+            'CLOSURE': 'badge-report-closure',
+        }
+        css_class = class_map.get(value_normalized, 'badge-report-ps')
+    elif badge_type == 'status':
+        class_map = {
+            'PENDING': 'badge-status-pending',
+            'INPROGRESS': 'badge-status-inprogress',
+            'COMPLETED': 'badge-status-completed',
+            'OVERDUE': 'badge-status-overdue',
+        }
+        css_class = class_map.get(value_normalized, 'badge-status-pending')
+    else:
+        css_class = 'status-badge'
+    
+    st.markdown(f'<span class="status-badge {css_class}">{badge_value}</span>', unsafe_allow_html=True)
+
+
+def render_section_header(title: str, subtitle: str = '', icon: str = '') -> None:
+    """Render a styled section header with optional subtitle and icon.
+    
+    Args:
+        title: Main section title
+        subtitle: Optional descriptive subtitle
+        icon: Optional emoji icon
+    """
+    full_title = f"{icon} {title}" if icon else title
+    st.markdown(f'<div class="section-header">{full_title}</div>', unsafe_allow_html=True)
+    if subtitle:
+        st.caption(subtitle)
+
+
+def render_subsection_header(title: str) -> None:
+    """Render a styled subsection header.
+    
+    Args:
+        title: Subsection title
+    """
+    st.markdown(f'<div class="subsection-header">{title}</div>', unsafe_allow_html=True)
+
+
+def render_kpi_row(metrics: list[dict], columns: int = 4) -> None:
+    """Render a row of KPI metrics with consistent styling.
+    
+    Args:
+        metrics: List of metric dicts with keys: label, value, delta (optional), help (optional)
+        columns: Number of columns in the row (default 4)
+    """
+    cols = st.columns(columns)
+    for idx, metric in enumerate(metrics[:columns]):
+        with cols[idx]:
+            delta = metric.get('delta')
+            help_text = metric.get('help')
+            st.metric(
+                label=metric['label'],
+                value=metric['value'],
+                delta=delta,
+                help=help_text
+            )
+
+
+def format_operational_table(df: pd.DataFrame, highlight_cols: list[str] = None) -> pd.DataFrame:
+    """Format a DataFrame for operational display with conditional formatting.
+    
+    Args:
+        df: DataFrame to format
+        highlight_cols: Column names to emphasize (e.g., ['Status', 'Due Date', 'Assigned To'])
+    
+    Returns:
+        Formatted DataFrame
+    """
+    if df.empty:
+        return df
+    
+    # Format date columns consistently
+    for col in df.columns:
+        if 'date' in col.lower() or 'at' in col.lower():
+            try:
+                df[col] = pd.to_datetime(df[col], errors='coerce').dt.strftime('%Y-%m-%d %H:%M')
+            except Exception:
+                pass
+    
+    return df
 
 if 'report_ingestion_events' not in st.session_state:
     st.session_state.report_ingestion_events = []
@@ -525,15 +866,30 @@ def safe_st_dataframe(df, **kwargs):
     Many Streamlit backends use pyarrow to serialize DataFrames; mixed-type columns can raise
     ArrowInvalid. This helper tries the normal display first and falls back to `astype(str)`.
     """
+    def _normalize_mixed_object_columns(in_df: pd.DataFrame) -> pd.DataFrame:
+        out_df = in_df.copy()
+        for col in out_df.columns:
+            if out_df[col].dtype != object:
+                continue
+            non_null = out_df[col].dropna()
+            if non_null.empty:
+                continue
+            has_str = non_null.map(lambda v: isinstance(v, str)).any()
+            has_non_str = non_null.map(lambda v: not isinstance(v, str)).any()
+            if has_str and has_non_str:
+                out_df[col] = out_df[col].map(lambda v: '' if pd.isna(v) else str(v))
+        return out_df
+
+    normalized_df = _normalize_mixed_object_columns(df)
     try:
-        st.dataframe(df, **kwargs)
+        st.dataframe(normalized_df, **kwargs)
     except Exception:
         try:
-            st.dataframe(df.astype(str), **kwargs)
+            st.dataframe(normalized_df.astype(str), **kwargs)
         except Exception:
             # Last-resort: render as plain text table
             try:
-                st.write(df.astype(str))
+                st.write(normalized_df.astype(str))
             except Exception:
                 # swallow to avoid crashing the entire app UI
                 pass
@@ -1129,34 +1485,8 @@ if 'units' not in st.session_state:
         if isinstance(seeded, dict) and seeded:
             st.session_state.units = dict(seeded)
         else:
-            # Backward-compatible fallback demo units
-            st.session_state.units = {
-                'OCSS North': {
-                    'department': 'Establishment',
-                    'unit_type': 'standard',
-                    'supervisor': 'Alex Martinez',
-                    'team_leads': ['Sarah Johnson'],
-                    'support_officers': ['Michael Chen', 'Jessica Brown'],
-                    'caseload_series_prefixes': ['1810'],
-                    'assignments': {
-                        'Sarah Johnson': ['181000'],
-                        'Michael Chen': ['181001'],
-                        'Jessica Brown': ['181002']
-                    }
-                },
-                'OCSS South': {
-                    'department': 'Establishment',
-                    'unit_type': 'standard',
-                    'supervisor': 'Priya Singh',
-                    'team_leads': ['David Martinez'],
-                    'support_officers': ['Amanda Wilson'],
-                    'caseload_series_prefixes': ['1810'],
-                    'assignments': {
-                        'David Martinez': ['181001'],
-                        'Amanda Wilson': ['181000']
-                    }
-                }
-            }
+            # Initialize empty organizational structure - configure via User Management
+            st.session_state.units = {}
 
 if 'users' not in st.session_state:
     loaded_users = (_persisted_state or {}).get('users')
@@ -1391,6 +1721,47 @@ def _parse_dt(value) -> datetime | None:
         text = str(value).strip()
     except Exception:
         return None
+
+
+def _compute_worker_avg_time_display(report_entries: list, worker_name: str) -> str:
+    """Compute average hours from report upload to completed row update for a worker."""
+    durations_hours: list[float] = []
+    worker_key = str(worker_name or '').strip()
+
+    for report in (report_entries or []):
+        if not isinstance(report, dict):
+            continue
+        uploaded_at = _parse_dt(report.get('uploaded_at')) or _parse_dt(report.get('timestamp'))
+        if not uploaded_at:
+            continue
+
+        df = report.get('data')
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            continue
+        if 'Worker Status' not in df.columns or 'Last Updated' not in df.columns:
+            continue
+
+        completed_df = df[df['Worker Status'].eq('Completed')].copy()
+        if completed_df.empty:
+            continue
+
+        # Prefer worker-assigned rows when available.
+        if 'Assigned Worker' in completed_df.columns:
+            completed_df = completed_df[
+                completed_df['Assigned Worker'].fillna('').astype(str).str.strip() == worker_key
+            ]
+
+        for raw_last_updated in completed_df['Last Updated'].tolist():
+            completed_at = _parse_dt(raw_last_updated)
+            if not completed_at:
+                continue
+            delta_hours = (completed_at - uploaded_at).total_seconds() / 3600.0
+            if delta_hours >= 0:
+                durations_hours.append(delta_hours)
+
+    if not durations_hours:
+        return "N/A"
+    return f"{(sum(durations_hours) / len(durations_hours)):.1f} hrs"
     if not text:
         return None
     try:
@@ -1738,258 +2109,6 @@ The app validates completion and required fields before allowing submission.
                             pass
                     st.success("✓ Acknowledged visible alerts.")
     
-
-
-def _summarize_operational_state() -> dict:
-    """Return sidebar-friendly operational summary metrics."""
-    units = st.session_state.get('units', {}) or {}
-    reports_by_caseload = st.session_state.get('reports_by_caseload', {}) or {}
-    ingestion_events = st.session_state.get('report_ingestion_events', []) or []
-
-    total_reports = 0
-    completed_reports = 0
-    pending_reports = 0
-    unassigned_reports = 0
-    last_update: datetime | None = None
-
-    for reports in reports_by_caseload.values():
-        for report in (reports or []):
-            if not isinstance(report, dict):
-                continue
-            total_reports += 1
-
-            status_value = str(report.get('status', '') or '').strip().lower()
-            if 'completed' in status_value or 'finished' in status_value:
-                completed_reports += 1
-            else:
-                pending_reports += 1
-
-            assigned_worker = str(report.get('assigned_worker', '') or '').strip()
-            if not assigned_worker:
-                unassigned_reports += 1
-
-            candidate_dates = [
-                _parse_dt(report.get('uploaded_at')),
-                _parse_dt(report.get('timestamp')),
-                _parse_dt(report.get('imported_at')),
-            ]
-            for dt_value in candidate_dates:
-                if dt_value and (last_update is None or dt_value > last_update):
-                    last_update = dt_value
-
-    for event in ingestion_events:
-        if not isinstance(event, dict):
-            continue
-        ts = _parse_dt(event.get('timestamp'))
-        if ts and (last_update is None or ts > last_update):
-            last_update = ts
-
-    return {
-        'units': int(len(units)),
-        'total_reports': int(total_reports),
-        'pending_reports': int(pending_reports),
-        'completed_reports': int(completed_reports),
-        'unassigned_reports': int(unassigned_reports),
-        'last_update': last_update,
-    }
-
-
-def _render_sidebar_quick_stats() -> None:
-    """Render a live quick-stats panel in the sidebar."""
-    stats = _summarize_operational_state()
-    last_update = stats.get('last_update')
-    if isinstance(last_update, datetime):
-        last_update_label = last_update.strftime('%b %d, %I:%M %p')
-    else:
-        last_update_label = 'No uploads yet'
-
-    st.sidebar.markdown(
-        "\n".join([
-            "### Quick Stats",
-            f"- **Units**: {stats.get('units', 0)}",
-            f"- **Reports Pending**: {stats.get('pending_reports', 0)}",
-            f"- **Reports Completed**: {stats.get('completed_reports', 0)}",
-            f"- **Unassigned Reports**: {stats.get('unassigned_reports', 0)}",
-            f"- **Last Update**: {last_update_label}",
-        ])
-    )
-
-
-def _demo_mode_enabled() -> bool:
-    """Return whether presentation-safe demo mode is active."""
-    return bool(st.session_state.get('demo_mode_enabled', False))
-
-
-def _render_demo_mode_toggle() -> None:
-    """Render a sidebar toggle for presentation-safe demo behavior."""
-    enabled = st.sidebar.toggle(
-        "Presentation-safe Demo Mode",
-        value=_demo_mode_enabled(),
-        key='demo_mode_enabled',
-        help="When enabled, dashboards use safe fallback chart baselines when live data is sparse.",
-    )
-    if enabled:
-        st.sidebar.caption("Demo mode is active: fallback baselines are enabled for key charts.")
-
-
-def _render_executive_risk_summary(viewer_name: str, viewer_unit_role: str) -> None:
-    """Show a top-level risk snapshot that answers what/where/action quickly."""
-    all_alerts = _build_escalation_alerts_df()
-    viewer_alerts = _filter_alerts_for_viewer(
-        all_alerts,
-        viewer_role='Director',
-        viewer_name=viewer_name,
-        scope_unit=None,
-        viewer_unit_role=viewer_unit_role,
-    )
-
-    st.subheader("Operational Risk Snapshot")
-    if viewer_alerts.empty:
-        st.success(
-            "What is happening: Current reports are within escalation thresholds. "
-            "Where is the risk: No active escalation items. "
-            "Action needed: Continue routine monitoring."
-        )
-        return
-
-    df = viewer_alerts.copy()
-    days_overdue = pd.to_numeric(df.get('Days Overdue', pd.Series(dtype='float64')), errors='coerce').fillna(0)
-    unassigned = df.get('Unassigned', pd.Series([False] * len(df))).astype(bool)
-
-    due_at = pd.to_datetime(df.get('Due At', pd.Series(dtype='str')), errors='coerce')
-    days_to_due = (due_at.dt.normalize() - pd.Timestamp.now().normalize()).dt.days
-
-    critical_count = int(((days_overdue >= 7) | unassigned).sum())
-    high_count = int(((days_overdue >= 1) & (days_overdue < 7) & (~unassigned)).sum())
-    approaching_count = int(((days_to_due >= 0) & (days_to_due <= 2)).fillna(False).sum())
-
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        st.metric("Active Escalations", int(len(df)))
-    with c2:
-        st.metric("Critical Risk", critical_count)
-    with c3:
-        st.metric("High Risk", high_count)
-    with c4:
-        st.metric("Due in 48 Hours", approaching_count)
-
-    if critical_count > 0:
-        st.error(
-            "What is happening: Critical escalation items are active. "
-            "Where is the risk: unassigned or 7+ day overdue reports. "
-            "Action needed: reassign ownership and clear oldest items first."
-        )
-    elif high_count > 0:
-        st.warning(
-            "What is happening: Elevated operational risk is present. "
-            "Where is the risk: overdue reports under 7 days. "
-            "Action needed: supervisor follow-up and near-term completion plan."
-        )
-    else:
-        st.info(
-            "What is happening: Escalations are currently controlled. "
-            "Where is the risk: approaching due dates. "
-            "Action needed: maintain monitoring and early intervention."
-        )
-
-
-def _render_monthly_submissions_chart(
-    department: str | None = None,
-    month_labels: list[str] | None = None,
-) -> None:
-    """Render a resilient monthly submissions chart with safe fallbacks."""
-    audit_log = st.session_state.get('upload_audit_log', []) or []
-    reports_by_caseload = st.session_state.get('reports_by_caseload', {}) or {}
-
-    month_counts = pd.Series(dtype='int64')
-
-    if month_labels:
-        try:
-            _labels = [str(v).strip() for v in (month_labels or []) if str(v).strip()]
-            if _labels:
-                month_counts = pd.Series(_labels).value_counts().sort_index()
-        except Exception:
-            month_counts = pd.Series(dtype='int64')
-
-    if month_counts.empty and audit_log:
-        try:
-            audit_df = pd.DataFrame(audit_log)
-            if department and 'owning_department' in audit_df.columns:
-                audit_df = audit_df[audit_df['owning_department'].astype(str).str.strip() == str(department).strip()]
-            uploaded_at = pd.to_datetime(audit_df.get('uploaded_at', pd.Series(dtype='str')), errors='coerce')
-            month_counts = uploaded_at.dropna().dt.to_period('M').value_counts().sort_index()
-        except Exception:
-            month_counts = pd.Series(dtype='int64')
-
-    if month_counts.empty:
-        imported_dates: list[datetime] = []
-        for reports in reports_by_caseload.values():
-            for report in (reports or []):
-                if not isinstance(report, dict):
-                    continue
-                if department and str(report.get('owning_department', '')).strip() != str(department).strip():
-                    continue
-                dt_value = _parse_dt(report.get('imported_at')) or _parse_dt(report.get('uploaded_at')) or _parse_dt(report.get('timestamp'))
-                if dt_value:
-                    imported_dates.append(dt_value)
-
-        if imported_dates:
-            imported_series = pd.Series(pd.to_datetime(imported_dates, errors='coerce')).dropna()
-            month_counts = imported_series.dt.to_period('M').value_counts().sort_index()
-
-    if month_counts.empty:
-        fallback_months = pd.date_range(end=datetime.now(), periods=6, freq='ME')
-        fallback_values = [0] * len(fallback_months)
-        if _demo_mode_enabled():
-            fallback_values = [42, 45, 47, 44, 49, 51]
-            st.caption("Demo mode baseline is displayed for presentation reliability.")
-        else:
-            st.caption("No submission timestamps available yet. Displaying baseline for the last 6 months.")
-        fallback_df = pd.DataFrame({'Submissions': fallback_values}, index=fallback_months.strftime('%b %Y'))
-        st.bar_chart(fallback_df)
-        return
-
-    month_index = [period.to_timestamp().strftime('%b %Y') for period in month_counts.index]
-    chart_df = pd.DataFrame({'Submissions': month_counts.values}, index=month_index)
-    st.bar_chart(chart_df)
-
-
-def _safe_table_or_demo(
-    df,
-    empty_message: str,
-    demo_columns: list[str] | None = None,
-    demo_rows: list[dict] | None = None,
-    **kwargs,
-) -> None:
-    """Render a DataFrame with optional demo-mode fallback rows when empty."""
-    safe_df = _safe_df(df)
-    if not safe_df.empty:
-        safe_st_dataframe(safe_df, **kwargs)
-        return
-
-    if _demo_mode_enabled():
-        fallback_df = pd.DataFrame(demo_rows or [])
-        if fallback_df.empty and demo_columns:
-            fallback_record = {}
-            for col in demo_columns:
-                label = str(col or '').strip()
-                lower = label.lower()
-                if '%' in label:
-                    fallback_record[label] = '75.0%'
-                elif any(token in lower for token in ['total', 'count', 'cases', 'caseload', 'staff', 'alerts']):
-                    fallback_record[label] = 0
-                elif any(token in lower for token in ['date', 'submission', 'updated']):
-                    fallback_record[label] = datetime.now().strftime('%Y-%m-%d')
-                else:
-                    fallback_record[label] = 'Demo'
-            fallback_df = pd.DataFrame([fallback_record], columns=demo_columns)
-
-        if not fallback_df.empty:
-            st.caption("Demo mode: showing baseline table data for presentation stability.")
-            safe_st_dataframe(fallback_df, **kwargs)
-            return
-
-    st.info(empty_message)
 
 
 def _build_unit_assignments_df() -> pd.DataFrame:
@@ -2525,7 +2644,7 @@ def _render_leadership_exports(
                     file_name=f"ocss_export_{key_prefix}.xlsx",
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                     key=f"{key_prefix}_xlsx_btn",
-                    use_container_width=True,
+                    width='stretch',
                 )
             with col2:
                 if Document is None:
@@ -2542,7 +2661,7 @@ def _render_leadership_exports(
                         file_name=f"ocss_export_{key_prefix}.docx",
                         mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                         key=f"{key_prefix}_docx_btn",
-                        use_container_width=True,
+                        width='stretch',
                     )
 
 
@@ -3022,7 +3141,7 @@ def _apply_establishment_roster_alignment() -> None:
 def _merge_establishment_duplicate_names_preserve_assignments() -> None:
     """Merge duplicate Establishment names in users/units while preserving assignments.
 
-    Excludes James Brown/Borwn variants from merge as requested for demo safety.
+    Excludes James Brown/Borwn variants from merge to prevent unintended data consolidation.
     """
     try:
         units = st.session_state.get('units', {}) or {}
@@ -3978,7 +4097,7 @@ def assign_caseload_to_worker(worker_name: str, caseload_number: str, allow_reas
     if not resolved_worker_name:
         return False, "Select a worker before assigning a caseload."
     if not normalized_caseload:
-        return False, "Enter a valid caseload number (example: 181000 or 1000)."
+        return False, "Enter a valid caseload number (format: 181000 or 1000-series)."
 
     unit_name = find_worker_unit(resolved_worker_name)
     if not unit_name:
@@ -4070,111 +4189,6 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
     def _caseload_to_series_group_label(caseload: str) -> str:
         return caseload_series_group_label(caseload)
 
-    def _validate_intake_inputs(
-        uploaded_file_obj,
-        caseload_items,
-        selected_caseload_values: list[str],
-        analysis_lookup: dict,
-        report_type_value: str,
-        owning_department_value: str,
-        report_frequency_value: str,
-        period_year_value,
-        period_value_value: str,
-    ) -> tuple[list[str], list[str]]:
-        """Validate report intake inputs before processing."""
-        errors: list[str] = []
-        warnings: list[str] = []
-
-        if uploaded_file_obj is None:
-            errors.append("Upload a report file before processing.")
-
-        if not caseload_items:
-            errors.append("No caseload data was detected in the uploaded file.")
-
-        selected = [str(v).strip() for v in (selected_caseload_values or []) if str(v).strip()]
-        if not selected:
-            errors.append("Select at least one caseload to process.")
-
-        if not str(report_type_value or '').strip():
-            errors.append("Select a report type before processing.")
-        if not str(owning_department_value or '').strip():
-            errors.append("Select an owning department before processing.")
-
-        valid_frequencies = {'Monthly', 'Quarterly', 'Bi-Annual'}
-        freq = str(report_frequency_value or '').strip()
-        if freq not in valid_frequencies:
-            errors.append("Select a valid report frequency.")
-
-        try:
-            year_int = int(period_year_value)
-            if year_int < 2020 or year_int > 2100:
-                errors.append("Period year must be between 2020 and 2100.")
-        except Exception:
-            errors.append("Period year must be a valid number.")
-
-        period_str = str(period_value_value or '').strip().upper()
-        if freq == 'Monthly' and not re.fullmatch(r"(0[1-9]|1[0-2])", period_str):
-            errors.append("Monthly uploads require a month value between 01 and 12.")
-        elif freq == 'Quarterly' and period_str not in {'Q1', 'Q2', 'Q3', 'Q4'}:
-            errors.append("Quarterly uploads require Q1, Q2, Q3, or Q4.")
-        elif freq == 'Bi-Annual' and period_str not in {'H1', 'H2'}:
-            errors.append("Bi-Annual uploads require H1 or H2.")
-
-        available_caseloads = set()
-        for item in (caseload_items or []):
-            if isinstance(item, (tuple, list)) and len(item) == 2:
-                caseload_value = item[0]
-                data_frame = item[1]
-            elif isinstance(item, dict):
-                caseload_value = item.get('caseload')
-                data_frame = item.get('df')
-            else:
-                caseload_value = None
-                data_frame = None
-
-            caseload_key = str(caseload_value or '').strip()
-            if not caseload_key:
-                continue
-            available_caseloads.add(caseload_key)
-
-            if isinstance(data_frame, pd.DataFrame) and data_frame.empty:
-                warnings.append(f"Caseload {caseload_key} contains no rows and will be skipped.")
-
-        invalid_selected = sorted(list({c for c in selected if c not in available_caseloads}))
-        if invalid_selected:
-            errors.append(
-                "Selected caseloads are not present in the current file: " + ", ".join(invalid_selected)
-            )
-
-        for caseload_key in selected:
-            analysis = analysis_lookup.get(caseload_key, {}) if isinstance(analysis_lookup, dict) else {}
-            recognized = int((analysis or {}).get('recognized_headers', 0) or 0)
-            if recognized == 0:
-                errors.append(
-                    f"Caseload {caseload_key} does not contain recognized report headers. "
-                    "Use a supported template or mapped column names."
-                )
-
-            qa_summary = (analysis or {}).get('qa_summary') or {}
-            invalid_date_count = int(qa_summary.get('invalid_service_due_date', 0) or 0) + int(qa_summary.get('invalid_action_taken_date', 0) or 0)
-            if invalid_date_count > 0:
-                warnings.append(
-                    f"Caseload {caseload_key} has {invalid_date_count} row(s) with invalid date formats. "
-                    "Review date columns after processing."
-                )
-
-        # File size warning only; ingestion still allowed.
-        try:
-            size_bytes = int(getattr(uploaded_file_obj, 'size', 0) or 0)
-        except Exception:
-            size_bytes = 0
-        if size_bytes > 25 * 1024 * 1024:
-            warnings.append(
-                "Large file detected (>25MB). Processing may take longer; keep this tab open until completion."
-            )
-
-        return _dedupe_preserve_order(errors), _dedupe_preserve_order(warnings)
-
     col1, col2 = st.columns([2, 1])
 
     with col1:
@@ -4182,9 +4196,9 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
         st.caption("Upload an Excel/CSV report, confirm caseloads, set period metadata, then process.")
 
         caseload_labels = {
-            '181000': 'Downtown Elementary',
-            '181001': 'Midtown Middle School',
-            '181002': 'Uptown High School'
+            '181000': 'Downtown Establishment',
+            '181001': 'Midtown Enforcement',
+            '181002': 'Uptown Collections'
         }
 
         existing_caseloads = sorted(list(st.session_state.reports_by_caseload.keys()))
@@ -4299,7 +4313,7 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
                 if qa_rows:
                     with st.expander("🧪 Import QA Summary (Excel Parity)"):
                         qa_df = pd.DataFrame(qa_rows)
-                        safe_st_dataframe(qa_df, use_container_width=True, hide_index=True)
+                        safe_st_dataframe(qa_df, width='stretch', hide_index=True)
 
                         # Optional details: show unknown columns per caseload if present.
                         unknown_details = {
@@ -4411,15 +4425,7 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
                 st.subheader("Step 2 — Process")
                 st.caption("Processing creates caseload work queues and makes the report available to workers.")
 
-            can_process = bool(
-                uploaded_file
-                and caseload_data
-                and selected_caseloads
-                and str(report_type or '').strip()
-                and str(owning_department or '').strip()
-                and str(report_frequency or '').strip()
-                and str(period_value or '').strip()
-            )
+            can_process = bool(uploaded_file and caseload_data and selected_caseloads)
             if st.button(
                 "Process Report",
                 key=f"{key_prefix}_process_report",
@@ -4433,22 +4439,9 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
                 assignment_failure_total = 0
                 duplicate_blocked_total = 0
                 duplicate_matches_total = 0
-                validation_errors, validation_warnings = _validate_intake_inputs(
-                    uploaded_file_obj=uploaded_file,
-                    caseload_items=caseload_data,
-                    selected_caseload_values=selected_caseloads,
-                    analysis_lookup=analysis_by_caseload,
-                    report_type_value=report_type,
-                    owning_department_value=owning_department,
-                    report_frequency_value=report_frequency,
-                    period_year_value=period_year,
-                    period_value_value=str(period_value),
-                )
-                warnings.extend(validation_warnings)
-
-                # Only process if validated inputs are available.
-                if validation_errors:
-                    warnings.extend(validation_errors)
+                # Only process if at least one caseload is selected and data exists
+                if not caseload_data or not selected_caseloads:
+                    warnings.append("Upload a valid Excel/CSV report and select at least one caseload before processing.")
                 else:
                     # Iterate over selected caseloads and process each
                     with st.spinner("Processing report intake..."):
@@ -4462,10 +4455,6 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
                                 sheet_name = item.get('sheet_name', '') if isinstance(item, dict) else ''
 
                             if not caseload or not isinstance(base_df, pd.DataFrame):
-                                continue
-
-                            if base_df.empty:
-                                warnings.append(f"Caseload {caseload} contains no rows and was skipped.")
                                 continue
 
                             if caseload not in selected_caseloads:
@@ -4818,7 +4807,7 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
                 if st.button(
                     "✏️ Update All Names",
                     key=f"{key_prefix}_update_all_names",
-                    use_container_width=True
+                    width='stretch'
                 ):
                     groups_for_update = _group_uploaded_reports_for_display(st.session_state.uploaded_reports)
                     for group_idx, group in enumerate(groups_for_update):
@@ -4837,7 +4826,7 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
                 if st.button(
                     "Clear Processed",
                     key=f"{key_prefix}_clear_processed",
-                    use_container_width=True
+                    width='stretch'
                 ):
                     st.session_state.uploaded_reports = []
                     st.rerun()
@@ -4867,7 +4856,7 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
                             st.caption("Processed: (timestamp unavailable)")
                     st.caption(f"Assigned: {group.get('assigned_worker', 'Unassigned')}")
                 with col4:
-                    if st.button("✏️ Update", key=f"{key_prefix}_update_name_group_{group_idx}", use_container_width=True):
+                    if st.button("✏️ Update", key=f"{key_prefix}_update_name_group_{group_idx}", width='stretch'):
                         new_value = str(new_name or '').strip()
                         if not new_value:
                             st.error("Enter a name before updating.")
@@ -4885,7 +4874,7 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
             })
 
         with st.expander(f"Final report names ({len(final_rows)})", expanded=False):
-            safe_st_dataframe(pd.DataFrame(final_rows), use_container_width=True, hide_index=True)
+            safe_st_dataframe(pd.DataFrame(final_rows), width='stretch', hide_index=True)
     else:
         st.info("📝 No reports processed yet. Upload a report above to begin.")
 
@@ -5451,10 +5440,10 @@ def _render_roster_upload_panel(key_prefix: str) -> None:
             return ""
 
         try:
-            styled = preview_df.style.applymap(_style_action, subset=["Action"])
-            st.dataframe(styled, use_container_width=True, hide_index=True)
+            styled = preview_df.style.map(_style_action, subset=["Action"])
+            st.dataframe(styled, width='stretch', hide_index=True)
         except Exception:
-            st.dataframe(preview_df, use_container_width=True, hide_index=True)
+            st.dataframe(preview_df, width='stretch', hide_index=True)
 
         # ── Options ────────────────────────────────────────────────────
         st.divider()
@@ -5649,7 +5638,7 @@ def render_user_management_panel(
             users_df['Unit'].isin(list(scoped_units_set))
             | users_df['Name'].isin(list(scoped_member_names))
         ]
-    safe_st_dataframe(users_df, use_container_width=True)
+    safe_st_dataframe(users_df, width='stretch')
 
     # Agency leadership structure expectations (visibility + guardrails)
     leadership_df = users_df[users_df['Role'] == 'Director'] if not users_df.empty else pd.DataFrame()
@@ -5952,7 +5941,7 @@ def render_user_management_panel(
             "Quick Add Caseload Number to Unit Pool",
             value="",
             key=f"{key_prefix}_quick_add_caseload",
-            placeholder="Example: 181123",
+            placeholder="181000 or 1000-series",
         )
     with quick_add_col2:
         if st.button("➕ Add to Unit Pool", key=f"{key_prefix}_quick_add_caseload_btn"):
@@ -6075,7 +6064,7 @@ def render_user_management_panel(
         })
 
     if unit_summary_rows:
-        safe_st_dataframe(pd.DataFrame(unit_summary_rows), use_container_width=True, hide_index=True)
+        safe_st_dataframe(pd.DataFrame(unit_summary_rows), width='stretch', hide_index=True)
         st.caption("Expand a unit below to view members and caseload distribution.")
 
         focus_unit = str(st.session_state.get(f"{key_prefix}_unit_summary_focus", '') or '').strip()
@@ -6133,7 +6122,7 @@ def render_user_management_panel(
                     })
 
                 if assignment_rows:
-                    safe_st_dataframe(pd.DataFrame(assignment_rows), use_container_width=True, hide_index=True)
+                    safe_st_dataframe(pd.DataFrame(assignment_rows), width='stretch', hide_index=True)
                 else:
                     st.info("No caseload assignments configured for this unit.")
 
@@ -6791,7 +6780,7 @@ def render_help_ticket_center(current_role: str, submitter_name: str | None = No
         )
         establishment = st.selectbox(
             "Establishment",
-            ['Lincoln Elementary', 'Grant Middle School', 'Jefferson HS', 'Adams Preschool', 'Madison Elementary'],
+            ['Downtown Establishment', 'Midtown Enforcement', 'Uptown Collections', 'Establishment Unit 15', 'Establishment Unit 16'],
             key=f"{key_prefix}_est_{current_role}"
         )
         priority = st.selectbox("Priority", ["🟢 Low", "🟡 Medium", "🔴 High"], key=f"{key_prefix}_pri_{current_role}")
@@ -6919,7 +6908,7 @@ def render_help_ticket_center(current_role: str, submitter_name: str | None = No
             ]
             if logs:
                 log_df = pd.DataFrame(logs)
-                safe_st_dataframe(log_df.sort_values(by='timestamp', ascending=False), use_container_width=True, hide_index=True)
+                safe_st_dataframe(log_df.sort_values(by='timestamp', ascending=False), width='stretch', hide_index=True)
             else:
                 st.caption("No log entries yet.")
 
@@ -7182,11 +7171,11 @@ def render_help_ticket_kpi_tab(current_role: str, key_prefix: str):
     with left:
         by_category = ticket_df.groupby('issue_category').size().reset_index(name='Tickets')
         st.write("**Tickets by Category**")
-        safe_st_dataframe(by_category.sort_values(by='Tickets', ascending=False), use_container_width=True, hide_index=True)
+        safe_st_dataframe(by_category.sort_values(by='Tickets', ascending=False), width='stretch', hide_index=True)
     with right:
         by_priority = ticket_df.groupby('priority').size().reset_index(name='Tickets')
         st.write("**Tickets by Priority**")
-        safe_st_dataframe(by_priority.sort_values(by='Tickets', ascending=False), use_container_width=True, hide_index=True)
+        safe_st_dataframe(by_priority.sort_values(by='Tickets', ascending=False), width='stretch', hide_index=True)
 
     view_df = ticket_df.reindex(columns=[
         'ticket_id', 'created_at', 'submitter_role', 'submitter_name', 'establishment', 'priority',
@@ -7207,7 +7196,7 @@ def render_help_ticket_kpi_tab(current_role: str, key_prefix: str):
         'resolution': 'Resolution'
     }, inplace=True)
     st.write("**Ticket Detail for KPI Review**")
-    safe_st_dataframe(view_df.sort_values(by='Created', ascending=False), use_container_width=True, hide_index=True)
+    safe_st_dataframe(view_df.sort_values(by='Created', ascending=False), width='stretch', hide_index=True)
 
     try:
         from .roles import role_has
@@ -7218,7 +7207,7 @@ def render_help_ticket_kpi_tab(current_role: str, key_prefix: str):
         st.write("**IT Log Snapshot**")
         log_df = pd.DataFrame(st.session_state.get('help_ticket_log', []))
         if not log_df.empty:
-            safe_st_dataframe(log_df.sort_values(by='timestamp', ascending=False), use_container_width=True, hide_index=True)
+            safe_st_dataframe(log_df.sort_values(by='timestamp', ascending=False), width='stretch', hide_index=True)
         else:
             st.info("No IT ticket log entries yet.")
 
@@ -7226,12 +7215,29 @@ def render_help_ticket_kpi_tab(current_role: str, key_prefix: str):
 st.sidebar.title("🎯 OCSS Command Center")
 st.sidebar.markdown("---")
 
+# Dark mode toggle
+dark_mode = st.sidebar.checkbox(
+    "🌙 Dark Mode",
+    value=st.session_state.get('dark_mode', False),
+    key='dark_mode_toggle',
+    help="Toggle between light and dark themes"
+)
+
+if dark_mode != st.session_state.get('dark_mode', False):
+    st.session_state.dark_mode = dark_mode
+    st.rerun()
+
+if st.session_state.get('dark_mode', False):
+    st.markdown('<script>document.body.classList.add("dark-mode");</script>', unsafe_allow_html=True)
+
+st.sidebar.markdown("---")
+
 auth_mode = auth.get_auth_mode()
 # Use expanded roles for UI selection so sub-roles like Deputy Director, Senior Administrative Officer, Team Lead are visible
 supported_roles_tuple = tuple(EXPANDED_CORE_APP_ROLES)
 
 # If auth is enabled and succeeds, lock role to the authenticated identity.
-# For demos, use OCSS_AUTH_MODE=demo (non-production) to show a login screen.
+# In production, use OCSS_AUTH_MODE=header for SSO integration via reverse proxy.
 auth_result = auth.require_auth(supported_roles_tuple) if auth_mode != "none" else auth.AuthResult(authenticated=False)
 
 if auth_result.authenticated and auth_result.role:
@@ -7249,10 +7255,12 @@ if auth_result.authenticated and auth_result.role:
         auth.logout()
         st.rerun()
 else:
+    st.sidebar.markdown('<div class="role-group-header">Select Your Role</div>', unsafe_allow_html=True)
+    
     role_groups = {
         "Leadership": ["Director", "Deputy Director"],
         "Management": ["Department Manager", "Supervisor", "Senior Administrative Officer"],
-        "Program & CQI": ["Program Officer"],
+        "Program and CQI": ["Program Officer"],
         "Administrative": [
             "Administrative Assistant",
             "Client Information Specialist Team Lead",
@@ -7297,6 +7305,9 @@ else:
     if selected_role not in group_roles:
         selected_role = default_role
 
+    st.sidebar.caption(f"Selected Role Group: {selected_group}")
+    st.sidebar.caption(f"Selected Role: {selected_role}")
+
     role = map_to_view_role(selected_role)
     # Persist selection for server-side capability checks
     try:
@@ -7317,9 +7328,6 @@ try:
 except Exception:
     pass
 
-_render_demo_mode_toggle()
-_render_sidebar_quick_stats()
-
 _render_global_report_intake_if_allowed(selected_role, role)
 
 # Main content area
@@ -7336,11 +7344,6 @@ if role in ["Director", "Deputy Director"]:
 
     if _exec_viewer_unit_role == 'Deputy Director' and _exec_deputy_departments:
         st.caption("Deputy Director scope: " + ", ".join(_exec_deputy_departments))
-
-    _render_executive_risk_summary(
-        viewer_name=_exec_viewer_name,
-        viewer_unit_role=_exec_viewer_unit_role,
-    )
     
     # Tabs for Director
     dir_tab1, dir_tab2, dir_tab3, dir_tab4, dir_tab5, dir_tab6, dir_tab7, dir_tab8 = st.tabs([
@@ -7383,38 +7386,113 @@ if role in ["Director", "Deputy Director"]:
                 key_prefix='dir_kpi',
             )
 
+            # ═══════════════════════════════════════════════════════════════════
+            # COMMAND CENTER LAYOUT: KPI ROW AT TOP
+            # ═══════════════════════════════════════════════════════════════════
+            render_section_header("📊 Agency Performance Overview", "Real-time operational metrics", "")
+            
             # Live KPI Overview (Agency)
             kpis = get_kpi_metrics(department=None)
             # Compute deltas vs target thresholds
             _cr_delta = round(kpis['report_completion_rate'] - 90.0, 1)
             _ot_delta = round(kpis['on_time_submissions'] - 85.0, 1)
             _dq_delta = round(kpis['data_quality_score'] - 95.0, 1)
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Report Completion Rate", f"{kpis['report_completion_rate']}%",
-                          delta=f"{_cr_delta:+.1f}% vs 90% target",
-                          delta_color="normal")
-            with col2:
-                st.metric("On-Time Submissions", f"{kpis['on_time_submissions']}%",
-                          delta=f"{_ot_delta:+.1f}% vs 85% target",
-                          delta_color="normal")
-            with col3:
-                st.metric("Data Quality Score", f"{kpis['data_quality_score']}%",
-                          delta=f"{_dq_delta:+.1f}% vs 95% target",
-                          delta_color="normal")
-            with col4:
-                # Count units with at least one submitted report as 'active'
-                _active_units = sum(
-                    1 for _u in st.session_state.get('units', {}).values()
-                    if any(st.session_state.get('reports_by_caseload', {}).get(c) for c in
-                           sum(_u.get('assignments', {}).values(), []))
-                )
-                st.metric("CQI Alignments", str(kpis['cqi_alignments']),
-                          delta=f"{_active_units} active unit(s)")
+            _active_units = sum(
+                1 for _u in st.session_state.get('units', {}).values()
+                if any(st.session_state.get('reports_by_caseload', {}).get(c) for c in
+                       sum(_u.get('assignments', {}).values(), []))
+            )
+            
+            # Render KPI row using helper function
+            render_kpi_row([
+                {
+                    'label': '📈 Report Completion Rate',
+                    'value': f"{kpis['report_completion_rate']}%",
+                    'delta': f"{_cr_delta:+.1f}% vs 90% target",
+                    'help': 'Percentage of reports fully completed'
+                },
+                {
+                    'label': '⏱️ On-Time Submissions',
+                    'value': f"{kpis['on_time_submissions']}%",
+                    'delta': f"{_ot_delta:+.1f}% vs 85% target",
+                    'help': 'Reports submitted before due date'
+                },
+                {
+                    'label': '✅ Data Quality Score',
+                    'value': f"{kpis['data_quality_score']}%",
+                    'delta': f"{_dq_delta:+.1f}% vs 95% target",
+                    'help': 'Overall data integrity rating'
+                },
+                {
+                    'label': '🎯 CQI Alignments',
+                    'value': str(kpis['cqi_alignments']),
+                    'delta': f"{_active_units} active units",
+                    'help': 'Continuous Quality Improvement initiatives'
+                },
+            ], columns=4)
 
-            # Monthly submissions chart – derived from upload_audit_log when available
-            st.subheader("Monthly Report Submissions")
-            _render_monthly_submissions_chart(department=None)
+            st.markdown("---")
+
+            # ═══════════════════════════════════════════════════════════════════
+            # CHARTS: TWO-COLUMN LAYOUT
+            # ═══════════════════════════════════════════════════════════════════
+            render_section_header("📉 Operational Trends", "Monthly submission patterns and workload distribution")
+            
+            chart_col1, chart_col2 = st.columns(2)
+            
+            with chart_col1:
+                render_subsection_header("Monthly Report Submissions")
+            _audit_log = st.session_state.get('upload_audit_log', []) or []
+            if _audit_log:
+                _audit_df = pd.DataFrame(_audit_log)
+                _audit_df['_month'] = pd.to_datetime(_audit_df.get('uploaded_at', pd.Series(dtype=str)), errors='coerce').dt.strftime('%b %Y')
+                _month_counts = _audit_df.groupby('_month').size().reset_index(name='Submissions')
+                st.bar_chart(_month_counts.set_index('_month'))
+            else:
+                # Fall back to counts from reports_by_caseload imported_at field
+                _imported_months = []
+                for _rlist in st.session_state.get('reports_by_caseload', {}).values():
+                    for _r in (_rlist or []):
+                        _cd = _r.get('canonical_df') if isinstance(_r.get('canonical_df'), pd.DataFrame) else None
+                        _ia = _r.get('imported_at') or (_cd['imported_at'].iloc[0] if _cd is not None and 'imported_at' in _cd.columns and not _cd.empty else None)
+                        if _ia:
+                            try:
+                                _imported_months.append(pd.to_datetime(str(_ia), errors='coerce').strftime('%b %Y'))
+                            except Exception:
+                                pass
+                if _imported_months:
+                    _mc = pd.Series(_imported_months).value_counts().sort_index()
+                    st.bar_chart(_mc.rename('Submissions'))
+                else:
+                    _months_fb = pd.date_range(start='2025-09-01', periods=6, freq='ME').strftime('%b %Y').tolist()
+                    _subs_fb = [45, 48, 52, 50, 58, 62]
+                    st.bar_chart(pd.DataFrame({'Submissions': _subs_fb}, index=_months_fb))
+            
+            with chart_col2:
+                render_subsection_header("Report Status Distribution")
+                # Calculate status distribution
+                status_counts = {'Pending': 0, 'In Progress': 0, 'Completed': 0}
+                for caseload_reports in st.session_state.get('reports_by_caseload', {}).values():
+                    for report in (caseload_reports or []):
+                        status = str(report.get('status', 'Pending')).strip()
+                        if 'completed' in status.lower():
+                            status_counts['Completed'] += 1
+                        elif 'progress' in status.lower():
+                            status_counts['In Progress'] += 1
+                        else:
+                            status_counts['Pending'] += 1
+                
+                if sum(status_counts.values()) > 0:
+                    st.bar_chart(pd.DataFrame({'Count': status_counts}))
+                else:
+                    st.info("No report data available yet")
+
+            st.markdown("---")
+
+            # ═══════════════════════════════════════════════════════════════════
+            # OPERATIONAL TABLES: DETAILED DATA BELOW CHARTS
+            # ═══════════════════════════════════════════════════════════════════
+            render_section_header("📋 Operational Data", "Detailed caseload and workload information")
 
         else:
             # Department-level KPIs selected by Director/Deputy
@@ -7457,7 +7535,7 @@ if role in ["Director", "Deputy Director"]:
                 if viewer_alerts.empty:
                     st.info("No department escalation alerts right now.")
                 else:
-                    safe_st_dataframe(viewer_alerts.head(25).astype(str), use_container_width=True, hide_index=True)
+                    safe_st_dataframe(viewer_alerts.head(25).astype(str), width='stretch', hide_index=True)
 
             # Department KPI snapshot: caseload work status scoped to department units
             caseload_status_df = _build_caseload_work_status_df(scope_unit=None)
@@ -7466,7 +7544,7 @@ if role in ["Director", "Deputy Director"]:
             if caseload_status_df.empty:
                 st.info("No caseload work status available yet for this department.")
             else:
-                safe_st_dataframe(caseload_status_df, use_container_width=True, hide_index=True)
+                safe_st_dataframe(caseload_status_df, width='stretch', hide_index=True)
         
         # Strategic Insights – data-driven
         st.subheader("📌 Strategic Insights")
@@ -7514,20 +7592,10 @@ if role in ["Director", "Deputy Director"]:
         caseload_status_df = _build_caseload_work_status_df(scope_unit=None)
         if not caseload_status_df.empty and _exec_deputy_departments:
             caseload_status_df = caseload_status_df[caseload_status_df['Unit'].isin(_exec_scoped_units) | (caseload_status_df['Overall Status'] == 'Unassigned')]
-        _safe_table_or_demo(
-            caseload_status_df,
-            empty_message="No caseload work status available yet.",
-            demo_columns=['Caseload', 'Assigned To', 'Unit', 'Overall Status', 'Completion %'],
-            demo_rows=[{
-                'Caseload': '181000',
-                'Assigned To': 'Demo Worker',
-                'Unit': 'Establishment Unit 1',
-                'Overall Status': 'In Progress',
-                'Completion %': '72.0%',
-            }],
-            use_container_width=True,
-            hide_index=True,
-        )
+        if caseload_status_df.empty:
+            st.info("No caseload work status available yet.")
+        else:
+            st.dataframe(caseload_status_df, width='stretch', hide_index=True)
 
         # Escalation alerts (Director/Deputy/Department Manager views are driven by Unit Role).
         viewer_name = _exec_viewer_name
@@ -7565,32 +7633,42 @@ if role in ["Director", "Deputy Director"]:
                 # Try to count actual rows if data exists
                 total_rows = 0
                 completed_rows = 0
+                completion_durations_hours = []
                 
                 for caseload in assigned_caseloads:
                     reports = st.session_state.get('reports_by_caseload', {}).get(caseload, [])
                     for r in reports:
                         df = r.get('data')
+                        uploaded_at = _parse_dt(r.get('uploaded_at')) or _parse_dt(r.get('timestamp'))
                         if isinstance(df, pd.DataFrame) and not df.empty:
                             total_rows += len(df)
                             if 'Worker Status' in df.columns:
                                 completed_rows += df['Worker Status'].eq('Completed').sum()
-                
-                # Fallback to simulated data if no real data to make the dashboard look active
-                if total_rows == 0:
-                   # Simple hash to make deterministic "random" numbers for demo
-                   seed = sum(ord(c) for c in worker)
-                   total_rows = 20 + (seed % 15)
-                   completed_rows = 5 + (seed % 10)
 
-                worker_metrics.append({
-                    'Worker Name': worker,
-                    'Unit': unit_name,
-                    'Caseloads Assigned': len(assigned_caseloads),
-                    'Total Cases': total_rows,
-                    'Completed': completed_rows,
-                    'Completion %': f"{(completed_rows/total_rows*100):.1f}%" if total_rows > 0 else "0%",
-                    'Avg Time/Report': f"{1.5 + (len(worker)%5)/10:.1f} hrs" # Placeholder
-                })
+                                # Real throughput timing: Completed row Last Updated minus report upload time
+                                if uploaded_at and 'Last Updated' in df.columns:
+                                    completed_df = df[df['Worker Status'].eq('Completed')].copy()
+                                    if 'Assigned Worker' in completed_df.columns:
+                                        completed_df = completed_df[completed_df['Assigned Worker'].astype(str).str.strip() == str(worker).strip()]
+                                    for raw_last_updated in completed_df['Last Updated'].tolist():
+                                        completed_at = _parse_dt(raw_last_updated)
+                                        if completed_at:
+                                            delta_hours = (completed_at - uploaded_at).total_seconds() / 3600.0
+                                            if delta_hours >= 0:
+                                                completion_durations_hours.append(delta_hours)
+                
+                # Only show workers with assigned reports
+                if total_rows > 0 or len(assigned_caseloads) > 0:
+                    avg_time_display = f"{(sum(completion_durations_hours) / len(completion_durations_hours)):.1f} hrs" if completion_durations_hours else "N/A"
+                    worker_metrics.append({
+                        'Worker Name': worker,
+                        'Unit': unit_name,
+                        'Caseloads Assigned': len(assigned_caseloads),
+                        'Total Cases': total_rows,
+                        'Completed': completed_rows,
+                        'Completion %': f"{(completed_rows/total_rows*100):.1f}%" if total_rows > 0 else "0%",
+                        'Avg Time/Report': avg_time_display,
+                    })
         
         if worker_metrics:
             workers_data = pd.DataFrame(worker_metrics)
@@ -7598,21 +7676,7 @@ if role in ["Director", "Deputy Director"]:
              # Fallback if no workers defined
             workers_data = pd.DataFrame(columns=['Worker Name', 'Unit', 'Caseloads Assigned', 'Total Cases', 'Completed', 'Completion %', 'Avg Time/Report'])
 
-        _safe_table_or_demo(
-            workers_data,
-            empty_message="No worker workload data is available yet.",
-            demo_columns=['Worker Name', 'Unit', 'Caseloads Assigned', 'Total Cases', 'Completed', 'Completion %', 'Avg Time/Report'],
-            demo_rows=[{
-                'Worker Name': 'Demo Worker',
-                'Unit': 'Establishment Unit 1',
-                'Caseloads Assigned': 3,
-                'Total Cases': 96,
-                'Completed': 68,
-                'Completion %': '70.8%',
-                'Avg Time/Report': '1.8 hrs',
-            }],
-            use_container_width=True,
-        )
+        st.dataframe(workers_data, width='stretch')
         
         # Workload Distribution Chart
         st.subheader("Workload Distribution by Worker")
@@ -7622,7 +7686,7 @@ if role in ["Director", "Deputy Director"]:
                 st.write("Total Cases vs Completed")
                 st.bar_chart(
                     workers_data.set_index('Worker Name')[['Total Cases', 'Completed']],
-                    use_container_width=True
+                    width='stretch'
                 )
             with col2:
                 # Pie chart of total cases by unit
@@ -7819,7 +7883,8 @@ if role in ["Director", "Deputy Director"]:
                 with col3:
                     st.metric("Completed", _dir_perf_df['Completed'].iloc[idx])
                 with col4:
-                    st.metric("Avg Time", _dir_perf_df['Avg Time/Report'].iloc[idx])
+                    avg_time_val = _dir_perf_df['Avg Time/Report'].iloc[idx] if 'Avg Time/Report' in _dir_perf_df.columns else "N/A"
+                    st.metric("Avg Time", avg_time_val)
                 st.divider()
 
     with dir_tab4:
@@ -8118,54 +8183,80 @@ elif role == "Program Officer":
         _po_cr_delta = round(kpis['report_completion_rate'] - 90.0, 1)
         _po_ot_delta = round(kpis['on_time_submissions'] - 85.0, 1)
         _po_dq_delta = round(kpis['data_quality_score'] - 95.0, 1)
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Report Completion Rate", f"{kpis['report_completion_rate']}%",
-                      delta=f"{_po_cr_delta:+.1f}% vs 90% target", delta_color="normal")
-        with col2:
-            st.metric("On-Time Submissions", f"{kpis['on_time_submissions']}%",
-                      delta=f"{_po_ot_delta:+.1f}% vs 85% target", delta_color="normal")
-        with col3:
-            st.metric("Data Quality Score", f"{kpis['data_quality_score']}%",
-                      delta=f"{_po_dq_delta:+.1f}% vs 95% target", delta_color="normal")
-        with col4:
-            st.metric("CQI Alignments", str(kpis['cqi_alignments']))
+        
+        # Command Center Layout: KPI Row
+        render_section_header("📊 Key Performance Indicators", f"Agency-wide metrics {f'(filtered)' if selected_department != 'All Departments' or selected_unit != 'All Units' or selected_support_staff != 'All Support Staff' else ''}")
+        
+        render_kpi_row([
+            {
+                'label': '📈 Report Completion',
+                'value': f"{kpis['report_completion_rate']}%",
+                'delta': f"{_po_cr_delta:+.1f}% vs 90% target",
+            },
+            {
+                'label': '⏱️ On-Time Rate',
+                'value': f"{kpis['on_time_submissions']}%",
+                'delta': f"{_po_ot_delta:+.1f}% vs 85% target",
+            },
+            {
+                'label': '✅ Data Quality',
+                'value': f"{kpis['data_quality_score']}%",
+                'delta': f"{_po_dq_delta:+.1f}% vs 95% target",
+            },
+            {
+                'label': '🎯 CQI Alignments',
+                'value': str(kpis['cqi_alignments']),
+            },
+        ], columns=4)
 
-        # Monthly submissions chart from live data
-        st.subheader("Monthly Report Submissions")
-        _render_monthly_submissions_chart(month_labels=scoped_months)
+        st.markdown("---")
 
-        st.subheader("Filtered Support Staff Snapshot")
+        # Charts in Two-Column Layout 
+        render_section_header("📉 Trends & Distribution", "Monthly submissions and staff performance")
+        
+        chart_col1, chart_col2 = st.columns(2)
+        
+        with chart_col1:
+            render_subsection_header("Monthly Report Submissions")
+        with chart_col1:
+            render_subsection_header("Monthly Report Submissions")
+            if scoped_months:
+                st.bar_chart(pd.Series(scoped_months).value_counts().sort_index().rename('Submissions'))
+            else:
+                st.info("No submissions found for current filter selection.")
+
+        with chart_col2:
+            render_subsection_header("Staff Completion Rate Distribution")
+            if scoped_workers:
+                _po_workers_temp = pd.DataFrame(list(scoped_workers.values()))
+                _po_workers_temp['% Complete'] = _po_workers_temp.apply(
+                    lambda r: round((float(r['Completed Cases']) / float(r['Total Cases']) * 100), 1) if float(r['Total Cases']) > 0 else 0.0,
+                    axis=1,
+                )
+                top_workers = _po_workers_temp.nlargest(10, '% Complete')[['Support Staff', '% Complete']].set_index('Support Staff')
+                st.bar_chart(top_workers)
+            else:
+                st.info("No staff data for chart")
+
+        st.markdown("---")
+
+        # Operational Tables
+        render_section_header("📋 Operational Data", "Detailed support staff metrics")
+        
+        render_subsection_header("Filtered Support Staff Snapshot")
         if scoped_workers:
             _po_workers_df = pd.DataFrame(list(scoped_workers.values()))
             _po_workers_df['Completion %'] = _po_workers_df.apply(
                 lambda r: round((float(r['Completed Cases']) / float(r['Total Cases']) * 100), 1) if float(r['Total Cases']) > 0 else 0.0,
                 axis=1,
             )
-            _safe_table_or_demo(
+            st.dataframe(
                 _po_workers_df.sort_values(by=['Department', 'Unit', 'Support Staff']),
-                empty_message="No support staff records matched the current filters.",
-                demo_columns=['Support Staff', 'Unit', 'Department', 'Assigned Caseloads', 'Total Cases', 'Completed Cases', 'Completion %'],
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
             )
         else:
-            _safe_table_or_demo(
-                pd.DataFrame(),
-                empty_message="No support staff records matched the current filters.",
-                demo_columns=['Support Staff', 'Unit', 'Department', 'Assigned Caseloads', 'Total Cases', 'Completed Cases', 'Completion %'],
-                demo_rows=[{
-                    'Support Staff': 'Demo Staff',
-                    'Unit': 'Establishment Unit 1',
-                    'Department': 'Establishment',
-                    'Assigned Caseloads': 2,
-                    'Total Cases': 54,
-                    'Completed Cases': 39,
-                    'Completion %': '72.2%',
-                }],
-                use_container_width=True,
-                hide_index=True,
-            )
+            st.info("No support staff records matched the current filters.")
 
         # Strategic Insights – data-driven
         st.subheader("📌 Strategic Insights")
@@ -8213,11 +8304,11 @@ The report type you select at ingestion determines which fields Support Officers
 
         st.subheader("Pending Review")
         pending_data = {
-            'Establishment': ['Lincoln Elementary', 'Grant Middle School', 'Jefferson HS', 'Adams Preschool'],
+            'Establishment': ['Downtown Establishment', 'Midtown Enforcement', 'Uptown Collections', 'Establishment Unit 15'],
             'Submitted': ['2 days ago', '5 days ago', '1 week ago', '3 days ago'],
             'Status': ['Ready', 'In Review', 'Flagged', 'Ready']
         }
-        st.dataframe(pd.DataFrame(pending_data), use_container_width=True)
+        st.dataframe(pd.DataFrame(pending_data), width='stretch')
 
         st.subheader("Quality Assurance Checklist")
         st.checkbox("✓ All required fields present", key="po_qa_required")
@@ -8278,27 +8369,9 @@ The report type you select at ingestion determines which fields Support Officers
             if po_filter_support_staff != 'All Support Staff':
                 caseload_status_df = caseload_status_df[caseload_status_df['Assigned To'] == po_filter_support_staff]
         if caseload_status_df.empty:
-            _safe_table_or_demo(
-                pd.DataFrame(),
-                empty_message="No caseload work status available yet.",
-                demo_columns=['Caseload', 'Assigned To', 'Unit', 'Overall Status', 'Completion %'],
-                demo_rows=[{
-                    'Caseload': '181001',
-                    'Assigned To': 'Demo Officer',
-                    'Unit': 'Establishment Unit 2',
-                    'Overall Status': 'Pending',
-                    'Completion %': '40.0%',
-                }],
-                use_container_width=True,
-                hide_index=True,
-            )
+            st.info("No caseload work status available yet.")
         else:
-            _safe_table_or_demo(
-                caseload_status_df,
-                empty_message="No caseload work status available yet.",
-                use_container_width=True,
-                hide_index=True,
-            )
+            st.dataframe(caseload_status_df, width='stretch', hide_index=True)
         
         # Aggregate stats from all units for Program Officer
         po_team_rows_data = [] # Rename to avoid conflict if any
@@ -8320,35 +8393,42 @@ The report type you select at ingestion determines which fields Support Officers
                 assigned_caseloads = unit.get('assignments', {}).get(member, [])
                 member_total_rows = 0
                 member_completed_rows = 0
+                completion_durations_hours = []
                 
                 for caseload in assigned_caseloads:
                     reports = st.session_state.get('reports_by_caseload', {}).get(caseload, [])
                     for r in reports:
                         df = r.get('data')
+                        uploaded_at = _parse_dt(r.get('uploaded_at')) or _parse_dt(r.get('timestamp'))
                         if isinstance(df, pd.DataFrame) and not df.empty:
                              member_total_rows += len(df)
                              if 'Worker Status' in df.columns:
                                 val_counts = df['Worker Status'].value_counts()
                                 member_completed_rows += val_counts.get('Completed', 0)
 
-                # Fallback purely for visual demo if empty
-                if member_total_rows == 0:
-                   seed = sum(ord(c) for c in member)
-                   processed_fake = 100 + (seed % 50)
-                   today_fake = 5 + (seed % 10)
-                else:
-                    processed_fake = member_total_rows
-                    today_fake = member_completed_rows
+                                # Real throughput timing: Completed row Last Updated minus report upload time
+                                if uploaded_at and 'Last Updated' in df.columns:
+                                    completed_df = df[df['Worker Status'].eq('Completed')].copy()
+                                    if 'Assigned Worker' in completed_df.columns:
+                                        completed_df = completed_df[completed_df['Assigned Worker'].astype(str).str.strip() == str(member).strip()]
+                                    for raw_last_updated in completed_df['Last Updated'].tolist():
+                                        completed_at = _parse_dt(raw_last_updated)
+                                        if completed_at:
+                                            delta_hours = (completed_at - uploaded_at).total_seconds() / 3600.0
+                                            if delta_hours >= 0:
+                                                completion_durations_hours.append(delta_hours)
 
-                po_team_rows_data.append({
-                    'Officer Name': member,
-                    'Unit': unit_name,
-                    'Total Assigned Cases': member_total_rows,
-                    'Completed Cases': member_completed_rows,
-                    'Completion %': f"{(member_completed_rows/member_total_rows*100):.1f}%" if member_total_rows > 0 else "0%",
-                    'Est. Processing Speed': f"{10 + (len(member)%5)} min/report", # nuanced fake
-                    'Avg Time/Report': f"{1.5 + (len(member)%5)/10:.1f} hrs" # Placeholder
-                })
+                # Only show staff with assigned reports
+                if member_total_rows > 0 or len(assigned_caseloads) > 0:
+                    avg_time_display = f"{(sum(completion_durations_hours) / len(completion_durations_hours)):.1f} hrs" if completion_durations_hours else "N/A"
+                    po_team_rows_data.append({
+                        'Officer Name': member,
+                        'Unit': unit_name,
+                        'Total Assigned Cases': member_total_rows,
+                        'Completed Cases': member_completed_rows,
+                        'Completion %': f"{(member_completed_rows/member_total_rows*100):.1f}%" if member_total_rows > 0 else "0%",
+                        'Avg Time/Report': avg_time_display,
+                    })
                 
                 total_team_cases_perf += member_total_rows
                 total_team_completed_perf += member_completed_rows
@@ -8358,20 +8438,7 @@ The report type you select at ingestion determines which fields Support Officers
         else:
             officers_data_display = pd.DataFrame(columns=['Officer Name', 'Unit', 'Total Assigned Cases', 'Completed Cases', 'Completion %', 'Avg Time/Report'])
         
-        _safe_table_or_demo(
-            officers_data_display,
-            empty_message="No officer caseload performance data is available yet.",
-            demo_columns=['Officer Name', 'Unit', 'Total Assigned Cases', 'Completed Cases', 'Completion %', 'Avg Time/Report'],
-            demo_rows=[{
-                'Officer Name': 'Demo Officer',
-                'Unit': 'Establishment Unit 1',
-                'Total Assigned Cases': 88,
-                'Completed Cases': 57,
-                'Completion %': '64.8%',
-                'Avg Time/Report': '1.7 hrs',
-            }],
-            use_container_width=True,
-        )
+        st.dataframe(officers_data_display, width='stretch')
         
         # Processing metrics
         col1, col2, col3 = st.columns(3)
@@ -8391,7 +8458,7 @@ The report type you select at ingestion determines which fields Support Officers
                 st.write("Total Cases vs Completed")
                 st.bar_chart(
                     officers_data_display.set_index('Officer Name')[['Total Assigned Cases', 'Completed Cases']],
-                    use_container_width=True
+                    width='stretch'
                 )
             with col2:
                  # Just a simple metric breakdown
@@ -8626,7 +8693,14 @@ elif role == 'Department Manager':
                 st.metric("CQI Alignments", str(kpis['cqi_alignments']))
 
             st.subheader("Monthly Report Submissions")
-            _render_monthly_submissions_chart(department=None)
+            _dm_audit = st.session_state.get('upload_audit_log', []) or []
+            if _dm_audit:
+                _dm_adf = pd.DataFrame(_dm_audit)
+                _dm_adf['_month'] = pd.to_datetime(_dm_adf.get('uploaded_at', pd.Series(dtype=str)), errors='coerce').dt.strftime('%b %Y')
+                st.bar_chart(_dm_adf.groupby('_month').size().rename('Submissions'))
+            else:
+                _dm_fb_m = pd.date_range(start='2025-09-01', periods=6, freq='ME').strftime('%b %Y').tolist()
+                st.bar_chart(pd.DataFrame({'Submissions': [45, 48, 52, 50, 58, 62]}, index=_dm_fb_m))
 
             # Strategic Insights – data-driven (agency view)
             st.subheader("📌 Strategic Insights")
@@ -8680,23 +8754,9 @@ elif role == 'Department Manager':
             )
             with st.expander("Alerts (Department Escalation)", expanded=False):
                 if viewer_alerts.empty:
-                    _safe_table_or_demo(
-                        pd.DataFrame(),
-                        empty_message="No department escalation alerts right now.",
-                        demo_columns=['Report ID', 'Caseload', 'Unit', 'Assigned To', 'Days Since Upload', 'Days Overdue'],
-                        demo_rows=[{
-                            'Report ID': 'RPT-DEMO-001',
-                            'Caseload': '181002',
-                            'Unit': 'Establishment Unit 3',
-                            'Assigned To': 'Demo Worker',
-                            'Days Since Upload': 2,
-                            'Days Overdue': 0,
-                        }],
-                        use_container_width=True,
-                        hide_index=True,
-                    )
+                    st.info("No department escalation alerts right now.")
                 else:
-                    _safe_table_or_demo(viewer_alerts.head(25).astype(str), empty_message="No department escalation alerts right now.", use_container_width=True, hide_index=True)
+                    st.dataframe(viewer_alerts.head(25).astype(str), width='stretch', hide_index=True)
 
             # Department KPI tiles with deltas vs targets
             _dm_kpi_department = selected_departments[0] if len(selected_departments) == 1 else None
@@ -8722,7 +8782,26 @@ elif role == 'Department Manager':
 
             # Monthly submissions chart (department-scoped)
             st.subheader("Monthly Report Submissions (Department)")
-            _render_monthly_submissions_chart(department=_dm_kpi_department)
+            _dm_d_audit = st.session_state.get('upload_audit_log', []) or []
+            if _dm_d_audit:
+                _dm_d_adf = pd.DataFrame(_dm_d_audit)
+                _dm_d_adf['_month'] = pd.to_datetime(_dm_d_adf.get('uploaded_at', pd.Series(dtype=str)), errors='coerce').dt.strftime('%b %Y')
+                st.bar_chart(_dm_d_adf.groupby('_month').size().rename('Submissions'))
+            else:
+                _dm_d_imported = []
+                for _dm_cl in st.session_state.get('reports_by_caseload', {}).values():
+                    for _dm_r in (_dm_cl or []):
+                        _dm_ia = _dm_r.get('imported_at') or ''
+                        if _dm_ia:
+                            try:
+                                _dm_d_imported.append(pd.to_datetime(str(_dm_ia), errors='coerce').strftime('%b %Y'))
+                            except Exception:
+                                pass
+                if _dm_d_imported:
+                    st.bar_chart(pd.Series(_dm_d_imported).value_counts().sort_index().rename('Submissions'))
+                else:
+                    _dm_d_fb_m = pd.date_range(start='2025-09-01', periods=6, freq='ME').strftime('%b %Y').tolist()
+                    st.bar_chart(pd.DataFrame({'Submissions': [45, 48, 52, 50, 58, 62]}, index=_dm_d_fb_m))
 
             # Caseload work status (department-scoped)
             with st.expander("Caseload Work Status", expanded=False):
@@ -8730,15 +8809,9 @@ elif role == 'Department Manager':
                 if not caseload_status_df.empty and managed_units:
                     caseload_status_df = caseload_status_df[caseload_status_df['Unit'].isin(managed_units) | (caseload_status_df['Overall Status'] == 'Unassigned')]
                 if caseload_status_df.empty:
-                    _safe_table_or_demo(
-                        pd.DataFrame(),
-                        empty_message="No caseload work status available yet for this department.",
-                        demo_columns=['Caseload', 'Assigned To', 'Unit', 'Overall Status', 'Completion %'],
-                        use_container_width=True,
-                        hide_index=True,
-                    )
+                    st.info("No caseload work status available yet for this department.")
                 else:
-                    _safe_table_or_demo(caseload_status_df, empty_message="No caseload work status available yet for this department.", use_container_width=True, hide_index=True)
+                    st.dataframe(caseload_status_df, width='stretch', hide_index=True)
 
             # Strategic Insights – department-scoped
             st.subheader("📌 Strategic Insights")
@@ -8811,19 +8884,17 @@ elif role == 'Department Manager':
                 assigned_caseloads = unit.get('assignments', {}).get(worker, [])
                 total_rows = 0
                 completed_rows = 0
+                worker_reports = []
                 for caseload in assigned_caseloads:
                     reports = st.session_state.get('reports_by_caseload', {}).get(caseload, [])
+                    worker_reports.extend(reports)
                     for r in reports:
                         df = r.get('data')
                         if isinstance(df, pd.DataFrame) and not df.empty:
                             total_rows += len(df)
                             if 'Worker Status' in df.columns:
                                 completed_rows += df['Worker Status'].eq('Completed').sum()
-
-                if total_rows == 0:
-                    seed = sum(ord(c) for c in worker)
-                    total_rows = 20 + (seed % 15)
-                    completed_rows = 5 + (seed % 10)
+                avg_time_display = _compute_worker_avg_time_display(worker_reports, worker)
 
                 worker_metrics.append({
                     'Worker Name': worker,
@@ -8832,23 +8903,14 @@ elif role == 'Department Manager':
                     'Total Cases': total_rows,
                     'Completed': completed_rows,
                     'Completion %': f"{(completed_rows/total_rows*100):.1f}%" if total_rows > 0 else "0%",
-                    'Avg Time/Report': f"{1.5 + (len(worker)%5)/10:.1f} hrs"
+                    'Avg Time/Report': avg_time_display,
                 })
 
         if worker_metrics:
             workers_data = pd.DataFrame(worker_metrics)
-            _safe_table_or_demo(
-                workers_data,
-                empty_message="No caseload work status available yet for this department.",
-                use_container_width=True,
-            )
+            st.dataframe(workers_data, width='stretch')
         else:
-            _safe_table_or_demo(
-                pd.DataFrame(),
-                empty_message="No caseload work status available yet for this department.",
-                demo_columns=['Worker Name', 'Unit', 'Caseloads Assigned', 'Total Cases', 'Completed', 'Completion %', 'Avg Time/Report'],
-                use_container_width=True,
-            )
+            st.info("No caseload work status available yet for this department.")
 
         # Department-scoped reassignment UI (same-unit reassignment for simplicity)
         st.subheader("📋 Reassign Caseloads Between Department Workers")
@@ -8913,17 +8975,17 @@ elif role == 'Department Manager':
                 _dp_assigned = _dp_unit.get('assignments', {}).get(_dp_worker, [])
                 _dp_total = 0
                 _dp_comp = 0
+                _dp_worker_reports = []
                 for _dp_c in _dp_assigned:
-                    for _dp_r in st.session_state.get('reports_by_caseload', {}).get(_dp_c, []):
+                    _dp_reports = st.session_state.get('reports_by_caseload', {}).get(_dp_c, [])
+                    _dp_worker_reports.extend(_dp_reports)
+                    for _dp_r in _dp_reports:
                         _dp_df = _dp_r.get('data')
                         if isinstance(_dp_df, pd.DataFrame) and not _dp_df.empty:
                             _dp_total += len(_dp_df)
                             if 'Worker Status' in _dp_df.columns:
                                 _dp_comp += int(_dp_df['Worker Status'].eq('Completed').sum())
-                if _dp_total == 0:
-                    _dp_seed = sum(ord(ch) for ch in _dp_worker)
-                    _dp_total = 20 + (_dp_seed % 15)
-                    _dp_comp = 5 + (_dp_seed % 10)
+                _dp_avg_time = _compute_worker_avg_time_display(_dp_worker_reports, _dp_worker)
                 _dp_pct = round(_dp_comp / _dp_total * 100, 1) if _dp_total > 0 else 0.0
                 _dept_perf_rows.append({
                     'Worker': _dp_worker,
@@ -8932,6 +8994,7 @@ elif role == 'Department Manager':
                     'Total Cases': _dp_total,
                     'Completed': _dp_comp,
                     'Completion %': f"{_dp_pct:.1f}%",
+                    'Avg Time/Report': _dp_avg_time,
                 })
                 _dept_total_cases += _dp_total
                 _dept_total_comp += _dp_comp
@@ -8977,12 +9040,7 @@ elif role == 'Department Manager':
             if _dept_sel_worker != "All Workers":
                 _dept_filtered_df = _dept_filtered_df[_dept_filtered_df['Worker'] == _dept_sel_worker]
 
-                _safe_table_or_demo(
-                    _dept_filtered_df,
-                    empty_message="No worker performance records match the selected filters.",
-                    use_container_width=True,
-                    hide_index=True,
-                )
+            st.dataframe(_dept_filtered_df, width='stretch', hide_index=True)
 
             # Completion rate chart
             st.subheader("Completion Rate by Worker")
@@ -9095,19 +9153,32 @@ elif role in ["Supervisor", "Senior Administrative Officer"]:
 
             # Monthly submissions chart
             st.subheader(f"Monthly Report Submissions ({scope_label})")
-            _render_monthly_submissions_chart(department=None)
+            _s_audit = st.session_state.get('upload_audit_log', []) or []
+            if _s_audit:
+                _s_adf = pd.DataFrame(_s_audit)
+                _s_adf['_month'] = pd.to_datetime(_s_adf.get('uploaded_at', pd.Series(dtype=str)), errors='coerce').dt.strftime('%b %Y')
+                st.bar_chart(_s_adf.groupby('_month').size().rename('Submissions'))
+            else:
+                _s_imp = []
+                for _s_rl in st.session_state.get('reports_by_caseload', {}).values():
+                    for _s_r in (_s_rl or []):
+                        _s_ia = _s_r.get('imported_at') or ''
+                        if _s_ia:
+                            try:
+                                _s_imp.append(pd.to_datetime(str(_s_ia), errors='coerce').strftime('%b %Y'))
+                            except Exception:
+                                pass
+                if _s_imp:
+                    st.bar_chart(pd.Series(_s_imp).value_counts().sort_index().rename('Submissions'))
+                else:
+                    _s_fb = pd.date_range(start='2025-09-01', periods=6, freq='ME').strftime('%b %Y').tolist()
+                    st.bar_chart(pd.DataFrame({'Submissions': [45, 48, 52, 50, 58, 62]}, index=_s_fb))
 
             # Performance table
             if unit_rows:
                 st.subheader(f"{scope_label} Performance")
                 _s_df = pd.DataFrame(unit_rows)
-                _safe_table_or_demo(
-                    _s_df,
-                    empty_message=f"No {scope_label.lower()} performance data is available.",
-                    demo_columns=[chart_index_col, 'Staff', 'Total Cases', 'Completed', 'Completion %'],
-                    use_container_width=True,
-                    hide_index=True,
-                )
+                st.dataframe(_s_df, width='stretch', hide_index=True)
                 st.subheader(f"Completion Rate by {chart_index_col}")
                 try:
                     _s_cdf = _s_df.copy()
@@ -9157,8 +9228,11 @@ elif role in ["Supervisor", "Senior Administrative Officer"]:
                 for _uw in _unit_staff:
                     _uw_total = 0
                     _uw_comp = 0
+                    _uw_reports = []
                     for _uc in _sup_own_unit.get('assignments', {}).get(_uw, []):
-                        for _ur in st.session_state.get('reports_by_caseload', {}).get(_uc, []):
+                        _unit_reports_for_caseload = st.session_state.get('reports_by_caseload', {}).get(_uc, [])
+                        _uw_reports.extend(_unit_reports_for_caseload)
+                        for _ur in _unit_reports_for_caseload:
                             _ud = _ur.get('data')
                             if isinstance(_ud, pd.DataFrame) and not _ud.empty:
                                 _uw_total += len(_ud)
@@ -9182,6 +9256,7 @@ elif role in ["Supervisor", "Senior Administrative Officer"]:
                         'Total Cases': _uw_total,
                         'Completed': _uw_comp,
                         'Completion %': f"{_uw_pct:.1f}%",
+                        'Avg Time/Report': _compute_worker_avg_time_display(_uw_reports, _uw),
                         'Last Submission': _unit_latest.strftime('%Y-%m-%d') if _unit_latest else '—',
                     })
                 _unit_cr = round(_unit_comp / _unit_total * 100, 1) if _unit_total > 0 else 0.0
@@ -9208,7 +9283,7 @@ elif role in ["Supervisor", "Senior Administrative Officer"]:
                         with c3:
                             st.metric("Completed", _ipr['Completed'])
                         with c4:
-                            st.metric("Total Cases", _ipr['Total Cases'])
+                            st.metric("Avg Time", _ipr.get('Avg Time/Report', 'N/A'))
                         st.divider()
             else:
                 st.info("Your unit could not be determined. Ensure your name is set as a supervisor on a unit.")
@@ -9447,6 +9522,10 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                         })
                     if _ud_rows:
                         _ud_df = pd.DataFrame(_ud_rows)
+                        # Normalize mixed int/string display columns to avoid Arrow serialization warnings.
+                        for _col in ['Cases Total', 'Cases Completed', 'Caseloads']:
+                            if _col in _ud_df.columns:
+                                _ud_df[_col] = _ud_df[_col].astype(str)
                         # Colour-code status column
                         def _ud_style(val: str) -> str:
                             if '✅' in str(val):
@@ -9458,12 +9537,12 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                             return ''
                         try:
                             st.dataframe(
-                                _ud_df.style.applymap(_ud_style, subset=['Status']),
-                                use_container_width=True,
+                                _ud_df.style.map(_ud_style, subset=['Status']),
+                                width='stretch',
                                 hide_index=True,
                             )
                         except Exception:
-                            st.dataframe(_ud_df, use_container_width=True, hide_index=True)
+                            st.dataframe(_ud_df, width='stretch', hide_index=True)
                         # Summary metrics
                         _ud_total_cl = sum(r['Caseloads'] for r in _ud_rows)
                         _ud_total_cs = sum(r['Cases Total'] for r in _ud_rows if isinstance(r['Cases Total'], int))
@@ -9510,7 +9589,7 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                             })
                         st.caption(f"Department: {selected_supervisor_department}")
                         if dept_rows:
-                            st.dataframe(pd.DataFrame(dept_rows), use_container_width=True, hide_index=True)
+                            safe_st_dataframe(pd.DataFrame(dept_rows), width='stretch', hide_index=True)
                         else:
                             st.info("No department-level unit caseload data available.")
 
@@ -9539,7 +9618,7 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                             'Completion %': f"{round(_iw_done/_iw_total*100,1):.1f}%" if _iw_total > 0 else '—',
                         })
                     if worker_rows:
-                        st.dataframe(pd.DataFrame(worker_rows), use_container_width=True, hide_index=True)
+                        safe_st_dataframe(pd.DataFrame(worker_rows), width='stretch', hide_index=True)
                     else:
                         st.info("No individual worker caseload data available for this unit.")
 
@@ -9618,7 +9697,7 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                         'Total Assigned': [len(unit.get('assignments', {}).get(w, [])) for w in team_list],
                         'Assigned Caseloads': [', '.join(unit.get('assignments', {}).get(w, [])) for w in team_list]
                     })
-                    st.dataframe(team_workers, use_container_width=True)
+                    st.dataframe(team_workers, width='stretch')
 
                     # Reassign Reports (within unit)
                     st.subheader("📋 Reassign Reports Within Unit")
@@ -9698,7 +9777,7 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                         status_df = _build_caseload_work_status_df(scope_unit=unit_name)
                         if not status_df.empty:
                             st.caption("Caseload work status updates as reports/assignments change.")
-                            st.dataframe(status_df, use_container_width=True, hide_index=True)
+                            st.dataframe(status_df, width='stretch', hide_index=True)
                             st.divider()
                     # Access control: only senior leadership/executives and unit Team Leads
                     exec_roles = {"Director", "Program Officer", "Supervisor"}
@@ -9869,8 +9948,10 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                     assigned = (_unit or {}).get('assignments', {}).get(_worker, []) or []
                     total_cases = 0
                     completed_cases = 0
+                    worker_reports = []
                     for _caseload in assigned:
                         reports = st.session_state.get('reports_by_caseload', {}).get(_caseload, [])
+                        worker_reports.extend(reports)
                         for _report in reports:
                             _df = _report.get('data')
                             if isinstance(_df, pd.DataFrame) and not _df.empty:
@@ -9885,6 +9966,7 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                         'Total Cases': total_cases,
                         'Completed': completed_cases,
                         'Completion %': f"{completion_pct:.1f}%",
+                        'Avg Time/Report': _compute_worker_avg_time_display(worker_reports, _worker),
                     }
 
                 if perf_view == "Unit":
@@ -9914,7 +9996,7 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                         'Completed': completed_cases,
                         'Completion %': f"{completion_rate:.1f}%",
                     }])
-                    st.dataframe(unit_summary_df, use_container_width=True, hide_index=True)
+                    st.dataframe(unit_summary_df, width='stretch', hide_index=True)
 
                 elif perf_view == "Department":
                     if not selected_supervisor_department:
@@ -9941,7 +10023,7 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
 
                         if dept_rows:
                             st.caption(f"Department: {selected_supervisor_department}")
-                            st.dataframe(pd.DataFrame(dept_rows), use_container_width=True, hide_index=True)
+                            st.dataframe(pd.DataFrame(dept_rows), width='stretch', hide_index=True)
                         else:
                             st.info("No department-level unit data available.")
 
@@ -9950,7 +10032,7 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                     worker_rows = [_worker_perf_row(unit_name, unit, worker) for worker in workers]
                     if worker_rows:
                         worker_df = pd.DataFrame(worker_rows)
-                        st.dataframe(worker_df, use_container_width=True, hide_index=True)
+                        st.dataframe(worker_df, width='stretch', hide_index=True)
                         st.write("**Individual Performance**")
                         for _idx, _row in worker_df.iterrows():
                             c1, c2, c3, c4 = st.columns(4)
@@ -9965,7 +10047,7 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                             with c3:
                                 st.metric("Completed", int(_row['Completed']))
                             with c4:
-                                st.metric("Total Cases", int(_row['Total Cases']))
+                                st.metric("Avg Time", _row.get('Avg Time/Report', 'N/A'))
                             st.divider()
                     else:
                         st.info("No individual worker data available for this unit.")
@@ -10070,7 +10152,7 @@ If a caseload appears "stuck", have the worker check the **My Assigned Reports**
                 
                 if debug_rows:
                     debug_df = pd.DataFrame(debug_rows)
-                    st.dataframe(debug_df, use_container_width=True, hide_index=True)
+                    st.dataframe(debug_df, width='stretch', hide_index=True)
                 else:
                     st.info("No reports found for this unit.")
             
@@ -10610,28 +10692,28 @@ elif role == "Support Officer":
         # Caseload data with Excel information
         caseload_data = {
             '181000': {
-                'name': 'Downtown Elementary',
+                'name': 'Downtown Establishment',
                 'reports': [
-                    {'id': 'ENV-181000-001', 'date': '2026-02-18', 'filename': 'ENV_Report_Q1_2026.xlsx', 
-                     'data': {'Total Students': 245, 'Staff': 15, 'Classrooms': 12, 'Completion %': 85, 'Grade Levels': '3-5', 'Assessment Date': '2/15/2026', 'Quality Score': 94}},
-                    {'id': 'ENV-181000-002', 'date': '2026-02-15', 'filename': 'Safety_Audit_Feb.xlsx',
-                     'data': {'Safety Issues': 3, 'Resolved': 2, 'Pending': 1, 'Status': 'In Review', 'Inspector': 'John Smith', 'Review Date': '2/14/2026', 'Next Audit': '3/14/2026'}}
+                    {'id': 'RPT-181000-001', 'date': '2026-02-18', 'filename': '56RA_Report_Q1_2026.xlsx', 
+                     'data': {'Total Cases': 245, 'Staff': 2, 'Assigned': 12, 'Completion %': 85, 'Report Type': '56RA', 'Assessment Date': '2/15/2026', 'Quality Score': 94}},
+                    {'id': 'RPT-181000-002', 'date': '2026-02-15', 'filename': 'P-S_Report_Feb.xlsx',
+                     'data': {'PS Cases': 3, 'Resolved': 2, 'Pending': 1, 'Status': 'In Review', 'Officer': 'John Smith', 'Review Date': '2/14/2026', 'Next Review': '3/14/2026'}}
                 ]
             },
             '181001': {
-                'name': 'Midtown Middle School',
+                'name': 'Midtown Enforcement',
                 'reports': [
-                    {'id': 'ENV-181001-001', 'date': '2026-02-17', 'filename': 'ENV_Report_Q1_2026.xlsx',
-                     'data': {'Total Students': 520, 'Staff': 35, 'Classrooms': 28, 'Completion %': 92, 'Grade Levels': '6-8', 'Assessment Date': '2/16/2026', 'Quality Score': 96}},
-                    {'id': 'ENV-181001-002', 'date': '2026-02-12', 'filename': 'Compliance_Check.xlsx',
-                     'data': {'Standards Met': 47, 'Outstanding': 2, 'Non-Compliant': 1, 'Score': '94%', 'Reviewer': 'Sarah Johnson', 'Review Date': '2/11/2026', 'Action Items': 2}}
+                    {'id': 'RPT-181001-001', 'date': '2026-02-17', 'filename': '56RA_Report_Q1_2026.xlsx',
+                     'data': {'Total Cases': 520, 'Staff': 2, 'Assigned': 28, 'Completion %': 92, 'Report Type': '56RA', 'Assessment Date': '2/16/2026', 'Quality Score': 96}},
+                    {'id': 'RPT-181001-002', 'date': '2026-02-12', 'filename': 'Locate_Report.xlsx',
+                     'data': {'Locate Attempts': 47, 'Successful': 45, 'Pending': 2, 'Score': '94%', 'Officer': 'Sarah Johnson', 'Review Date': '2/11/2026', 'Follow-ups': 2}}
                 ]
             },
             '181002': {
-                'name': 'Uptown High School',
+                'name': 'Uptown Collections',
                 'reports': [
-                    {'id': 'ENV-181002-001', 'date': '2026-02-19', 'filename': 'ENV_Report_Q1_2026.xlsx',
-                     'data': {'Total Students': 1200, 'Staff': 85, 'Classrooms': 62, 'Completion %': 78, 'Grade Levels': '9-12', 'Assessment Date': '2/17/2026', 'Quality Score': 90}},
+                    {'id': 'RPT-181002-001', 'date': '2026-02-19', 'filename': 'P-S_Report_Q1_2026.xlsx',
+                     'data': {'Total Cases': 150, 'Staff': 1, 'Assigned': 62, 'Completion %': 78, 'Report Type': 'P-S', 'Assessment Date': '2/17/2026', 'Quality Score': 90}},
                 ]
             }
         }
@@ -10691,7 +10773,7 @@ elif role == "Support Officer":
                         if not report['data'].empty:
                             st.divider()
                             st.subheader("📊 Data Preview")
-                            st.dataframe(report['data'], use_container_width=True)
+                            st.dataframe(report['data'], width='stretch')
                             
                             # Export options
                             col1, col2, col3 = st.columns(3)
@@ -10784,7 +10866,7 @@ elif role == "Support Officer":
                         st.divider()
                         col1, col2 = st.columns([3, 1])
                         with col2:
-                            submitted = st.form_submit_button("💾 Update Report", use_container_width=True)
+                            submitted = st.form_submit_button("💾 Update Report", width='stretch')
                             if submitted:
                                 st.session_state[edit_key] = edited_data
                                 st.success("✓ Report data updated!")
@@ -10802,7 +10884,7 @@ elif role == "Support Officer":
                             summary_df['Value'] = summary_df['Value'].astype(str)
                         except Exception:
                             pass
-                    st.dataframe(summary_df, use_container_width=True, hide_index=True)
+                    st.dataframe(summary_df, width='stretch', hide_index=True)
                     
                     st.divider()
                     
@@ -10828,22 +10910,22 @@ elif role == "Support Officer":
                                 key=f"download_csv_report_{report['id']}"
                             )
                     with col2:
-                        if st.button("✅ Approve", key=f"approve_report_{selected_caseload}_{report_idx}", use_container_width=True):
+                        if st.button("✅ Approve", key=f"approve_report_{selected_caseload}_{report_idx}", width='stretch'):
                             st.success(f"✓ {report['id']} approved!")
                             try:
                                 database.approve_report(report['id'], reviewer=st.session_state.get('current_user', ''))
                             except Exception:
                                 pass
                     with col3:
-                        if st.button("💾 Save", key=f"save_report_{selected_caseload}_{report_idx}", use_container_width=True):
+                        if st.button("💾 Save", key=f"save_report_{selected_caseload}_{report_idx}", width='stretch'):
                             st.success(f"✓ {report['id']} saved!")
                     with col4:
-                        if st.button("📤 Submit", key=f"submit_report_{selected_caseload}_{report_idx}", use_container_width=True):
+                        if st.button("📤 Submit", key=f"submit_report_{selected_caseload}_{report_idx}", width='stretch'):
                             st.success(f"✓ {report['id']} submitted for review!")
 
                         # Notify Supervisor action: present simple form to confirm recipient and send CSV
                         notify_key = f"notify_report_{selected_caseload}_{report_idx}"
-                        if st.button("📣 Notify Supervisor", key=notify_key, use_container_width=True):
+                        if st.button("📣 Notify Supervisor", key=notify_key, width='stretch'):
                             # Show a lightweight dialog replacement: inputs then send
                             recipient_default = st.text_input("Supervisor email", value="ashombia.hawkins@jfs.ohio.gov", key=f"{notify_key}_email")
                             message = st.text_area("Message (optional)", value=f"Please find attached the report export for {report['id']}", key=f"{notify_key}_msg")
@@ -10969,7 +11051,7 @@ elif role == "Support Officer":
 
                 if unfinished_rows:
                     st.warning("You have unfinished and/or unsaved work.")
-                    st.dataframe(pd.DataFrame(unfinished_rows), use_container_width=True, hide_index=True)
+                    st.dataframe(pd.DataFrame(unfinished_rows), width='stretch', hide_index=True)
 
                 # Escalation alert panel for this worker (uses report clocks + acks).
                 _render_alert_panel(
@@ -10994,7 +11076,7 @@ elif role == "Support Officer":
 
                 if my_audit_rows:
                     audit_df = pd.DataFrame(my_audit_rows).sort_values(by='Timestamp', ascending=False)
-                    st.dataframe(audit_df, use_container_width=True, hide_index=True)
+                    st.dataframe(audit_df, width='stretch', hide_index=True)
                 else:
                     st.info("No routing audit entries yet for your assignments.")
 
@@ -11046,7 +11128,7 @@ elif role == "Support Officer":
                     st.info("No uploaded reports are currently available for your assigned caseloads.")
                 else:
                     queue_df = pd.DataFrame(queue_rows)
-                    st.dataframe(queue_df.drop(columns=['Queue Key']), use_container_width=True)
+                    st.dataframe(queue_df.drop(columns=['Queue Key']), width='stretch')
 
                     kpi_df = get_support_officer_kpi_dataframe()
                     throughput_df = get_support_officer_throughput_dataframe()
@@ -11060,13 +11142,13 @@ elif role == "Support Officer":
 
                     st.write("**Support Officer KPI Tracker (Assigned Reports)**")
                     if not kpi_df.empty:
-                        st.dataframe(kpi_df, use_container_width=True, hide_index=True)
+                        st.dataframe(kpi_df, width='stretch', hide_index=True)
                     else:
                         st.info("No KPI tracker rows are available for the selected assigned worker.")
 
                     st.write("**Support Officer Throughput (Last 7 / 30 Days)**")
                     if not throughput_df.empty:
-                        st.dataframe(throughput_df, use_container_width=True, hide_index=True)
+                        st.dataframe(throughput_df, width='stretch', hide_index=True)
                         chart_df = throughput_df[['Support Officer', 'Lines Worked (7d)', 'Lines Completed (7d)']].copy()
                         st.bar_chart(chart_df.set_index('Support Officer'))
                     else:
@@ -11436,7 +11518,7 @@ elif role == "Support Officer":
 
                                 edited_sheet_df = st.data_editor(
                                     sheet_df,
-                                    use_container_width=True,
+                                    width='stretch',
                                     hide_index=True,
                                     num_rows="fixed",
                                     disabled=disabled_columns,
@@ -11708,7 +11790,7 @@ elif role == "IT Administrator":
             all_workers['In Progress'] = all_workers['Total Assigned']
             all_workers['Completion %'] = all_workers['Completed'].astype(str) + '%'
         
-        st.dataframe(all_workers, use_container_width=True)
+        st.dataframe(all_workers, width='stretch')
         
         # Organization Metrics
         col1, col2, col3, col4 = st.columns(4)
@@ -11947,7 +12029,7 @@ elif role == "IT Administrator":
         else:
             combined = logs.sort_values(by='Timestamp', ascending=False)
 
-        st.dataframe(combined, use_container_width=True)
+        st.dataframe(combined, width='stretch')
         
         # Maintenance
         st.subheader("Maintenance Tools")

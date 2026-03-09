@@ -1,0 +1,49 @@
+graph TB
+    subgraph "User Layer"
+        Users[OCSS Users<br/>Director, Program Officers<br/>Supervisors, Support Officers]
+    end
+
+    subgraph "Network Layer"
+        Gateway[County Gateway / NGINX<br/>SSL/TLS, SSO, Security]
+    end
+
+    subgraph "Application Layer"
+        App[OCSS Command Center<br/>Python + Streamlit]
+        Auth[Authentication<br/>& RBAC]
+        Reports[Report Engine<br/>Pandas]
+        Dashboards[KPI Dashboards<br/>& Analytics]
+        QA[QA & Compliance<br/>Engine]
+        Tickets[Help Ticket<br/>Center]
+    end
+
+    subgraph "Data Layer"
+        State[(Application State<br/>JSON Files)]
+        Exports[Export Services<br/>Excel, Word, CSV]
+    end
+
+    subgraph "External Systems"
+        SETS[SETS<br/>Child Support System]
+        OnBase[Hyland OnBase<br/>Document Management]
+        ODJFS[ODJFS<br/>Reporting Infrastructure]
+    end
+
+    Users -->|HTTPS| Gateway
+    Gateway -->|Authenticated| App
+    App --> Auth
+    App --> Reports
+    App --> Dashboards
+    App --> QA
+    App --> Tickets
+    Reports --> State
+    App --> Exports
+    App -.->|Read Only| SETS
+    App -.->|Read Only| OnBase
+    App -.->|Report Source| ODJFS
+
+    style Users fill:#e1f5ff
+    style Gateway fill:#fff3cd
+    style App fill:#d4edda
+    style State fill:#f8d7da
+    style SETS fill:#e2e3e5
+    style OnBase fill:#e2e3e5
+    style ODJFS fill:#e2e3e5

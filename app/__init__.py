@@ -11,11 +11,12 @@ __all__ = [
     'config',
     'auth',
     'helpers',
+    'case_logic',
 ]
 
 # Try to import submodules into the package namespace for convenience.
 try:
-    from . import roles, report_utils, database, auth, config, helpers  # type: ignore
+    from . import roles, report_utils, database, auth, config, helpers, case_logic  # type: ignore
 except Exception:
     # Best-effort import; tests can import submodules directly if needed.
     pass

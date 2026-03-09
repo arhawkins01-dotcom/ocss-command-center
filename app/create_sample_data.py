@@ -19,7 +19,7 @@ def create_sample_establishment_report():
         'Worker': [random.choice(workers) for _ in range(num_cases)],
         'Status': [random.choice(statuses) for _ in range(num_cases)],
         'Date_Filed': [(datetime.now() - timedelta(days=random.randint(1, 90))).strftime('%Y-%m-%d') for _ in range(num_cases)],
-        'Establishment': [random.choice(['Downtown Elementary', 'Midtown Middle School', 'Uptown High School']) for _ in range(num_cases)],
+        'Establishment': [random.choice(['Downtown Establishment', 'Midtown Enforcement', 'Uptown Collections']) for _ in range(num_cases)],
         'Case_Type': [random.choice(['Establishment', 'Modification', 'Review', 'Enforcement']) for _ in range(num_cases)],
         'Priority': [random.choice(['High', 'Medium', 'Low']) for _ in range(num_cases)],
         'Completion_Percentage': [random.randint(0, 100) for _ in range(num_cases)]

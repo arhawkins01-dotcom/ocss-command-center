@@ -168,7 +168,7 @@ def render_category_breakdown_chart(criteria_breakdown: Dict) -> None:
         
         # Also show as table
         with st.expander("View Details", expanded=False):
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            st.dataframe(df, width='stretch', hide_index=True)
 
 
 def render_common_issues_list(issues: List[str]) -> None:
@@ -366,7 +366,7 @@ def render_worker_qa_cases_table(summary: Dict[str, Any]) -> None:
     df = pd.DataFrame(display_data)
     
     st.markdown("#### 📋 Sampled Cases")
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, width='stretch', hide_index=True)
 
 
 def render_supervisor_qa_validation_form(
@@ -451,7 +451,7 @@ def render_supervisor_qa_summary_table(
     # Display table
     st.dataframe(
         summary_df,
-        use_container_width=True,
+        width='stretch',
         hide_index=True,
         column_config={
             "Compliance %": st.column_config.TextColumn(width="small"),
