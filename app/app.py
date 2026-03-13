@@ -599,29 +599,27 @@ elif role == "Supervisor":
             st.info("No team data available — select a supervisor and load the unit first.")
 
 
-elif role == "Support Officer":
-    st.markdown('<div class="header-title">📋 Support Officer - Caseload Management</div>', unsafe_allow_html=True)
-    st.markdown("**Assigned Reports & Technical Support**")
+elif role in ["Support Officer", "Team Lead"]:
+    st.markdown(f'<div class="header-title">📋 {role} - My Caseload & KPIs</div>', unsafe_allow_html=True)
+    st.markdown("**Your Assigned Reports & KPIs**")
 
-    # Choose which Support Officer you are acting as (since no auth yet)
+    # Choose which Support Officer/Team Lead you are acting as (since no auth yet)
     all_sos = []
     for unit in st.session_state.units.values():
         all_sos.extend(unit.get('support_officers', []))
         all_sos.extend(unit.get('team_leads', []))
     all_sos = sorted(list(set(all_sos)))
 
-    acting_so = st.selectbox("Act as Support Officer / Team Lead", options=['(Select)'] + all_sos)
+    acting_so = st.selectbox(f"Act as {role}", options=['(Select)'] + all_sos)
 
-    # Caseload Metrics (for selected person)
+    # Only show metrics for the selected user
     col1, col2, col3, col4 = st.columns(4)
     if acting_so and acting_so != '(Select)':
-        # find caseloads assigned across units
         assigned_caseloads = []
         for unit in st.session_state.units.values():
             for person, caseloads in unit.get('assignments', {}).items():
                 if person == acting_so:
                     assigned_caseloads.extend(caseloads)
-
         st.session_state.setdefault('last_acting_so', acting_so)
         with col1:
             st.metric("Assigned Caseloads", len(assigned_caseloads))
@@ -639,10 +637,10 @@ elif role == "Support Officer":
         with col3:
             st.metric("Pending Approval", "-", "-")
         with col4:
-            st.metric("Status", "Select yourself to view")
+            st.metric("Status", f"Select yourself to view")
 
-    # Tab Navigation (add 56RA Processing tab)
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📊 Caseload Dashboard", "📝 My Assigned Reports", "🆘 Support Tickets", "📚 Knowledge Base", "📑 56RA Processing", "📑 Locate Report Processing", "📑 Paternity-Support Processing"])
+    # Tab Navigation (only show tabs relevant to the acting user)
+    tab1, tab2, tab3 = st.tabs(["📊 My Caseload Dashboard", "📝 My Assigned Reports", "🆘 Support Tickets"])
     # TAB 3: Help Ticket Center (Support Officer, Director, Supervisor, Program Officer, IT Admin)
     with tab3:
         st.subheader("🆘 Help Ticket Center")
