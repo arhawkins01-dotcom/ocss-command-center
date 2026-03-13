@@ -48,6 +48,10 @@ if 'uploaded_reports' not in st.session_state:
 if 'reports_by_caseload' not in st.session_state:
     st.session_state.reports_by_caseload = {'181000': [], '181001': [], '181002': []}
 
+# Track report work logs: {report_id: [{'worker': str, 'start': datetime, 'end': datetime}]}
+if 'report_work_logs' not in st.session_state:
+    st.session_state.report_work_logs = {}
+
 # --- Enhanced Realistic Demo Data for IT Director Demo ---
 if 'units' not in st.session_state:
     st.session_state.units = {
@@ -672,6 +676,7 @@ elif role == "Supervisor":
             st.info("No team data available — select a supervisor and load the unit first.")
 
 
+
 elif role in ["Support Officer", "Team Lead"]:
     st.markdown(f'<div class="header-title">📋 {role} - My Caseload & KPIs</div>', unsafe_allow_html=True)
     st.markdown("**Your Assigned Reports & KPIs**")
@@ -686,7 +691,7 @@ elif role in ["Support Officer", "Team Lead"]:
     acting_so = st.selectbox(f"Act as {role}", options=['(Select)'] + all_sos)
 
     # Only show metrics for the selected user
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     if acting_so and acting_so != '(Select)':
         assigned_caseloads = []
         for unit in st.session_state.units.values():
@@ -694,6 +699,25 @@ elif role in ["Support Officer", "Team Lead"]:
                 if person == acting_so:
                     assigned_caseloads.extend(caseloads)
         st.session_state.setdefault('last_acting_so', acting_so)
+        # Calculate work hours and upload-to-start time
+        total_work_hours = 0.0
+        avg_upload_to_start = 0.0
+        work_count = 0
+        for caseload in assigned_caseloads:
+            for report in st.session_state.reports_by_caseload.get(caseload, []):
+                report_id = report.get('report_id')
+                logs = st.session_state.report_work_logs.get(report_id, [])
+                for log in logs:
+                    if log['worker'] == acting_so and log.get('start') and log.get('end'):
+                        delta = (log['end'] - log['start']).total_seconds() / 3600.0
+                        total_work_hours += delta
+                        work_count += 1
+                        # Upload to start
+                        if report.get('timestamp') and log.get('start'):
+                            upload_to_start = (log['start'] - report['timestamp']).total_seconds() / 3600.0
+                            avg_upload_to_start += upload_to_start
+        avg_work_hours = (total_work_hours / work_count) if work_count else 0.0
+        avg_upload_to_start = (avg_upload_to_start / work_count) if work_count else 0.0
         with col1:
             st.metric("Assigned Caseloads", len(assigned_caseloads))
         with col2:
@@ -701,7 +725,9 @@ elif role in ["Support Officer", "Team Lead"]:
         with col3:
             st.metric("Pending Approval", 0)
         with col4:
-            st.metric("Status", "Active")
+            st.metric("Avg Work Hours/Report", f"{avg_work_hours:.2f}")
+        with col5:
+            st.metric("Avg Upload→Start (hrs)", f"{avg_upload_to_start:.2f}")
     else:
         with col1:
             st.metric("Assigned Caseloads", "-", "-")
@@ -710,10 +736,33 @@ elif role in ["Support Officer", "Team Lead"]:
         with col3:
             st.metric("Pending Approval", "-", "-")
         with col4:
-            st.metric("Status", f"Select yourself to view")
+            st.metric("Avg Work Hours/Report", "-", "-")
+        with col5:
+            st.metric("Avg Upload→Start (hrs)", "-", "-")
+
 
     # Tab Navigation (add universal Help Ticket and Knowledge Base tabs)
     tab1, tab2, tab3, tab4 = st.tabs(["📊 My Caseload Dashboard", "📝 My Assigned Reports", "🆘 Help Ticket Center", "📚 Knowledge Base"])
+
+    # Example: Log work on a report (for demo, add a button in My Assigned Reports tab)
+    with tab2:
+        st.subheader("Log Work on Reports")
+        for caseload in assigned_caseloads if acting_so and acting_so != '(Select)' else []:
+            for report in st.session_state.reports_by_caseload.get(caseload, []):
+                report_id = report.get('report_id')
+                st.write(f"Report: {report_id} | Uploaded: {report.get('timestamp')}")
+                start = st.time_input(f"Start Time for {report_id}", value=datetime.now().time(), key=f"start_{report_id}")
+                end = st.time_input(f"End Time for {report_id}", value=datetime.now().time(), key=f"end_{report_id}")
+                if st.button(f"Log Work for {report_id}", key=f"log_{report_id}"):
+                    today = datetime.now().date()
+                    start_dt = datetime.combine(today, start)
+                    end_dt = datetime.combine(today, end)
+                    st.session_state.report_work_logs.setdefault(report_id, []).append({
+                        'worker': acting_so,
+                        'start': start_dt,
+                        'end': end_dt
+                    })
+                    st.success(f"Logged work for {report_id}.")
 
     # Help Ticket Center (universal)
     with tab3:
