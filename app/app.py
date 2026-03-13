@@ -712,8 +712,18 @@ elif role in ["Support Officer", "Team Lead"]:
         with col4:
             st.metric("Status", f"Select yourself to view")
 
-    # Tab Navigation (only show tabs relevant to the acting user)
-    tab1, tab2, tab3 = st.tabs(["📊 My Caseload Dashboard", "📝 My Assigned Reports", "🆘 Support Tickets"])
+    # Tab Navigation (add universal Help Ticket and Knowledge Base tabs)
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 My Caseload Dashboard", "📝 My Assigned Reports", "🆘 Help Ticket Center", "📚 Knowledge Base"])
+
+    # Help Ticket Center (universal)
+    with tab3:
+        st.subheader("🆘 Help Ticket Center")
+        # ...existing help ticket code...
+
+    # Knowledge Base (universal)
+    with tab4:
+        st.subheader("📚 Knowledge Base")
+        st.info("Access guides, FAQs, and troubleshooting resources for the OCSS Command Center. (Content to be expanded as needed.)")
     # TAB 3: Help Ticket Center (Support Officer, Director, Supervisor, Program Officer, IT Admin)
     with tab3:
         st.subheader("🆘 Help Ticket Center")
