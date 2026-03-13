@@ -623,37 +623,37 @@ elif role == "Support Officer":
 
     # ...existing code for tab1, tab2, tab3, tab4...
 
-    # TAB 5: 56RA Processing
+    # TAB 5: 56RA Report Processing (Spreadsheet View)
     with tab5:
-        st.subheader("📑 56RA Report Processing")
-        st.caption("Process each case according to 56RA instructions. Only Supervisors/PO3 can close cases or email completed spreadsheets.")
+        st.subheader("📑 56RA Report Processing (Spreadsheet View)")
+        st.caption("Edit cases directly in the table below. Only Supervisors/PO3 can close cases or email completed spreadsheets.")
 
         # Example: Replace with real data source as needed
-        # For demo, create a few sample cases
-        cases = [
-            {"Case ID": "C-001", "Status": "Pending GTU", "NCP": "John Doe", "CP": "Jane Smith"},
-            {"Case ID": "C-002", "Status": "Order Already Established", "NCP": "Mike Lee", "CP": "Anna Kim"},
-            {"Case ID": "C-003", "Status": "NCP Unlocatable", "NCP": "Chris Ray", "CP": "Pat Lee"},
-        ]
-        for case in cases:
-            with st.expander(f"Case {case['Case ID']} - {case['Status']}"):
-                action = st.selectbox("Action Taken/Status", RA_ACTIONS, key=f"action_{case['Case ID']}")
-                date_action = st.date_input("Date Action Taken", value=datetime.now(), key=f"date_{case['Case ID']}")
-                narrated = st.checkbox("Case Narrated", key=f"narrated_{case['Case ID']}")
-                comment = st.text_area("Comment", key=f"comment_{case['Case ID']}")
-                # Narration template
-                narration_default = f"56RA Report: {case['Status']}. Action Taken: {action}."
-                narration = st.text_area(
-                    "Narration (auto or manual)", 
-                    value=narration_default,
-                    key=f"narration_{case['Case ID']}"
-                )
-                # Only allow closing if Supervisor/PO3 (simulate with acting_so)
-                can_close = acting_so in [u.get('supervisor') for u in st.session_state.units.values()] or acting_so.endswith('PO3')
-                if action == "Closed Case" and not can_close:
+        if 'ra_cases' not in st.session_state:
+            st.session_state['ra_cases'] = [
+                {"Case ID": "C-001", "NCP Name": "John Doe", "CP Name": "Jane Smith", "Status of Case": "Pending GTU", "Date Action Taken": datetime.now().date(), "Action Taken/Status": "Scheduled GT", "Case Narrated": False, "Comment": "", "Narration": "", "Next Steps/Follow Up": ""},
+                {"Case ID": "C-002", "NCP Name": "Mike Lee", "CP Name": "Anna Kim", "Status of Case": "Order Already Established", "Date Action Taken": datetime.now().date(), "Action Taken/Status": "Order Already Established", "Case Narrated": False, "Comment": "", "Narration": "", "Next Steps/Follow Up": ""},
+                {"Case ID": "C-003", "NCP Name": "Chris Ray", "CP Name": "Pat Lee", "Status of Case": "NCP Unlocatable", "Date Action Taken": datetime.now().date(), "Action Taken/Status": "NCP Unlocatable", "Case Narrated": False, "Comment": "", "Narration": "", "Next Steps/Follow Up": ""},
+            ]
+        ra_cases = st.session_state['ra_cases']
+        ra_df = pd.DataFrame(ra_cases)
+        for idx, row in ra_df.iterrows():
+            with st.expander(f"Case {row['Case ID']} - {row['Status of Case']}"):
+                ra_cases[idx]["NCP Name"] = st.text_input("NCP Name", value=row["NCP Name"], key=f"ra_ncp_{idx}")
+                ra_cases[idx]["CP Name"] = st.text_input("CP Name", value=row["CP Name"], key=f"ra_cp_{idx}")
+                ra_cases[idx]["Status of Case"] = st.text_input("Status of Case", value=row["Status of Case"], key=f"ra_status_{idx}")
+                ra_cases[idx]["Date Action Taken"] = st.date_input("Date Action Taken", value=row["Date Action Taken"], key=f"ra_date_{idx}")
+                ra_cases[idx]["Action Taken/Status"] = st.selectbox("Action Taken/Status", RA_ACTIONS, index=RA_ACTIONS.index(row["Action Taken/Status"]) if row["Action Taken/Status"] in RA_ACTIONS else 0, key=f"ra_action_{idx}")
+                ra_cases[idx]["Case Narrated"] = st.checkbox("Case Narrated", value=row["Case Narrated"], key=f"ra_narrated_{idx}")
+                ra_cases[idx]["Comment"] = st.text_area("Comment", value=row["Comment"], key=f"ra_comment_{idx}")
+                ra_cases[idx]["Next Steps/Follow Up"] = st.text_area("Next Steps/Follow Up", value=row["Next Steps/Follow Up"], key=f"ra_next_{idx}")
+                narration_default = f"56RA Report: {row['Status of Case']}. Action Taken: {row['Action Taken/Status']}. {row['Comment']}"
+                ra_cases[idx]["Narration"] = st.text_area("Narration (auto/manual)", value=row["Narration"] or narration_default, key=f"ra_narration_{idx}")
+                can_close = acting_so in [u.get('supervisor') for u in st.session_state.units.values()] or (acting_so and acting_so.endswith('PO3'))
+                if ra_cases[idx]["Action Taken/Status"] == "Closed Case" and not can_close:
                     st.warning("Only Supervisors or Establishment PO3 can close cases.")
-                if st.button("💾 Save/Submit", key=f"submit_{case['Case ID']}"):
-                    st.success(f"Case {case['Case ID']} updated.")
+                if st.button("💾 Save/Submit", key=f"ra_submit_{idx}"):
+                    st.success(f"Case {row['Case ID']} updated.")
         st.info("When finished, only Supervisors/PO3 can email the completed spreadsheet.")
 
     # TAB 6: Locate Report Processing
