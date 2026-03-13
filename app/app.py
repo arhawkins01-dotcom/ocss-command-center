@@ -154,10 +154,9 @@ role = st.sidebar.radio(
         "Deputy Director",
         "Senior Admin Officer",
         "Department Manager",
-        "Team Lead",
+        "Team Lead / Support Officer",
         "Program Officer",
         "Supervisor",
-        "Support Officer",
         "IT Administrator"
     ],
     help="Choose your role to see relevant features"
@@ -677,7 +676,7 @@ elif role == "Supervisor":
 
 
 
-elif role in ["Support Officer", "Team Lead"]:
+elif role == "Team Lead / Support Officer":
     st.markdown(f'<div class="header-title">📋 {role} - My Caseload & KPIs</div>', unsafe_allow_html=True)
     st.markdown("**Your Assigned Reports & KPIs**")
 
