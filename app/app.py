@@ -48,27 +48,95 @@ if 'uploaded_reports' not in st.session_state:
 if 'reports_by_caseload' not in st.session_state:
     st.session_state.reports_by_caseload = {'181000': [], '181001': [], '181002': []}
 
-# Organizational units: supervisors, team leads, support officers and caseload assignments
+# --- Enhanced Realistic Demo Data for IT Director Demo ---
 if 'units' not in st.session_state:
     st.session_state.units = {
-        'OCSS North': {
-            'supervisor': 'Alex Martinez',
-            'team_leads': ['Sarah Johnson'],
-            'support_officers': ['Michael Chen', 'Jessica Brown'],
+        'Establishment Department': {
+            'supervisor': 'Ashombia Hawkins',
+            'team_leads': ['Chaiyeh Davis'],
+            'support_officers': ['Almida Aviles'],
+            'assignments': {}
+        },
+        'Establishment Unit #15': {
+            'supervisor': 'Stacy Slick-Williams',
+            'team_leads': ['Anna K. Engler', 'Akilah Rasheed-Tinsley'],
+            'support_officers': ['Joy G. Ogunmola', 'VACANT', 'Brittany Baran', 'Jeffrey A. Swanson', 'VACANT', 'Cyrita J. Johnson'],
             'assignments': {
-                'Sarah Johnson': ['181000'],
-                'Michael Chen': ['181001'],
-                'Jessica Brown': ['181002']
+                'Stacy Slick-Williams': ['181100', '181102', '181199'],
+                'Anna K. Engler': ['181101', '181207 FVI'],
+                'Joy G. Ogunmola': ['181103'],
+                'Akilah Rasheed-Tinsley': ['181105', '181113 Highprofile'],
+                'VACANT': ['181106', '181110'],
+                'Brittany Baran': ['181107'],
+                'Jeffrey A. Swanson': ['181109'],
+                'Cyrita J. Johnson': ['181112']
             }
         },
-        'OCSS South': {
-            'supervisor': 'Priya Singh',
-            'team_leads': ['David Martinez'],
-            'support_officers': ['Amanda Wilson'],
+        'Establishment Unit #16': {
+            'supervisor': 'Robin L. Patterson',
+            'team_leads': ['April Jeter', 'Awilda Martinez'],
+            'support_officers': ['VACANT', 'VACANT', 'Karen McRowe', 'Tamika Joseph-McManus', 'Richard Fletcher', 'Natalie Spatafore'],
             'assignments': {
-                'David Martinez': ['181001'],
-                'Amanda Wilson': ['181000']
+                'Robin L. Patterson': ['181200'],
+                'VACANT': ['181201', '181202'],
+                'April Jeter': ['181204'],
+                'Karen McRowe': ['181205'],
+                'Tamika Joseph-McManus': ['181208'],
+                'Awilda Martinez': ['181209', '181212 SPANISH'],
+                'Richard Fletcher': ['181213'],
+                'Natalie Spatafore': ['181214']
             }
+        },
+        'Establishment Unit #17': {
+            'supervisor': 'Jeanne Sua',
+            'team_leads': ['Kristine DeSouza', 'L. Arlene Gonzalez'],
+            'support_officers': ['VACANT', 'Patricia Bennett', 'Cecelia Durham', 'VACANT', 'Mayra Berrios', 'Hannah Maynard'],
+            'assignments': {
+                'Jeanne Sua': ['181300', '189001', '189010'],
+                'Kristine DeSouza': ['181301', '189002-INC'],
+                'VACANT': ['181302', '189008-INC'],
+                'Patricia Bennett': ['181303', '189003-INC'],
+                'Cecelia Durham': ['181304', '189006-INC'],
+                'Mayra Berrios': ['181306', '189004-INC'],
+                'L. Arlene Gonzalez': ['181307', '189005-INC'],
+                'Hannah Maynard': ['181308', '189007-INC']
+            }
+        },
+        'New Order Unit #22': {
+            'supervisor': 'James Brown',
+            'team_leads': ['Nadia Ahmetovic'],
+            'support_officers': ['Latonya Grays-Martin', 'Michelle Fogler', 'Tracy Wilson', 'William Wedmedyk'],
+            'assignments': {
+                'James Brown': ['189020-RE'],
+                'Nadia Ahmetovic': ['182001', '189021-RE'],
+                'Latonya Grays-Martin': ['182002', '189022'],
+                'Michelle Fogler': ['182003', '189023'],
+                'Tracy Wilson': ['182004', '189024'],
+                'William Wedmedyk': ['182005', '189025']
+            }
+        },
+        'Front Desk Unit #8': {
+            'supervisor': 'James Brown',
+            'team_leads': ['Reginald Davis'],
+            'support_officers': ['Pamela Alexander', 'Danielle Deberry', 'Aleesha Anderson'],
+            'assignments': {
+                'James Brown': ['189020-RE'],
+                'Pamela Alexander': ['189026'],
+                'Danielle Deberry': ['189028'],
+                'Aleesha Anderson': ['189027']
+            }
+        },
+        'Genetic Testing Unit #22': {
+            'supervisor': 'Silas Ungar',
+            'team_leads': ['Laurie Tomlinson'],
+            'support_officers': ['Aleia Lawson', 'Natasha Johnson', 'Tiffany Johnson'],
+            'assignments': {}
+        },
+        'Interface Unit #23': {
+            'supervisor': 'Giselle Torres',
+            'team_leads': ['Quiana Harville', 'Enid Williams'],
+            'support_officers': ['Sierra Carter', 'Chandara Dodson', 'Avonna Handsome', 'Taylor Andrews'],
+            'assignments': {}
         }
     }
 # Sidebar - Role Selection
@@ -95,101 +163,85 @@ if role == "Director":
     st.markdown('<div class="header-title">📈 Executive Dashboard</div>', unsafe_allow_html=True)
     st.markdown("**Strategy & Oversight**")
     
+
     # Tabs for Director
     dir_tab1, dir_tab2, dir_tab3 = st.tabs(["📊 KPIs & Metrics", "👥 Caseload Management", "📋 Team Performance"])
-    
+
+    # --- KPIs & Metrics Tab ---
     with dir_tab1:
-        # KPI Overview
+        # Compute summary stats from all units
+        all_units = st.session_state.units
+        all_staff = []
+        all_caseloads = []
+        vacant_count = 0
+        for unit, udata in all_units.items():
+            for role, names in [('Supervisor', [udata['supervisor']]), ('Team Lead', udata['team_leads']), ('Support Officer', udata['support_officers'])]:
+                for n in names:
+                    if n == 'VACANT':
+                        vacant_count += 1
+                    all_staff.append({'Unit': unit, 'Name': n, 'Role': role})
+            for assignee, caseloads in udata['assignments'].items():
+                for c in caseloads:
+                    all_caseloads.append({'Unit': unit, 'Assignee': assignee, 'Caseload': c, 'Vacant': (assignee == 'VACANT')})
+        total_staff = len([s for s in all_staff if s['Name'] != 'VACANT'])
+        total_caseloads = len(all_caseloads)
+        vacant_caseloads = sum(1 for c in all_caseloads if c['Vacant'])
+        # Summary cards
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("Report Completion Rate", "89.3%", "+2.1%")
+            st.metric("Total Staff", total_staff)
         with col2:
-            st.metric("On-Time Submissions", "94%", "+1.5%")
+            st.metric("Total Caseloads", total_caseloads)
         with col3:
-            st.metric("Data Quality Score", "96.7%", "+0.3%")
+            st.metric("Vacant Positions", vacant_count)
         with col4:
-            st.metric("CQI Alignments", "34", "+5")
-        
-        # Performance Chart
-        st.subheader("Monthly Report Submissions")
-        months = pd.date_range(start='2025-09-01', periods=6, freq='M').strftime('%b').tolist()
-        submissions = [45, 48, 52, 50, 58, 62]
-        chart_data = pd.DataFrame({
-            'Month': months,
-            'Submissions': submissions
-        })
-        st.bar_chart(chart_data.set_index('Month'))
-        
-        # Strategic Insights
-        col1, col2 = st.columns(2)
-        with col1:
-            st.info("✅ **Strategic Wins**: All establishments now submitting reports on schedule")
-        with col2:
-            st.warning("⚠️ **Action Items**: 3 establishments need compliance support")
-    
+            st.metric("Vacant Caseloads", vacant_caseloads)
+        st.markdown("---")
+        # Caseload distribution chart
+        st.subheader("Caseload Distribution by Unit")
+        import pandas as pd
+        caseload_df = pd.DataFrame(all_caseloads)
+        if not caseload_df.empty:
+            chart = caseload_df.groupby('Unit').count()['Caseload']
+            st.bar_chart(chart)
+        # Staff table with color badges
+        st.subheader("Staff Roster & Status")
+        import streamlit as st
+        def badge(name, role):
+            if name == 'VACANT':
+                return f'<span style="color:white;background:#d9534f;padding:2px 8px;border-radius:8px;">VACANT</span>'
+            if "Lead" in role:
+                return f'<span style="color:white;background:#5bc0de;padding:2px 8px;border-radius:8px;">{name} ({role})</span>'
+            if role == "Supervisor":
+                return f'<span style="color:white;background:#5cb85c;padding:2px 8px;border-radius:8px;">{name} (Supervisor)</span>'
+            return f'<span style="color:#333;background:#f7ecb5;padding:2px 8px;border-radius:8px;">{name} ({role})</span>'
+        staff_html = "".join([f'<tr><td>{s["Unit"]}</td><td>{badge(s["Name"], s["Role"])}<td></tr>' for s in all_staff])
+        st.markdown(f'<table><tr><th>Unit</th><th>Staff</th></tr>{staff_html}</table>', unsafe_allow_html=True)
+
+    # --- Caseload Management Tab ---
     with dir_tab2:
-        st.subheader("👥 Caseload Management - All Workers")
-        
-        # Worker Caseload Overview
-        workers_data = pd.DataFrame({
-            'Worker Name': ['Sarah Johnson', 'Michael Chen', 'Jessica Brown', 'David Martinez', 'Amanda Wilson'],
-            'Role': ['Support Officer', 'Support Officer', 'Support Officer', 'Support Officer', 'Support Officer'],
-            'Total Assigned': [24, 28, 22, 26, 25],
-            'Completed': [12, 18, 15, 14, 16],
-            'In Progress': [8, 7, 5, 9, 6],
-            'Not Started': [4, 3, 2, 3, 3],
-            'Completion %': ['50%', '64%', '68%', '54%', '64%'],
-            'Avg Time/Report': ['2.1 hrs', '1.8 hrs', '1.6 hrs', '2.0 hrs', '1.9 hrs']
-        })
-        
-        st.dataframe(workers_data, use_container_width=True)
-        
-        # Workload Distribution Chart
-        st.subheader("Workload Distribution by Worker")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.bar_chart(workers_data.set_index('Worker Name')[['Total Assigned', 'Completed']])
-        with col2:
-            st.bar_chart(workers_data.set_index('Worker Name')[['Not Started', 'In Progress', 'Completed']])
-        
-        # Reassign Reports
-        st.subheader("📋 Reassign Reports Between Workers")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            from_worker = st.selectbox("From Worker", workers_data['Worker Name'].tolist())
-        with col2:
-            to_worker = st.selectbox("To Worker", workers_data['Worker Name'].tolist())
-        with col3:
-            num_reports = st.number_input("Number of Reports", min_value=1, max_value=10, value=1)
-        
-        if st.button("🔄 Execute Reassignment", key="director_reassign"):
-            st.success(f"✓ {num_reports} report(s) reassigned from {from_worker} to {to_worker}")
-    
+        st.subheader("All Caseload Assignments")
+        if not caseload_df.empty:
+            def caseload_badge(c, vacant):
+                if vacant:
+                    return f'<span style="color:white;background:#d9534f;padding:2px 8px;border-radius:8px;">{c}</span>'
+                if any(x in c for x in ["FVI", "Highprofile", "SPANISH", "INC", "RE"]):
+                    return f'<span style="color:white;background:#f0ad4e;padding:2px 8px;border-radius:8px;">{c}</span>'
+                return f'<span style="color:#333;background:#5bc0de;padding:2px 8px;border-radius:8px;">{c}</span>'
+            caseload_html = "".join([f'<tr><td>{row["Unit"]}</td><td>{row["Assignee"]}</td><td>{caseload_badge(row["Caseload"], row["Vacant"])}<td></tr>' for _, row in caseload_df.iterrows()])
+            st.markdown(f'<table><tr><th>Unit</th><th>Assignee</th><th>Caseload</th></tr>{caseload_html}</table>', unsafe_allow_html=True)
+        else:
+            st.info("No caseload assignments found.")
+
+    # --- Team Performance Tab ---
     with dir_tab3:
-        st.subheader("📊 Team Performance Analytics")
-        
-        # Performance metrics
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Team Avg Completion", "60%", "+5%")
-        with col2:
-            st.metric("Team Avg Quality", "96%", "+1%")
-        with col3:
-            st.metric("Team Efficiency", "1.9 hrs/report", "-0.2 hrs")
-        
-        # Worker comparison
-        st.write("**Individual Performance**")
-        for idx, worker in enumerate(workers_data['Worker Name']):
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.write(f"**{worker}**")
-            with col2:
-                st.progress(int(workers_data['Completion %'].iloc[idx].rstrip('%')) / 100)
-            with col3:
-                st.metric("Completed", workers_data['Completed'].iloc[idx])
-            with col4:
-                st.metric("Avg Time", workers_data['Avg Time/Report'].iloc[idx])
-            st.divider()
+        st.subheader("Team Performance & Escalations")
+        # Simulate overdue/escalation for demo
+        import random
+        overdue = random.sample(list(caseload_df['Caseload']), min(5, len(caseload_df))) if not caseload_df.empty else []
+        st.markdown(f"<b>Overdue Caseloads:</b> " + ", ".join([f'<span style=\"color:white;background:#d9534f;padding:2px 8px;border-radius:8px;\">{c}</span>' for c in overdue]), unsafe_allow_html=True)
+        st.markdown(f"<b>Escalation Alerts:</b> " + ", ".join([f'<span style=\"color:white;background:#f0ad4e;padding:2px 8px;border-radius:8px;\">{c}</span>' for c in overdue[:2]]), unsafe_allow_html=True)
+        st.info("Escalations and overdue items are simulated for demo. Real logic would use due dates and workflow status.")
 
 elif role == "Program Officer":
     st.markdown('<div class="header-title">📋 Report Intake Portal</div>', unsafe_allow_html=True)
