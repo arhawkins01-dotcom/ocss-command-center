@@ -581,44 +581,44 @@ elif role == "Support Officer":
 
     # Tab Navigation (add 56RA Processing tab)
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📊 Caseload Dashboard", "📝 My Assigned Reports", "🆘 Support Tickets", "📚 Knowledge Base", "📑 56RA Processing", "📑 Locate Report Processing", "📑 Paternity-Support Processing"])
-    # TAB 7: Paternity-Support Report Processing
+    # TAB 7: Paternity-Support Report Processing (Spreadsheet View)
     with tab7:
-        st.subheader("📑 Paternity-Support (P-S) Report Processing")
-        st.caption("Process each case according to Paternity-Support Work List instructions. Only Supervisors/PO3 can close cases or email completed spreadsheets.")
+        st.subheader("📑 Paternity-Support (P-S) Report Processing (Spreadsheet View)")
+        st.caption("Edit cases directly in the table below. Only Supervisors/PO3 can close cases or email completed spreadsheets.")
 
-        # Example: Replace with real data source as needed
-        ps_cases = [
-            {"Case ID": "PS-001", "Status": "Pending-GTU", "NCP": "Jordan Miles", "CP": "Taylor Brooks"},
-            {"Case ID": "PS-002", "Status": "Order Already Established", "NCP": "Morgan Lee", "CP": "Chris Fox"},
-            {"Case ID": "PS-003", "Status": "NCP Unlocatable", "NCP": "Alex Kim", "CP": "Jamie Ray"},
-        ]
+        if 'ps_cases' not in st.session_state:
+            st.session_state['ps_cases'] = [
+                {"Case ID": "PS-001", "NCP Name": "Jordan Miles", "CP Name": "Taylor Brooks", "Status of Case": "Pending-GTU", "Date Action Taken": datetime.now().date(), "Action Taken": "GT", "Order Already Established": False, "Case Already Closed": False, "Valid NCP Address": False, "ILSU Cleared": False, "Contact Attempted": False, "Comment": "", "Narration": "", "Next Steps/Follow Up": ""},
+                {"Case ID": "PS-002", "NCP Name": "Morgan Lee", "CP Name": "Chris Fox", "Status of Case": "Order Already Established", "Date Action Taken": datetime.now().date(), "Action Taken": "Order Already Established", "Order Already Established": True, "Case Already Closed": False, "Valid NCP Address": True, "ILSU Cleared": True, "Contact Attempted": True, "Comment": "", "Narration": "", "Next Steps/Follow Up": ""},
+                {"Case ID": "PS-003", "NCP Name": "Alex Kim", "CP Name": "Jamie Ray", "Status of Case": "NCP Unlocatable", "Date Action Taken": datetime.now().date(), "Action Taken": "NCP UNLOCATABLE", "Order Already Established": False, "Case Already Closed": False, "Valid NCP Address": False, "ILSU Cleared": False, "Contact Attempted": False, "Comment": "", "Narration": "", "Next Steps/Follow Up": ""},
+            ]
+        ps_cases = st.session_state['ps_cases']
         PS_ACTIONS = [
             "GT", "ADS", "COURT REFERRAL", "CONTACT LETTER", "POSTAL", "CLOSED CASE", "NCP UNLOCATABLE",
             "PENDING-GTU", "PENDING-AHU", "PENDING-COURT", "Order Already Established", "Case Already Closed", "OTHER"
         ]
-        for case in ps_cases:
-            with st.expander(f"Case {case['Case ID']} - {case['Status']}"):
-                action = st.selectbox("Action Taken", PS_ACTIONS, key=f"ps_action_{case['Case ID']}")
-                date_action = st.date_input("Date Action Taken", value=datetime.now(), key=f"ps_date_{case['Case ID']}")
-                order_established = st.checkbox("Order Already Established", key=f"ps_order_{case['Case ID']}")
-                already_closed = st.checkbox("Case Already Closed", key=f"ps_closed_{case['Case ID']}")
-                address_valid = st.checkbox("Valid NCP Address", key=f"ps_addr_{case['Case ID']}")
-                ilsu_cleared = st.checkbox("Cleared ILSU", key=f"ps_ilsu_{case['Case ID']}")
-                contact_attempted = st.checkbox("Attempted Contact with Client", key=f"ps_contact_{case['Case ID']}")
-                comment = st.text_area("Comments", key=f"ps_comment_{case['Case ID']}")
-                # Narration template
-                narration_default = f"P-S Report: {case['Status']}. Action Taken: {action}. {comment}"
-                narration = st.text_area(
-                    "Narration (auto or manual)",
-                    value=narration_default,
-                    key=f"ps_narration_{case['Case ID']}"
-                )
-                # Only allow closing if Supervisor/PO3 (simulate with acting_so)
-                can_close = acting_so in [u.get('supervisor') for u in st.session_state.units.values()] or acting_so.endswith('PO3')
-                if action == "CLOSED CASE" and not can_close:
+        ps_df = pd.DataFrame(ps_cases)
+        for idx, row in ps_df.iterrows():
+            with st.expander(f"Case {row['Case ID']} - {row['Status of Case']}"):
+                ps_cases[idx]["NCP Name"] = st.text_input("NCP Name", value=row["NCP Name"], key=f"ps_ncp_{idx}")
+                ps_cases[idx]["CP Name"] = st.text_input("CP Name", value=row["CP Name"], key=f"ps_cp_{idx}")
+                ps_cases[idx]["Status of Case"] = st.text_input("Status of Case", value=row["Status of Case"], key=f"ps_status_{idx}")
+                ps_cases[idx]["Date Action Taken"] = st.date_input("Date Action Taken", value=row["Date Action Taken"], key=f"ps_date_{idx}")
+                ps_cases[idx]["Action Taken"] = st.selectbox("Action Taken", PS_ACTIONS, index=PS_ACTIONS.index(row["Action Taken"]) if row["Action Taken"] in PS_ACTIONS else 0, key=f"ps_action_{idx}")
+                ps_cases[idx]["Order Already Established"] = st.checkbox("Order Already Established", value=row["Order Already Established"], key=f"ps_order_{idx}")
+                ps_cases[idx]["Case Already Closed"] = st.checkbox("Case Already Closed", value=row["Case Already Closed"], key=f"ps_closed_{idx}")
+                ps_cases[idx]["Valid NCP Address"] = st.checkbox("Valid NCP Address", value=row["Valid NCP Address"], key=f"ps_addr_{idx}")
+                ps_cases[idx]["ILSU Cleared"] = st.checkbox("ILSU Cleared", value=row["ILSU Cleared"], key=f"ps_ilsu_{idx}")
+                ps_cases[idx]["Contact Attempted"] = st.checkbox("Contact Attempted", value=row["Contact Attempted"], key=f"ps_contact_{idx}")
+                ps_cases[idx]["Comment"] = st.text_area("Comments", value=row["Comment"], key=f"ps_comment_{idx}")
+                ps_cases[idx]["Next Steps/Follow Up"] = st.text_area("Next Steps/Follow Up", value=row["Next Steps/Follow Up"], key=f"ps_next_{idx}")
+                narration_default = f"P-S Report: {row['Status of Case']}. Action Taken: {row['Action Taken']}. {row['Comment']}"
+                ps_cases[idx]["Narration"] = st.text_area("Narration (auto/manual)", value=row["Narration"] or narration_default, key=f"ps_narration_{idx}")
+                can_close = acting_so in [u.get('supervisor') for u in st.session_state.units.values()] or (acting_so and acting_so.endswith('PO3'))
+                if ps_cases[idx]["Action Taken"] == "CLOSED CASE" and not can_close:
                     st.warning("Only Supervisors or Establishment PO3 can close cases.")
-                if st.button("💾 Save/Submit", key=f"ps_submit_{case['Case ID']}"):
-                    st.success(f"Case {case['Case ID']} updated.")
+                if st.button("💾 Save/Submit", key=f"ps_submit_{idx}"):
+                    st.success(f"Case {row['Case ID']} updated.")
         st.info("When finished, only Supervisors/PO3 can email the completed spreadsheet.")
 
     # ...existing code for tab1, tab2, tab3, tab4...
