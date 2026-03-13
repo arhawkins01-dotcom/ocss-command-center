@@ -145,7 +145,17 @@ st.sidebar.markdown("---")
 
 role = st.sidebar.radio(
     "Select Your Role:",
-    ["Director", "Program Officer", "Supervisor", "Support Officer", "IT Administrator"],
+    [
+        "Director",
+        "Deputy Director",
+        "Senior Admin Officer",
+        "Department Manager",
+        "Team Lead",
+        "Program Officer",
+        "Supervisor",
+        "Support Officer",
+        "IT Administrator"
+    ],
     help="Choose your role to see relevant features"
 )
 
