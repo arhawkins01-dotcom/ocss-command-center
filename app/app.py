@@ -52,6 +52,21 @@ if 'reports_by_caseload' not in st.session_state:
 if 'report_work_logs' not in st.session_state:
     st.session_state.report_work_logs = {}
 
+role = st.sidebar.radio(
+    "Select Your Role:",
+    [
+        "Director",
+        "Deputy Director",
+        "Senior Admin Officer",
+        "Department Manager",
+        "Team Lead / Support Officer",
+        "Program Officer",
+        "Supervisor",
+        "IT Administrator"
+    ],
+    help="Choose your role to see relevant features"
+)
+
 # --- Enhanced Realistic Demo Data for IT Director Demo ---
 if 'units' not in st.session_state:
     st.session_state.units = {
