@@ -243,6 +243,60 @@ if role == "Director":
         staff_html = "".join([f'<tr><td>{s["Unit"]}</td><td>{badge(s["Name"], s["Role"])}<td></tr>' for s in all_staff])
         st.markdown(f'<table><tr><th>Unit</th><th>Staff</th></tr>{staff_html}</table>', unsafe_allow_html=True)
 
+        # Staff Management Controls (Executive/IT roles only)
+        exec_roles = ["Director", "Deputy Director", "Senior Admin Officer", "Department Manager", "IT Administrator"]
+        if role in exec_roles:
+            st.markdown("---")
+            st.subheader("Manage Agency Staff")
+            units = list(st.session_state.units.keys())
+            selected_unit = st.selectbox("Select Unit to Manage", options=units)
+            unit_data = st.session_state.units[selected_unit]
+            # List staff by role
+            st.markdown("**Current Staff:**")
+            for staff_role in ["supervisor", "team_leads", "support_officers"]:
+                if staff_role == "supervisor":
+                    st.write(f"Supervisor: {unit_data['supervisor']}")
+                    new_sup = st.text_input(f"Edit Supervisor for {selected_unit}", value=unit_data['supervisor'], key=f"edit_sup_{selected_unit}")
+                    if st.button(f"Update Supervisor for {selected_unit}", key=f"btn_sup_{selected_unit}"):
+                        st.session_state.units[selected_unit]['supervisor'] = new_sup
+                        st.success("Supervisor updated.")
+                else:
+                    label = "Team Leads" if staff_role == "team_leads" else "Support Officers"
+                    st.write(f"{label}: {', '.join(unit_data[staff_role])}")
+                    new_list = st.text_area(f"Edit {label} (comma separated)", value=", ".join(unit_data[staff_role]), key=f"edit_{staff_role}_{selected_unit}")
+                    if st.button(f"Update {label} for {selected_unit}", key=f"btn_{staff_role}_{selected_unit}"):
+                        st.session_state.units[selected_unit][staff_role] = [x.strip() for x in new_list.split(",") if x.strip()]
+                        st.success(f"{label} updated.")
+            # Add new staff
+            st.markdown("**Add New Staff to Unit**")
+            new_staff_name = st.text_input("Staff Name", key=f"add_staff_name_{selected_unit}")
+            new_staff_role = st.selectbox("Role", options=["Supervisor", "Team Lead", "Support Officer"], key=f"add_staff_role_{selected_unit}")
+            if st.button("Add Staff", key=f"add_staff_btn_{selected_unit}"):
+                if new_staff_name:
+                    if new_staff_role == "Supervisor":
+                        st.session_state.units[selected_unit]['supervisor'] = new_staff_name
+                    elif new_staff_role == "Team Lead":
+                        st.session_state.units[selected_unit]['team_leads'].append(new_staff_name)
+                    else:
+                        st.session_state.units[selected_unit]['support_officers'].append(new_staff_name)
+                    st.success(f"Added {new_staff_role}: {new_staff_name}")
+            # Delete staff
+            st.markdown("**Delete Staff from Unit**")
+            del_staff_name = st.text_input("Staff Name to Delete", key=f"del_staff_name_{selected_unit}")
+            if st.button("Delete Staff", key=f"del_staff_btn_{selected_unit}"):
+                found = False
+                for staff_role in ["team_leads", "support_officers"]:
+                    if del_staff_name in st.session_state.units[selected_unit][staff_role]:
+                        st.session_state.units[selected_unit][staff_role].remove(del_staff_name)
+                        found = True
+                if del_staff_name == st.session_state.units[selected_unit]['supervisor']:
+                    st.session_state.units[selected_unit]['supervisor'] = "VACANT"
+                    found = True
+                if found:
+                    st.success(f"Deleted staff: {del_staff_name}")
+                else:
+                    st.warning("Staff not found in this unit.")
+
     # --- Caseload Management Tab ---
     with dir_tab2:
         st.subheader("All Caseload Assignments")
