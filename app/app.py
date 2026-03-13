@@ -542,8 +542,16 @@ elif role == "Team Lead / Support Officer":
             st.metric("Avg Upload→Start (hrs)", "-", "-")
 
 
-    # Tab Navigation (add universal Help Ticket and Knowledge Base tabs)
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 My Caseload Dashboard", "📝 My Assigned Reports", "🆘 Help Ticket Center", "📚 Knowledge Base"])
+    # Tab Navigation (add universal Help Ticket and Knowledge Base tabs, plus spreadsheet/report processing views)
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+        "📊 My Caseload Dashboard",
+        "📝 My Assigned Reports",
+        "🆘 Help Ticket Center",
+        "📚 Knowledge Base",
+        "📑 56RA Report Processing",
+        "📑 Locate Report Processing",
+        "📑 Paternity-Support (P-S) Report Processing"
+    ])
 
     # Example: Log work on a report (for demo, add a button in My Assigned Reports tab)
     with tab2:
