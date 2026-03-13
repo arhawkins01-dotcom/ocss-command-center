@@ -214,9 +214,24 @@ if role == "Director":
         if not caseload_df.empty:
             chart = caseload_df.groupby('Unit').count()['Caseload']
             st.bar_chart(chart)
-        # Staff table with color badges
+
+    # --- Caseload Management Tab ---
+    with dir_tab2:
+        st.subheader("All Caseload Assignments")
+        if not caseload_df.empty:
+            def caseload_badge(c, vacant):
+                if vacant:
+                    return f'<span style="color:white;background:#d9534f;padding:2px 8px;border-radius:8px;">{c}</span>'
+                if any(x in c for x in ["FVI", "Highprofile", "SPANISH", "INC", "RE"]):
+                    return f'<span style="color:white;background:#f0ad4e;padding:2px 8px;border-radius:8px;">{c}</span>'
+                return f'<span style="color:#333;background:#5bc0de;padding:2px 8px;border-radius:8px;">{c}</span>'
+            caseload_html = "".join([f'<tr><td>{row["Unit"]}</td><td>{row["Assignee"]}</td><td>{caseload_badge(row["Caseload"], row["Vacant"])}<td></tr>' for _, row in caseload_df.iterrows()])
+            st.markdown(f'<table><tr><th>Unit</th><th>Assignee</th><th>Caseload</th></tr>{caseload_html}</table>', unsafe_allow_html=True)
+        else:
+            st.info("No caseload assignments found.")
+
+        # Staff table with color badges (moved here)
         st.subheader("Staff Roster & Status")
-        import streamlit as st
         def badge(name, role):
             if name == 'VACANT':
                 return f'<span style="color:white;background:#d9534f;padding:2px 8px;border-radius:8px;">VACANT</span>'
