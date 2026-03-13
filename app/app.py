@@ -581,7 +581,109 @@ elif role == "Support Officer":
 
     # Tab Navigation (add 56RA Processing tab)
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📊 Caseload Dashboard", "📝 My Assigned Reports", "🆘 Support Tickets", "📚 Knowledge Base", "📑 56RA Processing", "📑 Locate Report Processing", "📑 Paternity-Support Processing"])
-    # TAB 7: Paternity-Support Report Processing (Spreadsheet View)
+    # TAB 3: Help Ticket Center (Support Officer, Director, Supervisor, Program Officer, IT Admin)
+    with tab3:
+        st.subheader("🆘 Help Ticket Center")
+        # Persistent ticket state
+        import json
+        import os
+        TICKET_STATE_PATH = "data/state/ocss_app_state.json"
+        if not os.path.exists("data/state"):
+            os.makedirs("data/state")
+        if os.path.exists(TICKET_STATE_PATH):
+            try:
+                with open(TICKET_STATE_PATH, "r") as f:
+                    ticket_state = json.load(f)
+            except Exception:
+                ticket_state = {"tickets": []}
+        else:
+            ticket_state = {"tickets": []}
+        if "tickets" not in ticket_state:
+            ticket_state["tickets"] = []
+        # Helper: Save state
+        def save_ticket_state():
+            with open(TICKET_STATE_PATH, "w") as f:
+                json.dump(ticket_state, f, indent=2, default=str)
+        # Ticket submission form
+        st.markdown("#### Submit a Help Ticket")
+        with st.form("submit_ticket_form"):
+            submitter = st.text_input("Your Name", value=st.session_state.get('last_acting_so', ''))
+            establishment = st.text_input("Establishment")
+            priority = st.selectbox("Priority", ["Low", "Medium", "High"])
+            category = st.selectbox("Issue Category", ["Upload Problem", "Authentication", "Validation", "Performance", "Other"])
+            description = st.text_area("Describe the issue")
+            submitted = st.form_submit_button("Submit Help Ticket")
+            if submitted and submitter and description:
+                ticket_id = f"TKT-{len(ticket_state['tickets'])+1:04d}"
+                suggested_resolution = "Check Knowledge Base for common issues. IT will review and update status."
+                # Auto-assign to IT Admin if exists
+                assigned_to = "IT Administrator" if role != "IT Administrator" else submitter
+                ticket = {
+                    "id": ticket_id,
+                    "submitter": submitter,
+                    "establishment": establishment,
+                    "priority": priority,
+                    "category": category,
+                    "description": description,
+                    "status": "Assigned" if assigned_to else "Open",
+                    "assigned_to": assigned_to,
+                    "suggested_resolution": suggested_resolution,
+                    "comments": [],
+                    "activity_log": [
+                        {"action": "Submitted", "by": submitter, "timestamp": str(datetime.now())}
+                    ]
+                }
+                ticket_state["tickets"].append(ticket)
+                save_ticket_state()
+                st.success(f"Ticket {ticket_id} submitted and assigned to {assigned_to}.")
+                st.session_state["last_acting_so"] = submitter
+        st.divider()
+        # Ticket list and actions
+        st.markdown("#### My Tickets")
+        my_tickets = [t for t in ticket_state["tickets"] if t["submitter"] == st.session_state.get('last_acting_so', '') or role == "IT Administrator"]
+        if not my_tickets:
+            st.info("No tickets found for you.")
+        else:
+            for t in my_tickets[::-1]:
+                with st.expander(f"[{t['status']}] {t['id']} — {t['category']} ({t['priority']})"):
+                    st.write(f"**Establishment:** {t['establishment']}")
+                    st.write(f"**Description:** {t['description']}")
+                    st.write(f"**Assigned To:** {t['assigned_to']}")
+                    st.write(f"**Suggested Resolution:** {t['suggested_resolution']}")
+                    st.write(f"**Activity Log:**")
+                    for log in t["activity_log"]:
+                        st.caption(f"- {log['timestamp']}: {log['action']} by {log['by']}")
+                    st.write("**Comments:**")
+                    for c in t["comments"]:
+                        st.info(f"{c['by']}: {c['text']}")
+                    # Add comment
+                    with st.form(f"add_comment_{t['id']}"):
+                        comment_text = st.text_input("Add Comment", key=f"comment_{t['id']}")
+                        comment_submit = st.form_submit_button("Add")
+                        if comment_submit and comment_text:
+                            t["comments"].append({"by": st.session_state.get('last_acting_so', ''), "text": comment_text, "timestamp": str(datetime.now())})
+                            t["activity_log"].append({"action": "Comment Added", "by": st.session_state.get('last_acting_so', ''), "timestamp": str(datetime.now())})
+                            save_ticket_state()
+                            st.success("Comment added.")
+                    # IT/Admin actions
+                    if role == "IT Administrator":
+                        st.markdown("---")
+                        st.markdown("#### IT Actions")
+                        new_status = st.selectbox("Update Status", ["Assigned", "In Progress", "Waiting on Submitter", "Resolved", "Closed"], index=["Assigned", "In Progress", "Waiting on Submitter", "Resolved", "Closed"].index(t["status"]))
+                        new_assigned = st.text_input("Assigned To", value=t["assigned_to"])
+                        resolution = st.text_area("Resolution", value=t.get("resolution", ""))
+                        verify = st.checkbox("IT Verified", value=t.get("it_verified", False))
+                        if st.button(f"Update Ticket {t['id']}"):
+                            t["status"] = new_status
+                            t["assigned_to"] = new_assigned
+                            t["resolution"] = resolution
+                            t["it_verified"] = verify
+                            t["activity_log"].append({"action": f"Status changed to {new_status}", "by": "IT Administrator", "timestamp": str(datetime.now())})
+                            if new_status in ["Resolved", "Closed"] and not resolution:
+                                st.warning("Resolution required for Resolved/Closed.")
+                            else:
+                                save_ticket_state()
+                                st.success("Ticket updated.")
     with tab7:
         st.subheader("📑 Paternity-Support (P-S) Report Processing (Spreadsheet View)")
         st.caption("Edit cases directly in the table below. Only Supervisors/PO3 can close cases or email completed spreadsheets.")
@@ -617,7 +719,7 @@ elif role == "Support Officer":
                 can_close = acting_so in [u.get('supervisor') for u in st.session_state.units.values()] or (acting_so and acting_so.endswith('PO3'))
                 if ps_cases[idx]["Action Taken"] == "CLOSED CASE" and not can_close:
                     st.warning("Only Supervisors or Establishment PO3 can close cases.")
-                if st.button("💾 Save/Submit", key=f"ps_submit_{idx}"):
+                if st.button("💾 Save Progress", key=f"ps_submit_{idx}"):
                     st.success(f"Case {row['Case ID']} updated.")
         st.info("When finished, only Supervisors/PO3 can email the completed spreadsheet.")
 
@@ -652,7 +754,7 @@ elif role == "Support Officer":
                 can_close = acting_so in [u.get('supervisor') for u in st.session_state.units.values()] or (acting_so and acting_so.endswith('PO3'))
                 if ra_cases[idx]["Action Taken/Status"] == "Closed Case" and not can_close:
                     st.warning("Only Supervisors or Establishment PO3 can close cases.")
-                if st.button("💾 Save/Submit", key=f"ra_submit_{idx}"):
+                if st.button("💾 Save Progress", key=f"ra_submit_{idx}"):
                     st.success(f"Case {row['Case ID']} updated.")
         st.info("When finished, only Supervisors/PO3 can email the completed spreadsheet.")
 
@@ -690,7 +792,7 @@ elif role == "Support Officer":
                 can_close = acting_so in [u.get('supervisor') for u in st.session_state.units.values()] or (acting_so and acting_so.endswith('PO3'))
                 if locate_cases[idx]["Action Taken/Status"] in ["Closed UNL", "Closed NAS"] and not can_close:
                     st.warning("Only Supervisors or Establishment PO3 can close cases.")
-                if st.button("💾 Save/Submit", key=f"locate_submit_{idx}"):
+                if st.button("💾 Save Progress", key=f"locate_submit_{idx}"):
                     st.success(f"Case {row['Case ID']} updated.")
         st.info("When finished, only Supervisors/PO3 can email the completed spreadsheet.")
 
