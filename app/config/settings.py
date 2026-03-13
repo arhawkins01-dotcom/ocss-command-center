@@ -107,6 +107,10 @@ DEFAULT_CASELOADS = {
 # Role Configuration
 AVAILABLE_ROLES = [
     "Director",
+    "Deputy Director",
+    "Senior Admin Officer",
+    "Department Manager",
+    "Team Lead",
     "Program Officer",
     "Supervisor",
     "Support Officer",
