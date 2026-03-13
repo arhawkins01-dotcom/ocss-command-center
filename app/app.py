@@ -537,7 +537,7 @@ elif role == "Supervisor":
                 st.markdown(f"**Support Officers:** {', '.join(unit.get('support_officers', []))}")
 
                 # Build team overview
-                team_list = unit.get('support_officers', []) + unit.get('team_leads', [])
+                team_list = [unit.get('supervisor')] + unit.get('team_leads', []) + unit.get('support_officers', [])
                 if team_list:
                     team_workers = pd.DataFrame({
                         'Worker Name': team_list,
@@ -546,15 +546,19 @@ elif role == "Supervisor":
                     })
                     st.dataframe(team_workers, use_container_width=True)
 
-                    # Reassign Reports (within unit)
+                    # Reassign Reports (within unit, supervisor can reassign any caseload)
                     st.subheader("📋 Reassign Reports Within Unit")
+                    all_caseloads = []
+                    for w, clist in unit.get('assignments', {}).items():
+                        for c in clist:
+                            all_caseloads.append({'worker': w, 'caseload': c})
                     col1, col2, col3 = st.columns(3)
                     with col1:
-                        from_worker = st.selectbox("From Worker", team_list, key="from_worker_unit")
+                        from_worker = st.selectbox("From Worker", [x['worker'] for x in all_caseloads], key="from_worker_unit")
                     with col2:
                         to_worker = st.selectbox("To Worker", team_list, key="to_worker_unit")
                     with col3:
-                        caseload_choice = st.selectbox("Caseload to move", options=sum([unit.get('assignments', {}).get(w, []) for w in team_list], []), key="caseload_move")
+                        caseload_choice = st.selectbox("Caseload to move", options=[x['caseload'] for x in all_caseloads if x['worker'] == from_worker], key="caseload_move")
 
                     if st.button("🔄 Move Caseload", key="move_caseload_unit"):
                         # perform move
