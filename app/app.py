@@ -83,144 +83,144 @@ if 'units' not in st.session_state:
             'assignments': {
                 'Robin L. Patterson': ['181200'],
                 'VACANT': ['181201', '181202'],
-                'April Jeter': ['181204'],
-                'Karen McRowe': ['181205'],
-                'Tamika Joseph-McManus': ['181208'],
-                'Awilda Martinez': ['181209', '181212 SPANISH'],
-                'Richard Fletcher': ['181213'],
-                'Natalie Spatafore': ['181214']
-            }
-        },
-        'Establishment Unit #17': {
-            'supervisor': 'Jeanne Sua',
-            'team_leads': ['Kristine DeSouza', 'L. Arlene Gonzalez'],
-            'support_officers': ['VACANT', 'Patricia Bennett', 'Cecelia Durham', 'VACANT', 'Mayra Berrios', 'Hannah Maynard'],
-            'assignments': {
-                'Jeanne Sua': ['181300', '189001', '189010'],
-                'Kristine DeSouza': ['181301', '189002-INC'],
-                'VACANT': ['181302', '189008-INC'],
-                'Patricia Bennett': ['181303', '189003-INC'],
-                'Cecelia Durham': ['181304', '189006-INC'],
-                'Mayra Berrios': ['181306', '189004-INC'],
-                'L. Arlene Gonzalez': ['181307', '189005-INC'],
-                'Hannah Maynard': ['181308', '189007-INC']
-            }
-        },
-        'New Order Unit #22': {
-            'supervisor': 'James Brown',
-            'team_leads': ['Nadia Ahmetovic'],
-            'support_officers': ['Latonya Grays-Martin', 'Michelle Fogler', 'Tracy Wilson', 'William Wedmedyk'],
-            'assignments': {
-                'James Brown': ['189020-RE'],
-                'Nadia Ahmetovic': ['182001', '189021-RE'],
-                'Latonya Grays-Martin': ['182002', '189022'],
-                'Michelle Fogler': ['182003', '189023'],
-                'Tracy Wilson': ['182004', '189024'],
-                'William Wedmedyk': ['182005', '189025']
-            }
-        },
-        'Front Desk Unit #8': {
-            'supervisor': 'James Brown',
-            'team_leads': ['Reginald Davis'],
-            'support_officers': ['Pamela Alexander', 'Danielle Deberry', 'Aleesha Anderson'],
-            'assignments': {
-                'James Brown': ['189020-RE'],
-                'Pamela Alexander': ['189026'],
-                'Danielle Deberry': ['189028'],
-                'Aleesha Anderson': ['189027']
-            }
-        },
-        'Genetic Testing Unit #22': {
-            'supervisor': 'Silas Ungar',
-            'team_leads': ['Laurie Tomlinson'],
-            'support_officers': ['Aleia Lawson', 'Natasha Johnson', 'Tiffany Johnson'],
-            'assignments': {}
-        },
-        'Interface Unit #23': {
-            'supervisor': 'Giselle Torres',
-            'team_leads': ['Quiana Harville', 'Enid Williams'],
-            'support_officers': ['Sierra Carter', 'Chandara Dodson', 'Avonna Handsome', 'Taylor Andrews'],
-            'assignments': {}
-        }
-    }
-# Sidebar - Role Selection
-st.sidebar.title("🎯 OCSS Command Center")
-st.sidebar.markdown("---")
 
-role = st.sidebar.radio(
-    "Select Your Role:",
-    [
-        "Director",
-        "Deputy Director",
-        "Senior Admin Officer",
-        "Department Manager",
-        "Team Lead / Support Officer",
-        "Program Officer",
-        "Supervisor",
-        "IT Administrator"
-    ],
-    help="Choose your role to see relevant features"
-)
+                # Main content area
+                if role in ["Director", "Deputy Director", "Senior Admin Officer", "Department Manager"]:
+                    st.markdown(f'<div class="header-title">📈 {role} Dashboard</div>', unsafe_allow_html=True)
+                    st.markdown("**Strategy & Oversight**")
 
-st.sidebar.markdown("---")
-st.sidebar.markdown("""
-### Quick Stats
-- **Establishments**: 45
-- **Reports Pending**: 12
-- **Reports Completed**: 389
-- **Last Update**: Today
-""")
+                    # Tabs for Executive Roles
+                    exec_tab1, exec_tab2, exec_tab3 = st.tabs(["📊 KPIs & Metrics", "👥 Caseload Management", "📋 Team Performance"])
 
-# Main content area
-if role == "Director":
-    st.markdown('<div class="header-title">📈 Executive Dashboard</div>', unsafe_allow_html=True)
-    st.markdown("**Strategy & Oversight**")
-    
+                    # --- KPIs & Metrics Tab ---
+                    with exec_tab1:
+                        # Compute summary stats from all units
+                        all_units = st.session_state.units
+                        all_staff = []
+                        all_caseloads = []
+                        vacant_count = 0
+                        for unit, udata in all_units.items():
+                            for role, names in [('Supervisor', [udata['supervisor']]), ('Team Lead', udata['team_leads']), ('Support Officer', udata['support_officers'])]:
+                                for n in names:
+                                    if n == 'VACANT':
+                                        vacant_count += 1
+                                    all_staff.append({'Unit': unit, 'Name': n, 'Role': role})
+                            for assignee, caseloads in udata['assignments'].items():
+                                for c in caseloads:
+                                    all_caseloads.append({'Unit': unit, 'Assignee': assignee, 'Caseload': c, 'Vacant': (assignee == 'VACANT')})
+                        total_staff = len([s for s in all_staff if s['Name'] != 'VACANT'])
+                        total_caseloads = len(all_caseloads)
+                        vacant_caseloads = sum(1 for c in all_caseloads if c['Vacant'])
+                        # Summary cards
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            st.metric("Total Staff", total_staff)
+                        with col2:
+                            st.metric("Total Caseloads", total_caseloads)
+                        with col3:
+                            st.metric("Vacant Positions", vacant_count)
+                        with col4:
+                            st.metric("Vacant Caseloads", vacant_caseloads)
+                        st.markdown("---")
+                        # Caseload distribution chart
+                        st.subheader("Caseload Distribution by Unit")
+                        import pandas as pd
+                        caseload_df = pd.DataFrame(all_caseloads)
+                        if not caseload_df.empty:
+                            chart = caseload_df.groupby('Unit').count()['Caseload']
+                            st.bar_chart(chart)
 
-    # Tabs for Director
-    dir_tab1, dir_tab2, dir_tab3 = st.tabs(["📊 KPIs & Metrics", "👥 Caseload Management", "📋 Team Performance"])
+                    # --- Caseload Management Tab ---
+                    with exec_tab2:
+                        st.subheader("All Caseload Assignments")
+                        if not caseload_df.empty:
+                            def caseload_badge(c, vacant):
+                                if vacant:
+                                    return f'<span style="color:white;background:#d9534f;padding:2px 8px;border-radius:8px;">{c}</span>'
+                                if any(x in c for x in ["FVI", "Highprofile", "SPANISH", "INC", "RE"]):
+                                    return f'<span style="color:white;background:#f0ad4e;padding:2px 8px;border-radius:8px;">{c}</span>'
+                                return f'<span style="color:#333;background:#5bc0de;padding:2px 8px;border-radius:8px;">{c}</span>'
+                            caseload_html = "".join([f'<tr><td>{row["Unit"]}</td><td>{row["Assignee"]}</td><td>{caseload_badge(row["Caseload"], row["Vacant"])}<td></tr>' for _, row in caseload_df.iterrows()])
+                            st.markdown(f'<table><tr><th>Unit</th><th>Assignee</th><th>Caseload</th></tr>{caseload_html}</table>', unsafe_allow_html=True)
+                        else:
+                            st.info("No caseload assignments found.")
 
-    # --- KPIs & Metrics Tab ---
-    with dir_tab1:
-        # Compute summary stats from all units
-        all_units = st.session_state.units
-        all_staff = []
-        all_caseloads = []
-        vacant_count = 0
-        for unit, udata in all_units.items():
-            for role, names in [('Supervisor', [udata['supervisor']]), ('Team Lead', udata['team_leads']), ('Support Officer', udata['support_officers'])]:
-                for n in names:
-                    if n == 'VACANT':
-                        vacant_count += 1
-                    all_staff.append({'Unit': unit, 'Name': n, 'Role': role})
-            for assignee, caseloads in udata['assignments'].items():
-                for c in caseloads:
-                    all_caseloads.append({'Unit': unit, 'Assignee': assignee, 'Caseload': c, 'Vacant': (assignee == 'VACANT')})
-        total_staff = len([s for s in all_staff if s['Name'] != 'VACANT'])
-        total_caseloads = len(all_caseloads)
-        vacant_caseloads = sum(1 for c in all_caseloads if c['Vacant'])
-        # Summary cards
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Total Staff", total_staff)
-        with col2:
-            st.metric("Total Caseloads", total_caseloads)
-        with col3:
-            st.metric("Vacant Positions", vacant_count)
-        with col4:
-            st.metric("Vacant Caseloads", vacant_caseloads)
-        st.markdown("---")
-        # Caseload distribution chart
-        st.subheader("Caseload Distribution by Unit")
-        import pandas as pd
-        caseload_df = pd.DataFrame(all_caseloads)
-        if not caseload_df.empty:
-            chart = caseload_df.groupby('Unit').count()['Caseload']
-            st.bar_chart(chart)
+                        # Staff table with color badges (moved here)
+                        st.subheader("Staff Roster & Status")
+                        def badge(name, role):
+                            if name == 'VACANT':
+                                return f'<span style="color:white;background:#d9534f;padding:2px 8px;border-radius:8px;">VACANT</span>'
+                            if "Lead" in role:
+                                return f'<span style="color:white;background:#5bc0de;padding:2px 8px;border-radius:8px;">{name} ({role})</span>'
+                            if role == "Supervisor":
+                                return f'<span style="color:white;background:#5cb85c;padding:2px 8px;border-radius:8px;">{name} (Supervisor)</span>'
+                            return f'<span style="color:#333;background:#f7ecb5;padding:2px 8px;border-radius:8px;">{name} ({role})</span>'
+                        staff_html = "".join([f'<tr><td>{s["Unit"]}</td><td>{badge(s["Name"], s["Role"])}<td></tr>' for s in all_staff])
+                        st.markdown(f'<table><tr><th>Unit</th><th>Staff</th></tr>{staff_html}</table>', unsafe_allow_html=True)
 
-    # --- Caseload Management Tab ---
-    with dir_tab2:
-        st.subheader("All Caseload Assignments")
+                        # Staff Management Controls (Executive/IT roles only)
+                        exec_roles = ["Director", "Deputy Director", "Senior Admin Officer", "Department Manager", "IT Administrator"]
+                        if role in exec_roles:
+                            st.markdown("---")
+                            st.subheader("Manage Agency Staff")
+                            units = list(st.session_state.units.keys())
+                            selected_unit = st.selectbox("Select Unit to Manage", options=units)
+                            unit_data = st.session_state.units[selected_unit]
+                            # List staff by role
+                            st.markdown("**Current Staff:**")
+                            for staff_role in ["supervisor", "team_leads", "support_officers"]:
+                                if staff_role == "supervisor":
+                                    st.write(f"Supervisor: {unit_data['supervisor']}")
+                                    new_sup = st.text_input(f"Edit Supervisor for {selected_unit}", value=unit_data['supervisor'], key=f"edit_sup_{selected_unit}")
+                                    if st.button(f"Update Supervisor for {selected_unit}", key=f"btn_sup_{selected_unit}"):
+                                        st.session_state.units[selected_unit]['supervisor'] = new_sup
+                                        st.success("Supervisor updated.")
+                                else:
+                                    label = "Team Leads" if staff_role == "team_leads" else "Support Officers"
+                                    st.write(f"{label}: {', '.join(unit_data[staff_role])}")
+                                    new_list = st.text_area(f"Edit {label} (comma separated)", value=", ".join(unit_data[staff_role]), key=f"edit_{staff_role}_{selected_unit}")
+                                    if st.button(f"Update {label} for {selected_unit}", key=f"btn_{staff_role}_{selected_unit}"):
+                                        st.session_state.units[selected_unit][staff_role] = [x.strip() for x in new_list.split(",") if x.strip()]
+                                        st.success(f"{label} updated.")
+                            # Add new staff
+                            st.markdown("**Add New Staff to Unit**")
+                            new_staff_name = st.text_input("Staff Name", key=f"add_staff_name_{selected_unit}")
+                            new_staff_role = st.selectbox("Role", options=["Supervisor", "Team Lead", "Support Officer"], key=f"add_staff_role_{selected_unit}")
+                            if st.button("Add Staff", key=f"add_staff_btn_{selected_unit}"):
+                                if new_staff_name:
+                                    if new_staff_role == "Supervisor":
+                                        st.session_state.units[selected_unit]['supervisor'] = new_staff_name
+                                    elif new_staff_role == "Team Lead":
+                                        st.session_state.units[selected_unit]['team_leads'].append(new_staff_name)
+                                    else:
+                                        st.session_state.units[selected_unit]['support_officers'].append(new_staff_name)
+                                    st.success(f"Added {new_staff_role}: {new_staff_name}")
+                            # Delete staff
+                            st.markdown("**Delete Staff from Unit**")
+                            del_staff_name = st.text_input("Staff Name to Delete", key=f"del_staff_name_{selected_unit}")
+                            if st.button("Delete Staff", key=f"del_staff_btn_{selected_unit}"):
+                                found = False
+                                for staff_role in ["team_leads", "support_officers"]:
+                                    if del_staff_name in st.session_state.units[selected_unit][staff_role]:
+                                        st.session_state.units[selected_unit][staff_role].remove(del_staff_name)
+                                        found = True
+                                if del_staff_name == st.session_state.units[selected_unit]['supervisor']:
+                                    st.session_state.units[selected_unit]['supervisor'] = "VACANT"
+                                    found = True
+                                if found:
+                                    st.success(f"Deleted staff: {del_staff_name}")
+                                else:
+                                    st.warning("Staff not found in this unit.")
+
+                    # --- Team Performance Tab ---
+                    with exec_tab3:
+                        st.subheader("Team Performance & Escalations")
+                        # Simulate overdue/escalation for demo
+                        import random
+                        overdue = random.sample(list(caseload_df['Caseload']), min(5, len(caseload_df))) if not caseload_df.empty else []
+                        st.markdown(f"<b>Overdue Caseloads:</b> " + ", ".join([f'<span style=\"color:white;background:#d9534f;padding:2px 8px;border-radius:8px;\">{c}</span>' for c in overdue]), unsafe_allow_html=True)
+                        st.markdown(f"<b>Escalation Alerts:</b> " + ", ".join([f'<span style=\"color:white;background:#f0ad4e;padding:2px 8px;border-radius:8px;\">{c}</span>' for c in overdue[:2]]), unsafe_allow_html=True)
+                        st.info("Escalations and overdue items are simulated for demo. Real logic would use due dates and workflow status.")
         if not caseload_df.empty:
             def caseload_badge(c, vacant):
                 if vacant:
