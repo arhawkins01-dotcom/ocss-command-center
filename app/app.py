@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -5,6 +6,13 @@ from datetime import datetime, timedelta
 import io
 import os
 import json
+
+# 56RA Report Actions and Statuses
+RA_ACTIONS = [
+    "Scheduled GT", "Pending GTU", "Prepped ADS", "Pending AHU", "Referred to Court",
+    "Pending Court", "Sent Contact Letter", "Sent COBO Letter(s)", "Sent Postal Verification",
+    "Closed Case", "NCP Unlocatable", "Order Already Established", "Case Already Closed", "OTHER"
+]
 
 # Page configuration
 st.set_page_config(
@@ -528,10 +536,11 @@ elif role == "Supervisor":
         else:
             st.info("No team data available — select a supervisor and load the unit first.")
 
+
 elif role == "Support Officer":
     st.markdown('<div class="header-title">📋 Support Officer - Caseload Management</div>', unsafe_allow_html=True)
     st.markdown("**Assigned Reports & Technical Support**")
-    
+
     # Choose which Support Officer you are acting as (since no auth yet)
     all_sos = []
     for unit in st.session_state.units.values():
@@ -570,537 +579,120 @@ elif role == "Support Officer":
         with col4:
             st.metric("Status", "Select yourself to view")
 
-    # Tab Navigation
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Caseload Dashboard", "📝 My Assigned Reports", "🆘 Support Tickets", "📚 Knowledge Base"])
-    
-    # TAB 1: Caseload Report Dashboard
-    with tab1:
-        st.subheader("📊 Process Reports by Caseload")
-        
-        # Caseload data with Excel information
-        caseload_data = {
-            '181000': {
-                'name': 'Downtown Elementary',
-                'reports': [
-                    {'id': 'ENV-181000-001', 'date': '2026-02-18', 'filename': 'ENV_Report_Q1_2026.xlsx', 
-                     'data': {'Total Students': 245, 'Staff': 15, 'Classrooms': 12, 'Completion %': 85, 'Grade Levels': '3-5', 'Assessment Date': '2/15/2026', 'Quality Score': 94}},
-                    {'id': 'ENV-181000-002', 'date': '2026-02-15', 'filename': 'Safety_Audit_Feb.xlsx',
-                     'data': {'Safety Issues': 3, 'Resolved': 2, 'Pending': 1, 'Status': 'In Review', 'Inspector': 'John Smith', 'Review Date': '2/14/2026', 'Next Audit': '3/14/2026'}}
-                ]
-            },
-            '181001': {
-                'name': 'Midtown Middle School',
-                'reports': [
-                    {'id': 'ENV-181001-001', 'date': '2026-02-17', 'filename': 'ENV_Report_Q1_2026.xlsx',
-                     'data': {'Total Students': 520, 'Staff': 35, 'Classrooms': 28, 'Completion %': 92, 'Grade Levels': '6-8', 'Assessment Date': '2/16/2026', 'Quality Score': 96}},
-                    {'id': 'ENV-181001-002', 'date': '2026-02-12', 'filename': 'Compliance_Check.xlsx',
-                     'data': {'Standards Met': 47, 'Outstanding': 2, 'Non-Compliant': 1, 'Score': '94%', 'Reviewer': 'Sarah Johnson', 'Review Date': '2/11/2026', 'Action Items': 2}}
-                ]
-            },
-            '181002': {
-                'name': 'Uptown High School',
-                'reports': [
-                    {'id': 'ENV-181002-001', 'date': '2026-02-19', 'filename': 'ENV_Report_Q1_2026.xlsx',
-                     'data': {'Total Students': 1200, 'Staff': 85, 'Classrooms': 62, 'Completion %': 78, 'Grade Levels': '9-12', 'Assessment Date': '2/17/2026', 'Quality Score': 90}},
-                ]
-            }
-        }
-        
-        # Caseload selection
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            # If acting as a Support Officer, limit caseloads to assigned ones
-            if 'acting_so' in locals() and acting_so and acting_so != '(Select)':
-                options = []
-                for unit in st.session_state.units.values():
-                    for person, caseloads in unit.get('assignments', {}).items():
-                        if person == acting_so:
-                            options.extend(caseloads)
-                # fallback to all if none assigned
-                if not options:
-                    options = list(caseload_data.keys())
-            else:
-                options = list(caseload_data.keys())
+    # Tab Navigation (add 56RA Processing tab)
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📊 Caseload Dashboard", "📝 My Assigned Reports", "🆘 Support Tickets", "📚 Knowledge Base", "📑 56RA Processing", "📑 Locate Report Processing", "📑 Paternity-Support Processing"])
+    # TAB 7: Paternity-Support Report Processing
+    with tab7:
+        st.subheader("📑 Paternity-Support (P-S) Report Processing")
+        st.caption("Process each case according to Paternity-Support Work List instructions. Only Supervisors/PO3 can close cases or email completed spreadsheets.")
 
-            selected_caseload = st.selectbox(
-                "Select Caseload Number",
-                options,
-                format_func=lambda x: f"{x} - {caseload_data[x]['name']}"
-            )
-        with col2:
-            st.info(f"**Caseload {selected_caseload}**: {caseload_data[selected_caseload]['name']}")
-        
-        st.divider()
-        
-        # Display reports for selected caseload
-        if selected_caseload in caseload_data:
-            caseload_info = caseload_data[selected_caseload]
-            st.subheader(f"📋 Reports for {caseload_info['name']}")
-            st.caption("These reports were uploaded by Program Officer. View details below.")
-            
-            # FIRST: Show uploaded reports from Program Officer session (LIVE DATA)
-            uploaded_reports_list = st.session_state.reports_by_caseload.get(selected_caseload, [])
-            
-            if uploaded_reports_list:
-                st.write("**📤 Recently Uploaded Reports (Live Data):**")
-                for report_idx, report in enumerate(uploaded_reports_list):
-                    with st.expander(f"📄 {report['report_id']} - {report['filename']} ({report['timestamp'].strftime('%m/%d %H:%M')})", expanded=False):
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.metric("Report ID", report['report_id'])
-                        with col2:
-                            st.metric("Status", report['status'])
-                        with col3:
-                            st.metric("Uploaded by", report['uploaded_by'])
-                        
-                        if not report['data'].empty:
-                            st.divider()
-                            st.subheader("📊 Data Preview")
-                            st.dataframe(report['data'], use_container_width=True)
-                            
-                            # Export options
-                            col1, col2, col3 = st.columns(3)
-                            with col1:
-                                csv_export = report['data'].to_csv(index=False)
-                                st.download_button(
-                                    label="📥 Download CSV",
-                                    data=csv_export,
-                                    file_name=f"{report['report_id']}.csv",
-                                    mime="text/csv",
-                                    key=f"download_uploaded_{report['report_id']}"
-                                )
-                            with col2:
-                                if st.button("✅ Approve", key=f"approve_upload_{report['report_id']}"):
-                                    st.success(f"✓ {report['report_id']} approved!")
-                            with col3:
-                                if st.button("📤 Submit", key=f"submit_upload_{report['report_id']}"):
-                                    st.success(f"✓ {report['report_id']} submitted for processing!")
-                
-                st.divider()
-            
-            # THEN: Show sample/demo reports (for reference)
-            st.write("**📑 Sample Reports (Demo Data):**")
-            
-            for report_idx, report in enumerate(caseload_info['reports']):
-                with st.expander(f"📄 {report['id']} - {report['filename']} ({report['date']})", expanded=False):
-                    # Report metadata
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Report ID", report['id'])
-                    with col2:
-                        st.metric("Date", report['date'])
-                    with col3:
-                        st.metric("Status", "Ready")
-                    
-                    st.divider()
-                    
-                    # Editable fields section
-                    st.subheader("📝 Report Data - Editable Fields")
-                    
-                    # Initialize session state for edits if not exists
-                    edit_key = f"report_edits_{report['id']}"
-                    if edit_key not in st.session_state:
-                        st.session_state[edit_key] = report['data'].copy()
-                    
-                    # Create form for editable fields
-                    with st.form(key=f"form_{report['id']}"):
-                        edited_data = {}
-                        
-                        # Display fields in columns for better layout
-                        for field_idx, (key, value) in enumerate(report['data'].items()):
-                            # Determine input type based on value
-                            if isinstance(value, int) and '%' not in str(key):
-                                # Number input for numeric values
-                                edited_data[key] = st.number_input(
-                                    label=f"{key}",
-                                    value=int(st.session_state[edit_key].get(key, value)),
-                                    key=f"input_{report['id']}_{field_idx}"
-                                )
-                            elif isinstance(value, float):
-                                edited_data[key] = st.number_input(
-                                    label=f"{key}",
-                                    value=float(st.session_state[edit_key].get(key, value)),
-                                    format="%.2f",
-                                    key=f"input_{report['id']}_{field_idx}"
-                                )
-                            else:
-                                # Text input for string values
-                                edited_data[key] = st.text_input(
-                                    label=f"{key}",
-                                    value=str(st.session_state[edit_key].get(key, value)),
-                                    key=f"input_{report['id']}_{field_idx}"
-                                )
-                        
-                        st.divider()
-                        
-                        # Form submission
-                        col1, col2 = st.columns([3, 1])
-                        with col2:
-                            submitted = st.form_submit_button("💾 Update Report", use_container_width=True)
-                            if submitted:
-                                st.session_state[edit_key] = edited_data
-                                st.success("✓ Report data updated!")
-                    
-                    st.divider()
-                    
-                    # Display current data summary
-                    st.subheader("📊 Current Values")
-                    summary_df = pd.DataFrame(list(st.session_state[edit_key].items()), columns=['Field', 'Value'])
-                    st.dataframe(summary_df, use_container_width=True, hide_index=True)
-                    
-                    st.divider()
-                    
-                    # Action and Export buttons
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        # Generate CSV from report data
-                        report_csv = pd.DataFrame(list(st.session_state[edit_key].items()), columns=['Field', 'Value']).to_csv(index=False)
-                        st.download_button(
-                            label="📥 Download CSV",
-                            data=report_csv,
-                            file_name=f"{report['id']}.csv",
-                            mime="text/csv",
-                            key=f"download_csv_report_{report['id']}"
-                        )
-                    with col2:
-                        if st.button("✅ Approve", key=f"approve_report_{selected_caseload}_{report_idx}", use_container_width=True):
-                            st.success(f"✓ {report['id']} approved!")
-                    with col3:
-                        if st.button("💾 Save", key=f"save_report_{selected_caseload}_{report_idx}", use_container_width=True):
-                            st.success(f"✓ {report['id']} saved!")
-                    with col4:
-                        if st.button("📤 Submit", key=f"submit_report_{selected_caseload}_{report_idx}", use_container_width=True):
-                            st.success(f"✓ {report['id']} submitted for review!")
-        
-        st.divider()
-        
-        # Summary statistics
-        st.subheader("📊 Caseload Summary")
-        total_reports = sum(len(caseload['reports']) for caseload in caseload_data.values())
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Total Caseloads", len(caseload_data))
-        with col2:
-            st.metric("Total Reports Available", total_reports)
-        with col3:
-            st.metric("Reports in Progress", 3)
-        with col4:
-            st.metric("Status", "Ready")
-    
-    # TAB 2: Assigned Reports by Caseload
-    with tab2:
-        st.subheader("My Caseload - Assigned Reports")
-        
-        # Filter options
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            status_filter = st.multiselect("Status", ["Not Started", "In Progress", "Under Review", "Completed"], 
-                                          default=["Not Started", "In Progress"])
-        with col2:
-            priority_filter = st.multiselect("Priority", ["🔴 High", "🟡 Medium", "🟢 Low"],
-                                            default=["🔴 High", "🟡 Medium"])
-        with col3:
-            sort_by = st.selectbox("Sort By", ["Due Date", "Priority", "Establishment", "Date Added"])
-        
-        # Assigned Reports Table
-        assigned_reports = pd.DataFrame({
-            'Report ID': ['REP-2026-0045', 'REP-2026-0046', 'REP-2026-0047', 'REP-2026-0048', 'REP-2026-0049', 'REP-2026-0050'],
-            'Establishment': ['Lincoln Elementary', 'Grant Middle School', 'Jefferson HS', 'Adams Preschool', 'Madison Elementary', 'Monroe Academy'],
-            'Status': ['Not Started', 'In Progress', 'Under Review', 'Not Started', 'In Progress', 'Completed'],
-            'Priority': ['🔴 High', '🟡 Medium', '🔴 High', '🟢 Low', '🟡 Medium', '✓ Completed'],
-            'Due Date': ['Feb 20', 'Feb 19', 'Feb 22', 'Feb 25', 'Feb 21', 'Feb 18'],
-            'Progress': [0, 65, 85, 0, 40, 100],
-            'Assigned': ['Feb 10', 'Feb 12', 'Feb 11', 'Feb 14', 'Feb 13', 'Feb 15']
-        })
-        
-        # Initialize session state for report editing
-        if 'selected_report' not in st.session_state:
-            st.session_state.selected_report = None
-        if 'report_updates' not in st.session_state:
-            st.session_state.report_updates = {}
-        
-        # Display reports with expandable details
-        for idx, row in assigned_reports.iterrows():
-            with st.expander(f"📋 {row['Establishment']} ({row['Report ID']}) - {row['Status']} - Due: {row['Due Date']}", 
-                            expanded=False):
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.progress(row['Progress'] / 100)
-                    st.caption(f"Progress: {row['Progress']}%")
-                with col2:
-                    st.metric("Priority", row['Priority'])
-                with col3:
-                    st.metric("Assigned", row['Assigned'])
-                
-                st.divider()
-                
-                # Report Processing Form Inside Expander
-                st.markdown(f"### Processing {row['Establishment']}")
-                
-                status_update = st.selectbox(
-                    "Update Status",
-                    ["Not Started", "In Progress", "Under Review", "Completed"],
-                    index=["Not Started", "In Progress", "Under Review", "Completed"].index(row['Status']),
-                    key=f"status_update_{idx}"
-                )
-                
-                # Report Review Form
-                col1, col2 = st.columns(2)
-                with col1:
-                    establishment_name = st.text_input("Establishment Name", value=row['Establishment'], key=f"est_name_{idx}")
-                    report_type = st.selectbox("Report Type", ["Annual", "Quarterly", "Monthly"], key=f"type_{idx}")
-                    report_name = st.text_input("Report Name", value=f"{row['Establishment']} - {row['Report ID']}", key=f"report_name_{idx}", help="Edit the report name/title")
-                with col2:
-                    submitted_by = st.text_input("Submitted By", placeholder="Officer Name", key=f"submitted_{idx}")
-                    submission_date = st.date_input("Submission Date", key=f"subdate_{idx}")
-                    reference_number = st.text_input("Reference/ID", value=row['Report ID'], key=f"ref_num_{idx}")
-                
-                # Data validation
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.checkbox("✓ Required Fields", value=True, key=f"req_fields_{idx}")
-                with col2:
-                    st.checkbox("✓ Format Valid", value=True, key=f"format_{idx}")
-                with col3:
-                    st.checkbox("✓ No Duplicates", value=True, key=f"dup_{idx}")
-                with col4:
-                    st.checkbox("✓ CQI Aligned", value=True, key=f"cqi_{idx}")
-                
-                # Notes and comments
-                notes = st.text_area(
-                    "Processing Notes",
-                    placeholder="Record any issues, observations, or special notes...",
-                    height=80,
-                    key=f"notes_{idx}"
-                )
-                
-                # Action buttons
-                st.divider()
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    if st.button("💾 Save Progress", key=f"save_{idx}", use_container_width=True):
-                        st.success(f"✓ Report '{report_name}' progress saved!")
-                        st.session_state.report_updates[row['Report ID']] = {
-                            'status': status_update,
-                            'establishment': establishment_name,
-                            'report_name': report_name,
-                            'reference_number': reference_number,
-                            'submitted_by': submitted_by,
-                            'notes': notes,
-                            'updated_at': datetime.now()
-                        }
-                with col2:
-                    if st.button("✅ Mark Complete", key=f"complete_{idx}", use_container_width=True):
-                        st.success(f"✓ {row['Establishment']} marked complete!")
-                        st.balloons()
-                with col3:
-                    if st.button("📧 Send for Review", key=f"review_{idx}", use_container_width=True):
-                        st.info(f"✓ Report sent to supervisor for review")
-                with col4:
-                    if st.button("❌ Close", key=f"close_{idx}", use_container_width=True):
-                        st.rerun()
-        
-        # Bulk Actions
-        st.divider()
-        st.subheader("Bulk Actions")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            if st.button("✓ Mark Selected as Complete"):
-                st.success("Selected reports marked as complete")
-        with col2:
-            if st.button("🔄 Reassign Reports"):
-                st.info("Opened reassignment dialog")
-        with col3:
-            if st.button("📊 Export Caseload Report"):
-                st.success("Caseload report downloaded")
-    
-    # TAB 2: Support Tickets
-    with tab2:
-        # Support Metrics
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Open Tickets", "8", "-2")
-        with col2:
-            st.metric("Avg Response Time", "1.2 hrs", "-0.3 hrs")
-        with col3:
-            st.metric("Resolution Rate", "94%", "+3%")
-        with col4:
-            st.metric("User Satisfaction", "4.7/5.0", "+0.2")
-        
-        # Support Tickets
-        st.subheader("Active Support Tickets")
-        tickets = pd.DataFrame({
-            'Ticket ID': ['SUP-2026-001', 'SUP-2026-002', 'SUP-2026-003', 'SUP-2026-004'],
-            'Establishment': ['Lincoln Elementary', 'Grant Middle School', 'Jefferson HS', 'Adams Preschool'],
-            'Issue': [
-                'Excel upload format error',
-                'Login credentials not working',
-                'Report submission timeout',
-                'Data validation failure'
-            ],
-            'Priority': ['🔴 High', '🟡 Medium', '🔴 High', '🟡 Medium'],
-            'Status': ['In Progress', 'Assigned', 'Waiting', 'In Progress']
-        })
-        st.dataframe(tickets, use_container_width=True)
-        
-        # Create new support ticket
-        st.subheader("Open New Support Ticket")
-        col1, col2 = st.columns(2)
-        with col1:
-            establishment = st.selectbox("Select Establishment", 
-                ['Lincoln Elementary', 'Grant Middle School', 'Jefferson HS', 'Adams Preschool', 'Madison Elementary'],
-                key="support_ticket_establishment")
-            priority = st.radio("Priority Level", ["🟢 Low", "🟡 Medium", "🔴 High"], key="support_priority")
-        with col2:
-            issue_type = st.selectbox("Issue Category",
-                ["File Upload", "Authentication", "Data Validation", "Performance", "Technical", "Other"],
-                key="support_issue_type")
-            description = st.text_area("Issue Description", placeholder="Describe the problem...", key="support_description")
-        
-        if st.button("📝 Create Ticket", key="create_support_ticket"):
-            st.success(f"✓ Ticket created for {establishment} - {priority}")
-    
-    # TAB 3: FAQ & Knowledge Base
-    with tab3:
-        st.subheader("📚 Knowledge Base & Troubleshooting")
-        with st.expander("❓ How do I upload a report?"):
-            st.write("""
-            1. Log in with your credentials
-            2. Navigate to the 'Report Intake Portal'
-            3. Click 'Choose an Excel file'
-            4. Select your establishment's report file
-            5. Click 'Process Report'
-            
-            **Accepted formats**: .xls, .xlsx, .csv
-            """)
-        
-        with st.expander("❓ What should I do if my upload fails?"):
-            st.write("""
-            - Check file format (Excel or CSV only)
-            - Verify all required columns are present
-            - Remove any special characters from headers
-            - Check file size (max 10MB)
-            - If issue persists, open a support ticket
-            """)
-        
-        with st.expander("❓ How do I reset my password?"):
-            st.write("""
-            Click 'Forgot Password' on the login screen and follow the email instructions.
-            If you don't receive an email within 5 minutes, contact IT Support.
-            """)
-        
-        with st.expander("❓ What are the system requirements?"):
-            st.write("""
-            - **Browser**: Chrome, Firefox, Safari, Edge (latest version)
-            - **Internet**: Minimum 2 Mbps connection
-            - **File format**: Excel 2010 or later (.xlsx)
-            - **Computer**: Any Windows, Mac, or Linux system
-            """)
-        
-        # Training Resources
-        st.subheader("📖 Training & Resources")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.info("**Quick Start Guide**\nGet up and running in 5 minutes")
-        with col2:
-            st.info("**Video Tutorials**\nStep-by-step walkthroughs")
-        with col3:
-            st.info("**Live Chat**\nConnect with a support specialist")
-        
-        # Common Issues
-        st.subheader("🔧 Common Issues & Solutions")
-        common_issues = pd.DataFrame({
-            'Issue': [
-                'Cannot login',
-                'File format rejected',
-                'Slow performance',
-                'Export not working',
-                'Data not saving'
-            ],
-            'Possible Cause': [
-                'Wrong credentials or account inactive',
-                'Wrong file format or corrupted file',
-                'Network latency or browser cache',
-                'File permissions or server issue',
-                'Internet disconnected or session timeout'
-            ],
-            'Quick Fix': [
-                'Reset password or contact IT',
-                'Use Excel (.xlsx) format',
-                'Clear browser cache',
-                'Try different browser',
-                'Refresh page and retry'
-            ]
-        })
-        st.dataframe(common_issues, use_container_width=True)
-    
-    # Support Tickets (removed duplicate - now in tab2)
-    st.subheader("Active Support Tickets")
-    tickets = pd.DataFrame({
-        'Ticket ID': ['SUP-2026-001', 'SUP-2026-002', 'SUP-2026-003', 'SUP-2026-004'],
-        'Establishment': ['Lincoln Elementary', 'Grant Middle School', 'Jefferson HS', 'Adams Preschool'],
-        'Issue': [
-            'Excel upload format error',
-            'Login credentials not working',
-            'Report submission timeout',
-            'Data validation failure'
-        ],
-        'Priority': ['🔴 High', '🟡 Medium', '🔴 High', '🟡 Medium'],
-        'Status': ['In Progress', 'Assigned', 'Waiting', 'In Progress']
-    })
-    st.dataframe(tickets, use_container_width=True)
-    
-    # Create new support ticket
-    st.subheader("Open New Support Ticket")
-    col1, col2 = st.columns(2)
-    with col1:
-        establishment = st.selectbox("Select Establishment", 
-            ['Lincoln Elementary', 'Grant Middle School', 'Jefferson HS', 'Adams Preschool', 'Madison Elementary'])
-        priority = st.radio("Priority Level", ["🟢 Low", "🟡 Medium", "🔴 High"])
-    with col2:
-        issue_type = st.selectbox("Issue Category",
-            ["File Upload", "Authentication", "Data Validation", "Performance", "Technical", "Other"])
-        description = st.text_area("Issue Description", placeholder="Describe the problem...")
-    
-        if st.button("📝 Create Ticket", key="new_support_ticket"):
-            st.success(f"✓ Ticket created for {establishment} - {priority}")
-    
-    # Training Resources
-    st.subheader("📖 Training & Resources")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.info("**Quick Start Guide**\nGet up and running in 5 minutes")
-    with col2:
-        st.info("**Video Tutorials**\nStep-by-step walkthroughs")
-    with col3:
-        st.info("**Live Chat**\nConnect with a support specialist")
-    
-    # Common Issues
-    st.subheader("🔧 Common Issues & Solutions")
-    common_issues = pd.DataFrame({
-        'Issue': [
-            'Cannot login',
-            'File format rejected',
-            'Slow performance',
-            'Export not working',
-            'Data not saving'
-        ],
-        'Possible Cause': [
-            'Wrong credentials or account inactive',
-            'Wrong file format or corrupted file',
-            'Network latency or browser cache',
-            'File permissions or server issue',
-            'Internet disconnected or session timeout'
-        ],
-        'Quick Fix': [
-            'Reset password or contact IT',
-            'Use Excel (.xlsx) format',
-            'Clear browser cache',
-            'Try different browser',
-            'Refresh page and retry'
+        # Example: Replace with real data source as needed
+        ps_cases = [
+            {"Case ID": "PS-001", "Status": "Pending-GTU", "NCP": "Jordan Miles", "CP": "Taylor Brooks"},
+            {"Case ID": "PS-002", "Status": "Order Already Established", "NCP": "Morgan Lee", "CP": "Chris Fox"},
+            {"Case ID": "PS-003", "Status": "NCP Unlocatable", "NCP": "Alex Kim", "CP": "Jamie Ray"},
         ]
-    })
-    st.dataframe(common_issues, use_container_width=True)
+        PS_ACTIONS = [
+            "GT", "ADS", "COURT REFERRAL", "CONTACT LETTER", "POSTAL", "CLOSED CASE", "NCP UNLOCATABLE",
+            "PENDING-GTU", "PENDING-AHU", "PENDING-COURT", "Order Already Established", "Case Already Closed", "OTHER"
+        ]
+        for case in ps_cases:
+            with st.expander(f"Case {case['Case ID']} - {case['Status']}"):
+                action = st.selectbox("Action Taken", PS_ACTIONS, key=f"ps_action_{case['Case ID']}")
+                date_action = st.date_input("Date Action Taken", value=datetime.now(), key=f"ps_date_{case['Case ID']}")
+                order_established = st.checkbox("Order Already Established", key=f"ps_order_{case['Case ID']}")
+                already_closed = st.checkbox("Case Already Closed", key=f"ps_closed_{case['Case ID']}")
+                address_valid = st.checkbox("Valid NCP Address", key=f"ps_addr_{case['Case ID']}")
+                ilsu_cleared = st.checkbox("Cleared ILSU", key=f"ps_ilsu_{case['Case ID']}")
+                contact_attempted = st.checkbox("Attempted Contact with Client", key=f"ps_contact_{case['Case ID']}")
+                comment = st.text_area("Comments", key=f"ps_comment_{case['Case ID']}")
+                # Narration template
+                narration_default = f"P-S Report: {case['Status']}. Action Taken: {action}. {comment}"
+                narration = st.text_area(
+                    "Narration (auto or manual)",
+                    value=narration_default,
+                    key=f"ps_narration_{case['Case ID']}"
+                )
+                # Only allow closing if Supervisor/PO3 (simulate with acting_so)
+                can_close = acting_so in [u.get('supervisor') for u in st.session_state.units.values()] or acting_so.endswith('PO3')
+                if action == "CLOSED CASE" and not can_close:
+                    st.warning("Only Supervisors or Establishment PO3 can close cases.")
+                if st.button("💾 Save/Submit", key=f"ps_submit_{case['Case ID']}"):
+                    st.success(f"Case {case['Case ID']} updated.")
+        st.info("When finished, only Supervisors/PO3 can email the completed spreadsheet.")
+
+    # ...existing code for tab1, tab2, tab3, tab4...
+
+    # TAB 5: 56RA Processing
+    with tab5:
+        st.subheader("📑 56RA Report Processing")
+        st.caption("Process each case according to 56RA instructions. Only Supervisors/PO3 can close cases or email completed spreadsheets.")
+
+        # Example: Replace with real data source as needed
+        # For demo, create a few sample cases
+        cases = [
+            {"Case ID": "C-001", "Status": "Pending GTU", "NCP": "John Doe", "CP": "Jane Smith"},
+            {"Case ID": "C-002", "Status": "Order Already Established", "NCP": "Mike Lee", "CP": "Anna Kim"},
+            {"Case ID": "C-003", "Status": "NCP Unlocatable", "NCP": "Chris Ray", "CP": "Pat Lee"},
+        ]
+        for case in cases:
+            with st.expander(f"Case {case['Case ID']} - {case['Status']}"):
+                action = st.selectbox("Action Taken/Status", RA_ACTIONS, key=f"action_{case['Case ID']}")
+                date_action = st.date_input("Date Action Taken", value=datetime.now(), key=f"date_{case['Case ID']}")
+                narrated = st.checkbox("Case Narrated", key=f"narrated_{case['Case ID']}")
+                comment = st.text_area("Comment", key=f"comment_{case['Case ID']}")
+                # Narration template
+                narration_default = f"56RA Report: {case['Status']}. Action Taken: {action}."
+                narration = st.text_area(
+                    "Narration (auto or manual)", 
+                    value=narration_default,
+                    key=f"narration_{case['Case ID']}"
+                )
+                # Only allow closing if Supervisor/PO3 (simulate with acting_so)
+                can_close = acting_so in [u.get('supervisor') for u in st.session_state.units.values()] or acting_so.endswith('PO3')
+                if action == "Closed Case" and not can_close:
+                    st.warning("Only Supervisors or Establishment PO3 can close cases.")
+                if st.button("💾 Save/Submit", key=f"submit_{case['Case ID']}"):
+                    st.success(f"Case {case['Case ID']} updated.")
+        st.info("When finished, only Supervisors/PO3 can email the completed spreadsheet.")
+
+    # TAB 6: Locate Report Processing
+    with tab6:
+        st.subheader("📑 Locate Report Processing")
+        st.caption("Process each case according to Locate Report instructions. Only Supervisors/PO3 can close cases or email completed spreadsheets.")
+
+        # Example: Replace with real data source as needed
+        locate_cases = [
+            {"Case ID": "L-001", "Status": "In Locate", "NCP": "Sam Carter", "CP": "Alexis Lee"},
+            {"Case ID": "L-002", "Status": "Potential UNL Closure", "NCP": "Jordan Smith", "CP": "Morgan Ray"},
+            {"Case ID": "L-003", "Status": "Potential NAS Closure", "NCP": "Taylor Kim", "CP": "Jamie Fox"},
+        ]
+        LOCATE_ACTIONS = [
+            "Searched Databases", "Requested CLEAR Search", "Cleared ILSU", "Attempted Contact CP/CTR/PPF/NCP",
+            "Left Voicemail", "Received Address Info", "Sent JFS7711", "Closed UNL", "Closed NAS", "Case Remains in Locate", "OTHER"
+        ]
+        for case in locate_cases:
+            with st.expander(f"Case {case['Case ID']} - {case['Status']}"):
+                action = st.selectbox("Action Taken/Status", LOCATE_ACTIONS, key=f"locate_action_{case['Case ID']}")
+                date_action = st.date_input("Date Action Taken", value=datetime.now(), key=f"locate_date_{case['Case ID']}")
+                databases_cleared = st.text_input("Databases Searched (BMV, SVES, dockets, etc.)", key=f"dbs_{case['Case ID']}")
+                ilsu_cleared = st.checkbox("Cleared ILSU", key=f"ilsu_{case['Case ID']}")
+                contact_attempted = st.checkbox("Attempted Contact with CP/CTR/PPF/NCP", key=f"contact_{case['Case ID']}")
+                comment = st.text_area("Comment", key=f"locate_comment_{case['Case ID']}")
+                # Narration template
+                narration_default = f"Locate Report: searched {databases_cleared or 'databases'}; action: {action}. {comment}"
+                narration = st.text_area(
+                    "Narration (auto or manual)",
+                    value=narration_default,
+                    key=f"locate_narration_{case['Case ID']}"
+                )
+                # Only allow closing if Supervisor/PO3 (simulate with acting_so)
+                can_close = acting_so in [u.get('supervisor') for u in st.session_state.units.values()] or acting_so.endswith('PO3')
+                if action in ["Closed UNL", "Closed NAS"] and not can_close:
+                    st.warning("Only Supervisors or Establishment PO3 can close cases.")
+                if st.button("💾 Save/Submit", key=f"locate_submit_{case['Case ID']}"):
+                    st.success(f"Case {case['Case ID']} updated.")
+        st.info("When finished, only Supervisors/PO3 can email the completed spreadsheet.")
 
 elif role == "IT Administrator":
     st.markdown('<div class="header-title">⚙️ System Administration</div>', unsafe_allow_html=True)
