@@ -656,42 +656,42 @@ elif role == "Support Officer":
                     st.success(f"Case {row['Case ID']} updated.")
         st.info("When finished, only Supervisors/PO3 can email the completed spreadsheet.")
 
-    # TAB 6: Locate Report Processing
+    # TAB 6: Locate Report Processing (Spreadsheet View)
     with tab6:
-        st.subheader("📑 Locate Report Processing")
-        st.caption("Process each case according to Locate Report instructions. Only Supervisors/PO3 can close cases or email completed spreadsheets.")
+        st.subheader("📑 Locate Report Processing (Spreadsheet View)")
+        st.caption("Edit cases directly in the table below. Only Supervisors/PO3 can close cases or email completed spreadsheets.")
 
-        # Example: Replace with real data source as needed
-        locate_cases = [
-            {"Case ID": "L-001", "Status": "In Locate", "NCP": "Sam Carter", "CP": "Alexis Lee"},
-            {"Case ID": "L-002", "Status": "Potential UNL Closure", "NCP": "Jordan Smith", "CP": "Morgan Ray"},
-            {"Case ID": "L-003", "Status": "Potential NAS Closure", "NCP": "Taylor Kim", "CP": "Jamie Fox"},
-        ]
+        if 'locate_cases' not in st.session_state:
+            st.session_state['locate_cases'] = [
+                {"Case ID": "L-001", "NCP Name": "Sam Carter", "CP Name": "Alexis Lee", "Status of Case": "In Locate", "Date Action Taken": datetime.now().date(), "Action Taken/Status": "Searched Databases", "Databases Searched": "BMV, SVES", "ILSU Cleared": False, "Contact Attempted": False, "Comment": "", "Narration": "", "Next Steps/Follow Up": ""},
+                {"Case ID": "L-002", "NCP Name": "Jordan Smith", "CP Name": "Morgan Ray", "Status of Case": "Potential UNL Closure", "Date Action Taken": datetime.now().date(), "Action Taken/Status": "Closed UNL", "Databases Searched": "BMV, SVES, dockets", "ILSU Cleared": True, "Contact Attempted": True, "Comment": "", "Narration": "", "Next Steps/Follow Up": ""},
+                {"Case ID": "L-003", "NCP Name": "Taylor Kim", "CP Name": "Jamie Fox", "Status of Case": "Potential NAS Closure", "Date Action Taken": datetime.now().date(), "Action Taken/Status": "Closed NAS", "Databases Searched": "BMV, SVES", "ILSU Cleared": True, "Contact Attempted": False, "Comment": "", "Narration": "", "Next Steps/Follow Up": ""},
+            ]
+        locate_cases = st.session_state['locate_cases']
         LOCATE_ACTIONS = [
             "Searched Databases", "Requested CLEAR Search", "Cleared ILSU", "Attempted Contact CP/CTR/PPF/NCP",
             "Left Voicemail", "Received Address Info", "Sent JFS7711", "Closed UNL", "Closed NAS", "Case Remains in Locate", "OTHER"
         ]
-        for case in locate_cases:
-            with st.expander(f"Case {case['Case ID']} - {case['Status']}"):
-                action = st.selectbox("Action Taken/Status", LOCATE_ACTIONS, key=f"locate_action_{case['Case ID']}")
-                date_action = st.date_input("Date Action Taken", value=datetime.now(), key=f"locate_date_{case['Case ID']}")
-                databases_cleared = st.text_input("Databases Searched (BMV, SVES, dockets, etc.)", key=f"dbs_{case['Case ID']}")
-                ilsu_cleared = st.checkbox("Cleared ILSU", key=f"ilsu_{case['Case ID']}")
-                contact_attempted = st.checkbox("Attempted Contact with CP/CTR/PPF/NCP", key=f"contact_{case['Case ID']}")
-                comment = st.text_area("Comment", key=f"locate_comment_{case['Case ID']}")
-                # Narration template
-                narration_default = f"Locate Report: searched {databases_cleared or 'databases'}; action: {action}. {comment}"
-                narration = st.text_area(
-                    "Narration (auto or manual)",
-                    value=narration_default,
-                    key=f"locate_narration_{case['Case ID']}"
-                )
-                # Only allow closing if Supervisor/PO3 (simulate with acting_so)
-                can_close = acting_so in [u.get('supervisor') for u in st.session_state.units.values()] or acting_so.endswith('PO3')
-                if action in ["Closed UNL", "Closed NAS"] and not can_close:
+        locate_df = pd.DataFrame(locate_cases)
+        for idx, row in locate_df.iterrows():
+            with st.expander(f"Case {row['Case ID']} - {row['Status of Case']}"):
+                locate_cases[idx]["NCP Name"] = st.text_input("NCP Name", value=row["NCP Name"], key=f"locate_ncp_{idx}")
+                locate_cases[idx]["CP Name"] = st.text_input("CP Name", value=row["CP Name"], key=f"locate_cp_{idx}")
+                locate_cases[idx]["Status of Case"] = st.text_input("Status of Case", value=row["Status of Case"], key=f"locate_status_{idx}")
+                locate_cases[idx]["Date Action Taken"] = st.date_input("Date Action Taken", value=row["Date Action Taken"], key=f"locate_date_{idx}")
+                locate_cases[idx]["Action Taken/Status"] = st.selectbox("Action Taken/Status", LOCATE_ACTIONS, index=LOCATE_ACTIONS.index(row["Action Taken/Status"]) if row["Action Taken/Status"] in LOCATE_ACTIONS else 0, key=f"locate_action_{idx}")
+                locate_cases[idx]["Databases Searched"] = st.text_input("Databases Searched (BMV, SVES, dockets, etc.)", value=row["Databases Searched"], key=f"locate_dbs_{idx}")
+                locate_cases[idx]["ILSU Cleared"] = st.checkbox("ILSU Cleared", value=row["ILSU Cleared"], key=f"locate_ilsu_{idx}")
+                locate_cases[idx]["Contact Attempted"] = st.checkbox("Contact Attempted", value=row["Contact Attempted"], key=f"locate_contact_{idx}")
+                locate_cases[idx]["Comment"] = st.text_area("Comment", value=row["Comment"], key=f"locate_comment_{idx}")
+                locate_cases[idx]["Next Steps/Follow Up"] = st.text_area("Next Steps/Follow Up", value=row["Next Steps/Follow Up"], key=f"locate_next_{idx}")
+                narration_default = f"Locate Report: searched {row['Databases Searched']}; action: {row['Action Taken/Status']}. {row['Comment']}"
+                locate_cases[idx]["Narration"] = st.text_area("Narration (auto/manual)", value=row["Narration"] or narration_default, key=f"locate_narration_{idx}")
+                can_close = acting_so in [u.get('supervisor') for u in st.session_state.units.values()] or (acting_so and acting_so.endswith('PO3'))
+                if locate_cases[idx]["Action Taken/Status"] in ["Closed UNL", "Closed NAS"] and not can_close:
                     st.warning("Only Supervisors or Establishment PO3 can close cases.")
-                if st.button("💾 Save/Submit", key=f"locate_submit_{case['Case ID']}"):
-                    st.success(f"Case {case['Case ID']} updated.")
+                if st.button("💾 Save/Submit", key=f"locate_submit_{idx}"):
+                    st.success(f"Case {row['Case ID']} updated.")
         st.info("When finished, only Supervisors/PO3 can email the completed spreadsheet.")
 
 elif role == "IT Administrator":
