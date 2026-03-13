@@ -84,40 +84,7 @@ if 'units' not in st.session_state:
                 'Robin L. Patterson': ['181200'],
                 'VACANT': ['181201', '181202']
             }
-
-                    # --- Team Performance Tab ---
-                    with exec_tab3:
-                        st.subheader("Team Performance & Escalations")
-                        # Simulate overdue/escalation for demo
-                        import random
-                        overdue = random.sample(list(caseload_df['Caseload']), min(5, len(caseload_df))) if not caseload_df.empty else []
-                        st.markdown(f"<b>Overdue Caseloads:</b> " + ", ".join([f'<span style=\"color:white;background:#d9534f;padding:2px 8px;border-radius:8px;\">{c}</span>' for c in overdue]), unsafe_allow_html=True)
-                        st.markdown(f"<b>Escalation Alerts:</b> " + ", ".join([f'<span style=\"color:white;background:#f0ad4e;padding:2px 8px;border-radius:8px;\">{c}</span>' for c in overdue[:2]]), unsafe_allow_html=True)
-                        st.info("Escalations and overdue items are simulated for demo. Real logic would use due dates and workflow status.")
-        if not caseload_df.empty:
-            def caseload_badge(c, vacant):
-                if vacant:
-                    return f'<span style="color:white;background:#d9534f;padding:2px 8px;border-radius:8px;">{c}</span>'
-                if any(x in c for x in ["FVI", "Highprofile", "SPANISH", "INC", "RE"]):
-                    return f'<span style="color:white;background:#f0ad4e;padding:2px 8px;border-radius:8px;">{c}</span>'
-                return f'<span style="color:#333;background:#5bc0de;padding:2px 8px;border-radius:8px;">{c}</span>'
-            caseload_html = "".join([f'<tr><td>{row["Unit"]}</td><td>{row["Assignee"]}</td><td>{caseload_badge(row["Caseload"], row["Vacant"])}<td></tr>' for _, row in caseload_df.iterrows()])
-            st.markdown(f'<table><tr><th>Unit</th><th>Assignee</th><th>Caseload</th></tr>{caseload_html}</table>', unsafe_allow_html=True)
-        else:
-            st.info("No caseload assignments found.")
-
-        # Staff table with color badges (moved here)
-        st.subheader("Staff Roster & Status")
-        def badge(name, role):
-            if name == 'VACANT':
-                return f'<span style="color:white;background:#d9534f;padding:2px 8px;border-radius:8px;">VACANT</span>'
-            if "Lead" in role:
-                return f'<span style="color:white;background:#5bc0de;padding:2px 8px;border-radius:8px;">{name} ({role})</span>'
-            if role == "Supervisor":
-                return f'<span style="color:white;background:#5cb85c;padding:2px 8px;border-radius:8px;">{name} (Supervisor)</span>'
-            return f'<span style="color:#333;background:#f7ecb5;padding:2px 8px;border-radius:8px;">{name} ({role})</span>'
-        staff_html = "".join([f'<tr><td>{s["Unit"]}</td><td>{badge(s["Name"], s["Role"])}<td></tr>' for s in all_staff])
-        st.markdown(f'<table><tr><th>Unit</th><th>Staff</th></tr>{staff_html}</table>', unsafe_allow_html=True)
+        },
 
         # Staff Management Controls (Executive/IT roles only)
         exec_roles = ["Director", "Deputy Director", "Senior Admin Officer", "Department Manager", "IT Administrator"]
