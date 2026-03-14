@@ -73,7 +73,7 @@ role = st.sidebar.radio(
         "Supervisor"
     ]
 
-    if role in executive_roles:
+    if role in executive_roles: # type: ignore
         st.markdown(f'<div class="header-title">👔 {role} Dashboard</div>', unsafe_allow_html=True)
         st.markdown("**Executive Overview**")
         # Tabs: Overview, User & Caseload Management, Team Performance, Help Ticket Center, Knowledge Base
