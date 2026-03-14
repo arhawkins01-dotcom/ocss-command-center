@@ -52,9 +52,8 @@ if 'reports_by_caseload' not in st.session_state:
 if 'report_work_logs' not in st.session_state:
     st.session_state.report_work_logs = {}
 
-role = st.sidebar.radio(
-    "Select Your Role:",
-    [
+role = st.sidebar.radio (
+    "Select Your Role:" ), [
         "Director",
         "Deputy Director",
         "Senior Admin Officer",
