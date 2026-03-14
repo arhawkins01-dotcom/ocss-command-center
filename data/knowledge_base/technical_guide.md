@@ -1,6 +1,64 @@
 # OCSS Command Center - Technical Guide
 
 ## Executive Summary
+The OCSS Command Center is a role-based web application designed to streamline unit report processing and caseload management. Built on the Streamlit framework with Python, it provides an integrated dashboard system for multiple user roles (Director, Deputy Director, Senior Administrative Officer, Program Officer, Supervisor, Team Lead, Support Officer, IT Administrator) with real-time data processing and export capabilities. The agency structure includes four departments (Establishment, Financial Operations, Case Maintenance, Compliance) and their individual units.
+
+Key operational features implemented in Feb 2026 include:
+- Escalation alerts with role-based timing windows and acknowledgements
+- Report due-date clocks computed at upload time for monthly QA sources (56RA / P-S / Locate)
+- Senior leadership exports in Excel and Word formats
+- Mixed persistence model: organizational configuration persisted on disk; report/work data remains session-based
+**Project Status:** Production-Ready (v1.0.0)  
+**Framework:** Streamlit 1.x with Python 3.8+  
+**Deployment:** Single-server containerized application  
+**Target Launch:** Ready for IT Department Review
+
+---
+## 1. Technical Architecture
+
+### 1.1 System Overview
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                    Browser/Client Layer                      │
+│              (Firefox, Chrome, Safari, Edge)                │
+└─────────────────────────────┬────────────────────────────────┘
+                 │ HTTP/HTTPS
+┌─────────────────────────────▼────────────────────────────────┐
+│                  Streamlit Web Server                        │
+│  Port: 8501 | Framework: Streamlit 1.x (Python)            │
+│  - Session State Management                                  │
+│  - Role-Based Access Control                                │
+│  - Data Validation & Processing                             │
+└─────────────────────────────┬────────────────────────────────┘
+                 │
+    ┌────────────┴────────────┐ ┌──────────────┐ ┌──────────────┐
+    │            │            │
+┌───▼───┐  ┌─────▼────┐  ┌────▼────┐
+│ Pandas │  │ Excel   │  │ Session │
+│DataFrame│ │Files   │  │ State   │
+│Processing│ │(I/O)   │  │Storage │
+└──────────┘ └────────┘  └────────┘
+```
+
+### 1.2 Technology Stack
+
+| Component | Technology | Version | Purpose |
+|-----------|-----------|---------|---------|
+| **Frontend Framework** | Streamlit | 1.x | Web UI & Dashboard |
+| **Backend Language** | Python | 3.8+ | Business Logic |
+| **Data Processing** | Pandas | Latest | DataFrames & Excel/CSV |
+| **Excel Support** | openpyxl | Latest | Read/Write Excel Files |
+| **Word Export** | python-docx | Latest | Generate leadership packets (.docx) |
+| **Version Control** | Git | - | Source Code Management |
+| **Container** | Docker | 24.x | Application Deployment |
+| **Session Storage** | In-Memory | - | User Session Data |
+
+### 1.3 Application Structure
+...existing code...
+# OCSS Command Center - Technical Guide
+
+## Executive Summary
 
 The OCSS Command Center is a role-based web application designed to streamline unit report processing and caseload management. Built on the Streamlit framework with Python, it provides an integrated dashboard system for multiple user roles (Director, Deputy Director, Senior Administrative Officer, Program Officer, Supervisor, Team Lead, Support Officer, IT Administrator) with real-time data processing and export capabilities. The agency structure includes four departments (Establishment, Financial Operations, Case Maintenance, Compliance) and their individual units.
 

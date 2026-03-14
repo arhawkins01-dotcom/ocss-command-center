@@ -1,0 +1,14 @@
+{
+  "technical_guide.md": {
+    "seed_source": "/workspaces/ocss-command-center/data/knowledge_base/technical_guide.md",
+    "seeded_at": "2026-03-14T14:01:46.902265",
+    "source_hash": "ed36fb660d28981bb1e9f8feceb56ca03607ae4a2d8abb2f5652bb2229147dfd",
+    "target_hash": "ed36fb660d28981bb1e9f8feceb56ca03607ae4a2d8abb2f5652bb2229147dfd"
+  },
+  "user_guide.md": {
+    "seed_source": "/workspaces/ocss-command-center/docs/USER_MANUAL.md",
+    "seeded_at": "2026-03-14T11:59:28.647353",
+    "source_hash": "0444d26977f68195dd61456112de3e3d7329310bd75f72e43efa42d872364a72",
+    "target_hash": "0444d26977f68195dd61456112de3e3d7329310bd75f72e43efa42d872364a72"
+  }
+}
