@@ -188,7 +188,7 @@ Use Case: Team Leads coordinate day-to-day processing, mentor Support Officers, 
 
 **📤 Upload & Processing Tab**
 
-1. **Select Caseload**: Choose the target caseload (181000, 181001, 181002, etc.)
+1. **Select Caseload**: Choose the target caseload (181100, 181101, 181102, etc.)
 2. **Upload File**: Click "Browse files" and select an Excel (.xlsx) or CSV file
 3. **Review Preview**: The system displays:
    - File name and size
@@ -361,7 +361,7 @@ View and process reports by caseload:
 **📝 My Assigned Reports Tab**
 - View report queue for your assigned caseloads
 - Process one case line at a time (row-level workflow)
-- **How to complete this report (checklist)**: Review the in-dashboard checklist (includes sample narration templates you can copy/paste)
+- **How to complete this report (checklist)**: Review the in-dashboard checklist (includes OCSS-specific narration templates you can copy/paste)
  - **Submission Rules**: Use the **Submit Caseload** control to finalize your caseload; submission will only succeed when all assigned rows are marked `Completed` and required fields are present.
 - **Report-type guardrails**: The app enforces report-specific dropdowns and required fields (see the 56RA / P-S / Locate sections below)
 - View KPI Tracker and Throughput (7-day / 30-day) summaries
@@ -429,7 +429,7 @@ Why this matters:
 
 **Add/Remove Users**:
 
-User management is session-based but **functional** for demos and internal workflows.
+User management is session-based and fully functional for OCSS agency workflows and internal operations.
 
 1. Enter new user name
 2. Select role (Director, Program Officer, Supervisor, Support Officer, IT Administrator)
@@ -513,7 +513,7 @@ Create and manage organizational units:
 
 1. Select **Program Officer** role
 2. Go to **📤 Upload & Processing** tab
-3. Select target caseload (e.g., 181000)
+3. Select target caseload (e.g., 181100)
 4. Click **"Browse files"**
 5. Select Excel or CSV file
 6. Review preview

@@ -140,193 +140,104 @@ SUPPORTED_REPORT_TYPES = [
 # Organizational Units Configuration
 # Default units are generated from OCSS_DEPARTMENTS to ensure every department
 # has a usable skeleton. Deployments can override via session state persistence.
-DEFAULT_UNITS = {}
-for _dept, _cfg in (OCSS_DEPARTMENTS or {}).items():
-    for _unit_name in (_cfg.get('units') or []):
-        unit_type = 'standard'
-        lowered = str(_unit_name).lower()
-        if 'genetic' in lowered:
-            unit_type = 'genetic_testing'
-        elif 'interface' in lowered or 'front desk' in lowered:
-            unit_type = 'interface'
-
-        DEFAULT_UNITS[str(_unit_name)] = {
-            'department': str(_dept),
-            'unit_type': unit_type,
-            'supervisor': '',
-            'team_leads': [],
-            'support_officers': [],
-            # Optional: list of caseload series prefixes owned by this unit (e.g., ['1811'] for 181100 series)
-            'caseload_series_prefixes': [],
-            'assignments': {},
+DEFAULT_UNITS = {
+    # Enforcement Division
+    "New Order Unit (Hawkins)": {
+        "department": "Enforcement",
+        "unit_type": "standard",
+        "supervisor": "James Brown",
+        "team_leads": [],
+        "support_officers": [
+            "Ahmetovic, Nadia", "Abernathy, Mario", "Dillard, Lauron", "Martin, Latonya",
+            "Dimmings, William", "Joseph Jr, Redon", "Mobley, Sarah", "Joseph Jr, William",
+            "Reeves, Priscilla", "Wilson, Tracy", "Rice, Sheena", "Zappitelli, Nicholas",
+            "Wedmedyk, William"
+        ],
+        "caseload_series_prefixes": ["1820"],
+        "assignments": {
+            "Ahmetovic, Nadia": ["182001", "182050"],
+            "Abernathy, Mario": ["182002"],
+            "Dillard, Lauron": ["182002"],
+            "Martin, Latonya": ["182002"],
+            "Dimmings, William": ["182003"],
+            "Joseph Jr, Redon": ["182003"],
+            "Mobley, Sarah": ["182003"],
+            "Joseph Jr, William": ["182004"],
+            "Reeves, Priscilla": ["182004"],
+            "Wilson, Tracy": ["182004"],
+            "Rice, Sheena": ["182005"],
+            "Zappitelli, Nicholas": ["182005"],
+            "Wedmedyk, William": ["182005"]
         }
-
-# Default caseload-series routing (can be edited in-app).
-# We use exact 6-digit caseload numbers as prefixes so routing is deterministic.
-_DEFAULT_CASELOAD_SERIES_PREFIXES = {
-    # Case Maintenance Division (Dillinger)
-    'Case Maintenance A-E': ['182101'],
-    'Case Maintenance F-K': ['182102'],
-    'CM Transition': ['182150'],
-    'Case Maintenance L-R': ['182103'],
-    'Zero Support': ['182120'],
-    'Case Maintenance S-Z': ['182104'],
-    'Case Maintenance Arrears': ['182110'],
-    'Non IV-D': ['182140'],
-
-    # Compliance Division (Meznarich)
-    'Compliance Unit 18203': [
-        '182301', '182302', '182303', '182304', '182305', '182306', '182307', '182308', '182309', '182310', '182311',
-        '182320', '182330', '182340', '182350', '182360',
-    ],
-    'Compliance Unit 18204': [
-        '182401', '182402', '182404', '182405', '182406', '182407', '182408', '182409', '182410', '182411',
-        '182430', '182440', '182450', '182460',
-    ],
-    'Compliance Unit 18205': [
-        '182501', '182502', '182504', '182505', '182506', '182507', '182508', '182509', '182510', '182511', '182512',
-        '182530', '182540', '182550', '182560',
-    ],
-    'Compliance Unit 18206': [
-        '182220', '182221',
-        '182601', '182602', '182604', '182605', '182606', '182607', '182608', '182609', '182610', '182611',
-        '182630', '182640', '182650', '182660',
-    ],
-    'Compliance Unit 18207': [
-        '182701', '182702', '182704', '182705', '182706', '182707', '182708', '182709', '182710',
-        '182730', '182740', '182750', '182760',
-    ],
-    'Compliance Unit 18208 (UIFSA)': [
-        '182801', '182802', '182803', '182804', '182806', '182807', '182808', '182810',
-        '182811', '182812', '182813', '182814', '182815',
-        '182840', '182860',
-    ],
-    'Compliance Management Caseloads': ['182197', '182198', '182199', '189999'],
-}
-for _unit_name, _prefixes in _DEFAULT_CASELOAD_SERIES_PREFIXES.items():
-    if _unit_name in DEFAULT_UNITS:
-        DEFAULT_UNITS[_unit_name]['caseload_series_prefixes'] = list(_prefixes)
-
-# Establishment unit rosters (caseload assignments) where caseloads are known.
-_DEFAULT_UNIT_ROSTERS = {
-    'Establishment Unit 15': {
-        'supervisor': 'Stacy Slick-Williams',
-        'team_leads': ['Anna K. Engler', 'Akilah Rasheed-Tinsley'],
-        'support_officers': [
-            'Anna K. Engler',
-            'Joy G. Ogunmola',
-            'Akilah Rasheed-Tinsley',
-            'Brittany Baran',
-            'Jeffrey A. Swanson',
-            'Cyrita J. Johnson',
-        ],
-        'caseload_numbers': ['181100', '181101', '181103', '181105', '181106', '181107', '181109', '181110', '181112'],
-        'assignments': {
-            'Stacy Slick-Williams': ['181100'],
-            'Anna K. Engler': ['181101'],
-            'Joy G. Ogunmola': ['181103'],
-            'Akilah Rasheed-Tinsley': ['181105'],
-            'Brittany Baran': ['181107'],
-            'Jeffrey A. Swanson': ['181109'],
-            'Cyrita J. Johnson': ['181112'],
-        },
     },
-    'Establishment Unit 16': {
-        'supervisor': 'Robin L. Patterson',
-        'team_leads': ['April Jeter', 'Awilda Martinez'],
-        'support_officers': [
-            'April Jeter',
-            'Karen McRowe',
-            'Tamika Joseph-McManus',
-            'Awilda Martinez',
-            'Richard Fletcher',
-            'Natalie Spatafore',
+    # Establishment Division - Unit 17 (Incarcerated)
+    "Establishment Unit 17": {
+        "department": "Establishment",
+        "unit_type": "standard",
+        "supervisor": "Jeanne Sua",
+        "team_leads": [],
+        "support_officers": [
+            "Jeanne Sua", "Kristine Desouza", "Patricia Bennett", "Mayra Berrios", "AreleneCruz-Gonzales",
+            "Cecelia Durham", "Hannah Maynard", "Ashley Young"
         ],
-        'caseload_numbers': ['181200', '181201', '181202', '181204', '181205', '181208', '181209', '181213', '181214'],
-        'assignments': {
-            'Robin L. Patterson': ['181200'],
-            'April Jeter': ['181204'],
-            'Karen McRowe': ['181205'],
-            'Tamika Joseph-McManus': ['181208'],
-            'Awilda Martinez': ['181209'],
-            'Richard Fletcher': ['181213'],
-            'Natalie Spatafore': ['181214'],
-        },
+        "caseload_series_prefixes": ["1890"],
+        "assignments": {
+            "Jeanne Sua": ["189001", "189010"],
+            "Kristine Desouza": ["189002"],
+            "Patricia Bennett": ["189003"],
+            "Mayra Berrios": ["189004"],
+            "AreleneCruz-Gonzales": ["189005"],
+            "Cecelia Durham": ["189006"],
+            "Hannah Maynard": ["189007"],
+            "Ashley Young": ["189008"]
+        }
     },
-    'Establishment Unit 17': {
-        'supervisor': 'Jeanne Sua',
-        'team_leads': ['Kristine DeSouza', 'L. Arlene Gonzalez'],
-        'support_officers': [
-            'Kristine DeSouza',
-            'Patricia Bennett',
-            'Cecelia Durham',
-            'Mayra Berrios',
-            'L. Arlene Gonzalez',
-            'Hannah Maynard',
+    # Establishment Division - Unit 22 (Reentry)
+    "Establishment Unit 22": {
+        "department": "Establishment",
+        "unit_type": "standard",
+        "supervisor": "James Brown",
+        "team_leads": [],
+        "support_officers": [
+            "James Brown", "Nadia Ahmetovic", "Latonya Martin", "Sarah Mobley", "Tracy Wilson",
+            "William Wedmedyk", "Pamela Alexander", "Aleesha Anderson", "Danielle DeBerry"
         ],
-        'caseload_numbers': ['181300', '181301', '181302', '181303', '181304', '181305', '181306', '181307', '181308'],
-        'assignments': {
-            'Jeanne Sua': ['181300'],
-            'Kristine DeSouza': ['181301'],
-            'Patricia Bennett': ['181303'],
-            'Cecelia Durham': ['181304'],
-            'Mayra Berrios': ['181306'],
-            'L. Arlene Gonzalez': ['181307'],
-            'Hannah Maynard': ['181308'],
-        },
+        "caseload_series_prefixes": ["1890"],
+        "assignments": {
+            "James Brown": ["189020"],
+            "Nadia Ahmetovic": ["189021"],
+            "Latonya Martin": ["189022"],
+            "Sarah Mobley": ["189023"],
+            "Tracy Wilson": ["189024"],
+            "William Wedmedyk": ["189025"],
+            "Pamela Alexander": ["189026"],
+            "Aleesha Anderson": ["189027"],
+            "Danielle DeBerry": ["189028"]
+        }
     },
-    'New Order Unit 22': {
-        'supervisor': 'James Brown',
-        'team_leads': ['Nadia Ahmetovic'],
-        'support_officers': [
-            'Nadia Ahmetovic',
-            'Latonya Grays-Martin',
-            'Michelle Fogler',
-            'Tracy Wilson',
-            'William Wedmedyk',
+    # Establishment Division - Unit 8 (Reentry, duplicate assignments for James Brown)
+    "Establishment Unit 8": {
+        "department": "Establishment",
+        "unit_type": "standard",
+        "supervisor": "James Brown",
+        "team_leads": [],
+        "support_officers": [
+            "James Brown", "Nadia Ahmetovic", "Latonya Martin", "Sarah Mobley", "Tracy Wilson",
+            "William Wedmedyk", "Pamela Alexander", "Aleesha Anderson", "Danielle DeBerry"
         ],
-        'caseload_numbers': ['182001', '182002', '182003', '182004', '182005'],
-        'assignments': {
-            'Nadia Ahmetovic': ['182001'],
-            'Latonya Grays-Martin': ['182002'],
-            'Michelle Fogler': ['182003'],
-            'Tracy Wilson': ['182004'],
-            'William Wedmedyk': ['182005'],
-        },
+        "caseload_series_prefixes": ["1890"],
+        "assignments": {
+            "James Brown": ["189020"],
+            "Nadia Ahmetovic": ["189021"],
+            "Latonya Martin": ["189022"],
+            "Sarah Mobley": ["189023"],
+            "Tracy Wilson": ["189024"],
+            "William Wedmedyk": ["189025"],
+            "Pamela Alexander": ["189026"],
+            "Aleesha Anderson": ["189027"],
+            "Danielle DeBerry": ["189028"]
+        }
     },
-    'Front Desk Unit 8': {
-        'supervisor': 'James Brown',
-        'team_leads': ['Reginald Davis'],
-        'support_officers': [
-            'Pamela Alexander',
-            'Danielle Deberry',
-            'Reginald Davis',
-            'Aleesha Anderson',
-        ],
-    },
-    'Genetic Testing Unit 22': {
-        'supervisor': 'Silas Ungar',
-        'team_leads': ['Laurie Tomlinson'],
-        'support_officers': [
-            'Laurie Tomlinson',
-            'Aleia Lawson',
-            'Natasha Johnson',
-            'Tiffany Johnson',
-        ],
-    },
-    'Interface Unit 23': {
-        'supervisor': 'Giselle Torres',
-        'team_leads': ['Quiana Harville', 'Enid Williams'],
-        'support_officers': [
-            'Sierra Carter',
-            'Chandara Dodson',
-            'Quiana Harville',
-            'Avonna Handsome',
-            'Taylor Andrews',
-            'Enid Williams',
-        ],
-    },
-
     # Case Maintenance Division (Dillinger) supervisors
     'Case Maintenance A-E': {'supervisor': 'Monnie Brawley'},
     'Case Maintenance F-K': {'supervisor': 'Monnie Brawley'},

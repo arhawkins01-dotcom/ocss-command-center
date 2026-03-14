@@ -1129,34 +1129,8 @@ if 'units' not in st.session_state:
         if isinstance(seeded, dict) and seeded:
             st.session_state.units = dict(seeded)
         else:
-            # Backward-compatible fallback demo units
-            st.session_state.units = {
-                'OCSS North': {
-                    'department': 'Establishment',
-                    'unit_type': 'standard',
-                    'supervisor': 'Alex Martinez',
-                    'team_leads': ['Sarah Johnson'],
-                    'support_officers': ['Michael Chen', 'Jessica Brown'],
-                    'caseload_series_prefixes': ['1810'],
-                    'assignments': {
-                        'Sarah Johnson': ['181000'],
-                        'Michael Chen': ['181001'],
-                        'Jessica Brown': ['181002']
-                    }
-                },
-                'OCSS South': {
-                    'department': 'Establishment',
-                    'unit_type': 'standard',
-                    'supervisor': 'Priya Singh',
-                    'team_leads': ['David Martinez'],
-                    'support_officers': ['Amanda Wilson'],
-                    'caseload_series_prefixes': ['1810'],
-                    'assignments': {
-                        'David Martinez': ['181001'],
-                        'Amanda Wilson': ['181000']
-                    }
-                }
-            }
+            # No fallback demo units. Please configure OCSS agency units in settings.DEFAULT_UNITS or via persisted state.
+            st.session_state.units = {}
 
 if 'users' not in st.session_state:
     loaded_users = (_persisted_state or {}).get('users')
@@ -1219,11 +1193,13 @@ if 'users' not in st.session_state:
 
         # Standard operational units: seed supervisors + team leads + support officers
         standard_units = sorted([name for name, t in dept_units if (t or '').strip() == 'standard'])
+
+
         for idx, unit_name in enumerate(standard_units, start=1):
             _ensure_unit_shell(unit_name, dept_name, 'standard')
-
             # If this unit was pre-seeded via DEFAULT_UNITS with real staff/assignments,
             # do not stomp those values.
+
             unit_ref = st.session_state.units.get(unit_name, {})
 
             # Optional baseline: Establishment caseload series prefixes by unit number.
@@ -1260,6 +1236,60 @@ if 'users' not in st.session_state:
             assignments = st.session_state.units[unit_name].setdefault('assignments', {})
             for n in all_workers:
                 assignments.setdefault(n, [])
+
+        # Establishment clerical units (moved inside function)
+        if dept_name == 'Establishment':
+            for unit_name, unit_type in dept_units:
+                if unit_type not in {'genetic_testing', 'interface'}:
+                    continue
+                _ensure_unit_shell(unit_name, dept_name, unit_type)
+
+                unit_ref = st.session_state.units.get(unit_name, {})
+
+                supervisor = str(unit_ref.get('supervisor') or '').strip() or f"{unit_name} Supervisor"
+                st.session_state.units[unit_name]['supervisor'] = supervisor
+                _seed_user(supervisor, 'Supervisor', dept_name, '', unit_name)
+
+                if unit_type == 'genetic_testing':
+                    lead_role = 'Client Information Specialist Team Lead'
+                    worker_role = 'Client Information Specialist'
+                    lead_names = [f"{unit_name} CIS Team Lead {n}" for n in (1, 2)]
+                    worker_names = [f"{unit_name} CIS {n}" for n in (1, 2, 3, 4)]
+                else:
+                    lead_role = 'Case Information Specialist Team Lead'
+                    worker_role = 'Case Information Specialist'
+                    lead_names = [f"{unit_name} Case IS Team Lead {n}" for n in (1, 2)]
+                    worker_names = [f"{unit_name} Case IS {n}" for n in (1, 2, 3, 4)]
+
+                existing_team_leads = [str(n).strip() for n in (unit_ref.get('team_leads') or []) if str(n).strip()]
+                existing_support = [str(n).strip() for n in (unit_ref.get('support_officers') or []) if str(n).strip()]
+
+                lead_names = existing_team_leads or list(lead_names)
+                if existing_support:
+                    # Respect preset roster names (e.g., Front Desk / Interface unit staffing)
+                    worker_names = []
+
+                st.session_state.units[unit_name]['team_leads'] = list(lead_names)
+                st.session_state.units[unit_name]['support_officers'] = list(dict.fromkeys(list(lead_names) + list(existing_support) + list(worker_names)))
+
+                for n in lead_names:
+                    _seed_user(n, lead_role, dept_name, '', unit_name)
+
+                # Seed either preset roster members (as the unit's worker role) or generated ones.
+                if existing_support:
+                    for n in existing_support:
+                        _seed_user(n, worker_role, dept_name, '', unit_name)
+                else:
+                    for n in worker_names:
+                        _seed_user(n, worker_role, dept_name, '', unit_name)
+
+                assignments = st.session_state.units[unit_name].setdefault('assignments', {})
+                seeded_workers = list(lead_names) + (list(existing_support) if existing_support else list(worker_names))
+                for n in seeded_workers:
+                    assignments.setdefault(n, [])
+
+    # Ensure all departments are present in user management
+    # (This call should be outside the function, not here)
 
         # Establishment clerical units
         if dept_name == 'Establishment':
@@ -10607,34 +10637,8 @@ elif role == "Support Officer":
                 key_prefix='so_dash',
             )
         
-        # Caseload data with Excel information
-        caseload_data = {
-            '181000': {
-                'name': 'Downtown Elementary',
-                'reports': [
-                    {'id': 'ENV-181000-001', 'date': '2026-02-18', 'filename': 'ENV_Report_Q1_2026.xlsx', 
-                     'data': {'Total Students': 245, 'Staff': 15, 'Classrooms': 12, 'Completion %': 85, 'Grade Levels': '3-5', 'Assessment Date': '2/15/2026', 'Quality Score': 94}},
-                    {'id': 'ENV-181000-002', 'date': '2026-02-15', 'filename': 'Safety_Audit_Feb.xlsx',
-                     'data': {'Safety Issues': 3, 'Resolved': 2, 'Pending': 1, 'Status': 'In Review', 'Inspector': 'John Smith', 'Review Date': '2/14/2026', 'Next Audit': '3/14/2026'}}
-                ]
-            },
-            '181001': {
-                'name': 'Midtown Middle School',
-                'reports': [
-                    {'id': 'ENV-181001-001', 'date': '2026-02-17', 'filename': 'ENV_Report_Q1_2026.xlsx',
-                     'data': {'Total Students': 520, 'Staff': 35, 'Classrooms': 28, 'Completion %': 92, 'Grade Levels': '6-8', 'Assessment Date': '2/16/2026', 'Quality Score': 96}},
-                    {'id': 'ENV-181001-002', 'date': '2026-02-12', 'filename': 'Compliance_Check.xlsx',
-                     'data': {'Standards Met': 47, 'Outstanding': 2, 'Non-Compliant': 1, 'Score': '94%', 'Reviewer': 'Sarah Johnson', 'Review Date': '2/11/2026', 'Action Items': 2}}
-                ]
-            },
-            '181002': {
-                'name': 'Uptown High School',
-                'reports': [
-                    {'id': 'ENV-181002-001', 'date': '2026-02-19', 'filename': 'ENV_Report_Q1_2026.xlsx',
-                     'data': {'Total Students': 1200, 'Staff': 85, 'Classrooms': 62, 'Completion %': 78, 'Grade Levels': '9-12', 'Assessment Date': '2/17/2026', 'Quality Score': 90}},
-                ]
-            }
-        }
+        # Caseload data placeholder. Please load actual OCSS agency caseloads and reports from your data source or configuration.
+        caseload_data = {}
         
         # Caseload selection
         col1, col2 = st.columns([1, 2])

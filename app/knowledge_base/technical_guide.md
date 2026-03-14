@@ -136,7 +136,7 @@ Worker Self-Pull is intentionally restricted to **Director / Program Officer** a
 
 #### 4. **Support Officer** ⭐ *Primary Report Processor*
 - **Dashboard Tabs:** 
-  - 📊 **Caseload Dashboard** - View reports by caseload number (181000, 181001, 181002)
+  - 📊 **Caseload Dashboard** - View reports by caseload number (181100, 181101, 181102, etc.)
   - 📝 **Assigned Reports** - Process and update report rows one case-line at a time
   - 🎫 **Support Tickets** - Manage support requests
   - 📚 **Knowledge Base** - Access FAQs and training materials
@@ -161,29 +161,31 @@ Worker Self-Pull is intentionally restricted to **Director / Program Officer** a
 
 Reports are organized by **Caseload Numbers** (unique identifiers):
 
-| Caseload ID | Name | Reports | Student Population |
+| Caseload ID | Name | Reports | Population Served |
 |------------|------|---------|-------------------|
-| **181000** | Downtown Elementary | 2 | 245 Students |
-| **181001** | Midtown Middle School | 2 | 520 Students |
-| **181002** | Uptown High School | 1 | 1200 Students |
+| **181100** | OCSS Reentry | 3 | 150 Clients |
+| **181101** | OCSS Probation | 4 | 400 Clients |
+| **181102** | OCSS Parole | 2 | 120 Clients |
+| **181103** | OCSS Juvenile | 1 | 80 Clients |
 
 ### 2.3 Report Fields & Data Processing
 
 Each report contains **7-9 editable fields** with automatic type detection:
 
-**Example Report (181000-001):**
-- Total Students: 245 (numeric, editable)
-- Staff: 15 (numeric, editable)
-- Classrooms: 12 (numeric, editable)
-- Completion %: 85 (numeric, editable)
-- Grade Levels: 3-5 (text, editable)
+**Example Report (181100-001):**
+- Total Clients: 150 (numeric, editable)
+- Officers Assigned: 5 (numeric, editable)
+- Supervision Level: High (text, editable)
+- Completion %: 92 (numeric, editable)
+- Program Type: Reentry (text, editable)
 - Assessment Date: 2/15/2026 (text, editable)
-- Quality Score: 94 (numeric, editable)
+- Compliance Score: 97 (numeric, editable)
 
 ### 2.4 Data Export & Download
 
 Support Officers can export reports in multiple formats:
-- **CSV Download:** One-click CSV export from any report
+
+**CSV Download:** One-click CSV export from any report
 - **Format:** Field-Value pairs for easy spreadsheet import
 - **Batch Operations:** Download multiple reports as individual files
 
@@ -194,10 +196,10 @@ Senior leadership (Director / Program Officer / Supervisor) can also export exec
 
 ### 2.5 Interactive Workflow Enhancements
 
-Recent updates (Feb 2026) have introduced significant usability and data integrity improvements:
+Recent updates (Feb 2026) have introduced significant usability and data integrity improvements for OCSS agency workflows:
 
 #### 2.5.1 Enhanced User Experience
-- **Collapsible Warnings:** File upload validation warnings are now grouped in a collapsible expander (``st.expander``) to prevent UI clutter while maintaining visibility of issues.
+  - **Collapsible Warnings:** File upload validation warnings are now grouped in a collapsible expander to prevent UI clutter while maintaining visibility of issues.
 - **Robust Exception Handling:** Fixed charting errors in Program Officer dashboards by standardizing on Streamlit native charts (``st.bar_chart``) instead of unsupported backends.
 
 #### 2.5.2 Real-Time Data Aggregation
