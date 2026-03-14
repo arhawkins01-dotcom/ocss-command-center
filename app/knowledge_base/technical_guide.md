@@ -163,10 +163,10 @@ Reports are organized by **Caseload Numbers** (unique identifiers):
 
 | Caseload ID | Name | Reports | Population Served |
 |------------|------|---------|-------------------|
-| **181100** | OCSS Reentry | 3 | 150 Clients |
-| **181101** | OCSS Probation | 4 | 400 Clients |
-| **181102** | OCSS Parole | 2 | 120 Clients |
-| **181103** | OCSS Juvenile | 1 | 80 Clients |
+| **181100** | OCSS Intake | 3 | 150 Clients |
+| **181101** | OCSS Intake | 4 | 400 Clients |
+| **181102** | OCSS Intake | 2 | 120 Clients |
+| **181103** | OCSS Intake | 1 | 80 Clients |
 
 ### 2.3 Report Fields & Data Processing
 
