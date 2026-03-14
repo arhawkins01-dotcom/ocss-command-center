@@ -1,25 +1,14 @@
-# OCSS Command Center — Technical Guide
-
-Last Updated: 2026-03-03
-
----
+# OCSS Command Center - Technical Guide
 
 ## Executive Summary
 
-The OCSS Command Center is a role-based web application designed to streamline establishment report processing and caseload management. Built on the Streamlit framework with Python, it provides an integrated dashboard system for multiple user roles with real-time data processing and export capabilities.
+The OCSS Command Center is a role-based web application designed to streamline unit report processing and caseload management. Built on the Streamlit framework with Python, it provides an integrated dashboard system for multiple user roles (Director, Deputy Director, Senior Administrative Officer, Program Officer, Supervisor, Team Lead, Support Officer, IT Administrator) with real-time data processing and export capabilities. The agency structure includes four departments (Establishment, Financial Operations, Case Maintenance, Compliance) and their individual units.
 
 Key operational features implemented in Feb 2026 include:
 - Escalation alerts with role-based timing windows and acknowledgements
 - Report due-date clocks computed at upload time for monthly QA sources (56RA / P-S / Locate)
 - Senior leadership exports in Excel and Word formats
-- Help Ticket Center workflow with auto-routing/assignment and ticket KPI views
-- Mixed persistence model: organizational configuration + help tickets persisted on disk; report/work data remains session-based
-
-Recent implementation updates (2026-03-03):
-- Sidebar role selection now uses grouped selection (`Role Group` + role dropdown) with last-selected role defaults.
-- Program Officer remains on the legacy dashboard and now has agency-wide KPI filters for Department, Unit, and Support Staff (Support Officer + Team Lead) with filter sync across KPI/Caseload/Performance tabs.
-- Administrative specialist roles are separated from Support Officer caseload dashboards and use administrative intake/ticket workflows.
-- Support Officer/Team Lead authenticated sessions are identity-locked to the signed-in worker, and KPI/Throughput tracker tables are filtered to that worker only.
+- Mixed persistence model: organizational configuration persisted on disk; report/work data remains session-based
 
 **Project Status:** Production-Ready (v1.0.0)  
 **Framework:** Streamlit 1.x with Python 3.8+  
