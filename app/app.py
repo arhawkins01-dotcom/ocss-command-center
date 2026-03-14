@@ -1079,7 +1079,7 @@ def _persist_app_state() -> None:
 
 # Initialize uploaded reports by caseload (for Program Officer to upload)
 if 'reports_by_caseload' not in st.session_state:
-    st.session_state.reports_by_caseload = {'181000': [], '181001': [], '181002': []}
+    st.session_state.reports_by_caseload = {'181100': [], '181101': [], '181102': [], '181103': []}
 
 # Load persisted org configuration (users + units) once per session.
 _persisted_state = _load_persisted_state() if 'units' not in st.session_state or 'users' not in st.session_state else {}
@@ -4008,7 +4008,7 @@ def assign_caseload_to_worker(worker_name: str, caseload_number: str, allow_reas
     if not resolved_worker_name:
         return False, "Select a worker before assigning a caseload."
     if not normalized_caseload:
-        return False, "Enter a valid caseload number (example: 181000 or 1000)."
+        return False, "Enter a valid caseload number (example: 181100 or 1100)."
 
     unit_name = find_worker_unit(resolved_worker_name)
     if not unit_name:
@@ -4212,13 +4212,14 @@ def render_report_intake_portal(key_prefix: str, uploader_role: str):
         st.caption("Upload an Excel/CSV report, confirm caseloads, set period metadata, then process.")
 
         caseload_labels = {
-            '181000': 'Downtown Elementary',
-            '181001': 'Midtown Middle School',
-            '181002': 'Uptown High School'
+            '181100': 'OCSS Reentry',
+            '181101': 'OCSS Probation',
+            '181102': 'OCSS Parole',
+            '181103': 'OCSS Juvenile'
         }
 
         existing_caseloads = sorted(list(st.session_state.reports_by_caseload.keys()))
-        available_caseloads = existing_caseloads if existing_caseloads else ['181000', '181001', '181002']
+        available_caseloads = existing_caseloads if existing_caseloads else ['181100', '181101', '181102', '181103']
         selected_caseload = st.selectbox(
             "Default caseload (used only if the file contains none)",
             available_caseloads,
@@ -5823,7 +5824,7 @@ def render_user_management_panel(
         caseload_input = st.text_input(
             "Caseload Number",
             key=f"{key_prefix}_assign_caseload",
-            placeholder="Enter 181000 or 1000-series value"
+            placeholder="Enter 181100 or 1100-series value"
         )
         allow_reassign = st.checkbox(
             "Allow reassignment if caseload already has an owner",
@@ -7549,9 +7550,9 @@ if role in ["Director", "Deputy Director"]:
             empty_message="No caseload work status available yet.",
             demo_columns=['Caseload', 'Assigned To', 'Unit', 'Overall Status', 'Completion %'],
             demo_rows=[{
-                'Caseload': '181000',
-                'Assigned To': 'Demo Worker',
-                'Unit': 'Establishment Unit 1',
+                'Caseload': '181100',
+                'Assigned To': 'OCSS Worker',
+                'Unit': 'OCSS Reentry',
                 'Overall Status': 'In Progress',
                 'Completion %': '72.0%',
             }],
@@ -8185,12 +8186,12 @@ elif role == "Program Officer":
                 empty_message="No support staff records matched the current filters.",
                 demo_columns=['Support Staff', 'Unit', 'Department', 'Assigned Caseloads', 'Total Cases', 'Completed Cases', 'Completion %'],
                 demo_rows=[{
-                    'Support Staff': 'Demo Staff',
-                    'Unit': 'Establishment Unit 1',
-                    'Department': 'Establishment',
+                    'Support Staff': 'OCSS Staff',
+                    'Unit': 'OCSS Reentry',
+                    'Department': 'Reentry',
                     'Assigned Caseloads': 2,
-                    'Total Cases': 54,
-                    'Completed Cases': 39,
+                    'Total Clients': 54,
+                    'Completed Clients': 39,
                     'Completion %': '72.2%',
                 }],
                 use_container_width=True,
@@ -9134,7 +9135,7 @@ elif role in ["Supervisor", "Senior Administrative Officer"]:
                 _safe_table_or_demo(
                     _s_df,
                     empty_message=f"No {scope_label.lower()} performance data is available.",
-                    demo_columns=[chart_index_col, 'Staff', 'Total Cases', 'Completed', 'Completion %'],
+                    demo_columns=[chart_index_col, 'Officers Assigned', 'Total Clients', 'Completed Clients', 'Completion %'],
                     use_container_width=True,
                     hide_index=True,
                 )
