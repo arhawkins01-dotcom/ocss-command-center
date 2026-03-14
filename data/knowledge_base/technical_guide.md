@@ -316,17 +316,12 @@ Last Updated: 2026-02-27
 
 ---
 
-This file mirrors the new User Manual structure and documents implementation, runtime behavior, seeding rules, deployment options, and developer notes.
-
-Key locations:
-- App entry: `app/app.py`
 - KB seed sources: `docs/USER_MANUAL.md`, `docs/TECHNICAL_GUIDE.md`
 - KB targets: `data/knowledge_base/user_guide.md`, `data/knowledge_base/technical_guide.md`
 - Seed manifest: `data/knowledge_base/.seed_manifest.json`
 
 ### KB Admin behavior
 - In-app editing persists to `data/knowledge_base/*.md` and sets `edited_by_admin: true` in the manifest. The seeder will not overwrite such files.
-
 ---
 
 ## Architecture & Data Flow (Developer View)
