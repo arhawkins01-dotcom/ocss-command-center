@@ -1,0 +1,837 @@
+{
+  "version": 2,
+  "saved_at": "2026-03-14T14:02:54.768625",
+  "users": [
+    {
+      "name": "Director User",
+      "role": "Director",
+      "department": "Executive",
+      "unit": "",
+      "unit_role": "Director"
+    },
+    {
+      "name": "Deputy Director 1",
+      "role": "Director",
+      "department": "Executive",
+      "unit": "",
+      "unit_role": "Deputy Director"
+    },
+    {
+      "name": "Deputy Director 2",
+      "role": "Director",
+      "department": "Executive",
+      "unit": "",
+      "unit_role": "Deputy Director"
+    },
+    {
+      "name": "Establishment Department Manager",
+      "role": "Director",
+      "department": "Establishment",
+      "unit": "",
+      "unit_role": "Department Manager"
+    },
+    {
+      "name": "Financial Operations Department Manager",
+      "role": "Director",
+      "department": "Financial Operations",
+      "unit": "",
+      "unit_role": "Department Manager"
+    },
+    {
+      "name": "Case Maintenance Department Manager",
+      "role": "Director",
+      "department": "Case Maintenance",
+      "unit": "",
+      "unit_role": "Department Manager"
+    },
+    {
+      "name": "Compliance Department Manager",
+      "role": "Director",
+      "department": "Compliance",
+      "unit": "",
+      "unit_role": "Department Manager"
+    },
+    {
+      "name": "Continuous Quality Improvement (CQI) Department Manager",
+      "role": "Director",
+      "department": "Continuous Quality Improvement (CQI)",
+      "unit": "",
+      "unit_role": "Department Manager"
+    },
+    {
+      "name": "IT Administrator User",
+      "role": "IT Administrator",
+      "department": "IT",
+      "unit": "",
+      "unit_role": ""
+    },
+    {
+      "name": "Establishment Program Officer",
+      "role": "Program Officer",
+      "department": "Establishment",
+      "unit": "",
+      "unit_role": ""
+    },
+    {
+      "name": "Establishment Administrative Assistant",
+      "role": "Administrative Assistant",
+      "department": "Establishment",
+      "unit": "",
+      "unit_role": ""
+    },
+    {
+      "name": "Financial Operations Program Officer",
+      "role": "Program Officer",
+      "department": "Financial Operations",
+      "unit": "",
+      "unit_role": ""
+    },
+    {
+      "name": "Financial Operations Administrative Assistant",
+      "role": "Administrative Assistant",
+      "department": "Financial Operations",
+      "unit": "",
+      "unit_role": ""
+    },
+    {
+      "name": "Case Maintenance Program Officer",
+      "role": "Program Officer",
+      "department": "Case Maintenance",
+      "unit": "",
+      "unit_role": ""
+    },
+    {
+      "name": "Case Maintenance Administrative Assistant",
+      "role": "Administrative Assistant",
+      "department": "Case Maintenance",
+      "unit": "",
+      "unit_role": ""
+    },
+    {
+      "name": "Compliance Program Officer",
+      "role": "Program Officer",
+      "department": "Compliance",
+      "unit": "",
+      "unit_role": ""
+    },
+    {
+      "name": "Compliance Administrative Assistant",
+      "role": "Administrative Assistant",
+      "department": "Compliance",
+      "unit": "",
+      "unit_role": ""
+    },
+    {
+      "name": "Continuous Quality Improvement (CQI) Program Officer",
+      "role": "Program Officer",
+      "department": "Continuous Quality Improvement (CQI)",
+      "unit": "",
+      "unit_role": ""
+    },
+    {
+      "name": "Continuous Quality Improvement (CQI) Administrative Assistant",
+      "role": "Administrative Assistant",
+      "department": "Continuous Quality Improvement (CQI)",
+      "unit": "",
+      "unit_role": ""
+    },
+    {
+      "name": "Alex Martinez",
+      "role": "Supervisor",
+      "department": "OCSS North",
+      "unit": "OCSS North",
+      "unit_role": ""
+    },
+    {
+      "name": "Sarah Johnson",
+      "role": "Support Officer",
+      "department": "OCSS North",
+      "unit": "OCSS North",
+      "unit_role": ""
+    },
+    {
+      "name": "Michael Chen",
+      "role": "Support Officer",
+      "department": "OCSS North",
+      "unit": "OCSS North",
+      "unit_role": ""
+    },
+    {
+      "name": "Jessica Brown",
+      "role": "Support Officer",
+      "department": "OCSS North",
+      "unit": "OCSS North",
+      "unit_role": ""
+    },
+    {
+      "name": "Priya Singh",
+      "role": "Supervisor",
+      "department": "OCSS South",
+      "unit": "OCSS South",
+      "unit_role": ""
+    },
+    {
+      "name": "David Martinez",
+      "role": "Support Officer",
+      "department": "OCSS South",
+      "unit": "OCSS South",
+      "unit_role": ""
+    },
+    {
+      "name": "Amanda Wilson",
+      "role": "Support Officer",
+      "department": "OCSS South",
+      "unit": "OCSS South",
+      "unit_role": ""
+    },
+    {
+      "name": "Ashombia Hawkins",
+      "role": "Director",
+      "department": "Establishment",
+      "unit": "",
+      "unit_role": "Department Manager"
+    },
+    {
+      "name": "Chaiyeh Davis",
+      "role": "Program Officer",
+      "department": "Establishment",
+      "unit": "",
+      "unit_role": ""
+    },
+    {
+      "name": "Almida Aviles",
+      "role": "Administrative Assistant",
+      "department": "Establishment",
+      "unit": "",
+      "unit_role": ""
+    },
+    {
+      "name": "Stacy Slick-Williams",
+      "role": "Supervisor",
+      "department": "Establishment",
+      "unit": "Establishment Unit 15",
+      "unit_role": ""
+    },
+    {
+      "name": "Anna K. Engler",
+      "role": "Team Lead",
+      "department": "Establishment",
+      "unit": "Establishment Unit 15",
+      "unit_role": ""
+    },
+    {
+      "name": "Akilah Rasheed-Tinsley",
+      "role": "Team Lead",
+      "department": "Establishment",
+      "unit": "Establishment Unit 15",
+      "unit_role": ""
+    },
+    {
+      "name": "Joy G. Ogunmola",
+      "role": "Support Officer",
+      "department": "Establishment",
+      "unit": "Establishment Unit 15",
+      "unit_role": ""
+    },
+    {
+      "name": "Brittany Baran",
+      "role": "Support Officer",
+      "department": "Establishment",
+      "unit": "Establishment Unit 15",
+      "unit_role": ""
+    },
+    {
+      "name": "Jeffrey A. Swanson",
+      "role": "Support Officer",
+      "department": "Establishment",
+      "unit": "Establishment Unit 15",
+      "unit_role": ""
+    },
+    {
+      "name": "Cyrita J. Johnson",
+      "role": "Support Officer",
+      "department": "Establishment",
+      "unit": "Establishment Unit 15",
+      "unit_role": ""
+    },
+    {
+      "name": "Robin L. Patterson",
+      "role": "Supervisor",
+      "department": "Establishment",
+      "unit": "Establishment Unit 16",
+      "unit_role": ""
+    },
+    {
+      "name": "April Jeter",
+      "role": "Team Lead",
+      "department": "Establishment",
+      "unit": "Establishment Unit 16",
+      "unit_role": ""
+    },
+    {
+      "name": "Awilda Martinez",
+      "role": "Team Lead",
+      "department": "Establishment",
+      "unit": "Establishment Unit 16",
+      "unit_role": ""
+    },
+    {
+      "name": "Karen McRowe",
+      "role": "Support Officer",
+      "department": "Establishment",
+      "unit": "Establishment Unit 16",
+      "unit_role": ""
+    },
+    {
+      "name": "Tamika Joseph-McManus",
+      "role": "Support Officer",
+      "department": "Establishment",
+      "unit": "Establishment Unit 16",
+      "unit_role": ""
+    },
+    {
+      "name": "Richard Fletcher",
+      "role": "Support Officer",
+      "department": "Establishment",
+      "unit": "Establishment Unit 16",
+      "unit_role": ""
+    },
+    {
+      "name": "Natalie Spatafore",
+      "role": "Support Officer",
+      "department": "Establishment",
+      "unit": "Establishment Unit 16",
+      "unit_role": ""
+    },
+    {
+      "name": "Jeanne Sua",
+      "role": "Supervisor",
+      "department": "Establishment",
+      "unit": "Establishment Unit 17",
+      "unit_role": ""
+    },
+    {
+      "name": "Kristine DeSouza",
+      "role": "Team Lead",
+      "department": "Establishment",
+      "unit": "Establishment Unit 17",
+      "unit_role": ""
+    },
+    {
+      "name": "L. Arlene Gonzalez",
+      "role": "Team Lead",
+      "department": "Establishment",
+      "unit": "Establishment Unit 17",
+      "unit_role": ""
+    },
+    {
+      "name": "Patricia Bennett",
+      "role": "Support Officer",
+      "department": "Establishment",
+      "unit": "Establishment Unit 17",
+      "unit_role": ""
+    },
+    {
+      "name": "Cecelia Durham",
+      "role": "Support Officer",
+      "department": "Establishment",
+      "unit": "Establishment Unit 17",
+      "unit_role": ""
+    },
+    {
+      "name": "Mayra Berrios",
+      "role": "Support Officer",
+      "department": "Establishment",
+      "unit": "Establishment Unit 17",
+      "unit_role": ""
+    },
+    {
+      "name": "Hannah Maynard",
+      "role": "Support Officer",
+      "department": "Establishment",
+      "unit": "Establishment Unit 17",
+      "unit_role": ""
+    },
+    {
+      "name": "James Brown",
+      "role": "Supervisor",
+      "department": "Establishment",
+      "unit": "",
+      "unit_role": ""
+    },
+    {
+      "name": "Nadia Ahmetovic",
+      "role": "Team Lead",
+      "department": "Establishment",
+      "unit": "New Order Unit 22",
+      "unit_role": ""
+    },
+    {
+      "name": "Latonya Grays-Martin",
+      "role": "Support Officer",
+      "department": "Establishment",
+      "unit": "New Order Unit 22",
+      "unit_role": ""
+    },
+    {
+      "name": "Michelle Fogler",
+      "role": "Support Officer",
+      "department": "Establishment",
+      "unit": "New Order Unit 22",
+      "unit_role": ""
+    },
+    {
+      "name": "Tracy Wilson",
+      "role": "Support Officer",
+      "department": "Establishment",
+      "unit": "New Order Unit 22",
+      "unit_role": ""
+    },
+    {
+      "name": "William Wedmedyk",
+      "role": "Support Officer",
+      "department": "Establishment",
+      "unit": "New Order Unit 22",
+      "unit_role": ""
+    },
+    {
+      "name": "Reginald Davis",
+      "role": "Team Lead",
+      "department": "Establishment",
+      "unit": "Front Desk Unit 8",
+      "unit_role": ""
+    },
+    {
+      "name": "Pamela Alexander",
+      "role": "Support Officer",
+      "department": "Establishment",
+      "unit": "Front Desk Unit 8",
+      "unit_role": ""
+    },
+    {
+      "name": "Danielle Deberry",
+      "role": "Support Officer",
+      "department": "Establishment",
+      "unit": "Front Desk Unit 8",
+      "unit_role": ""
+    },
+    {
+      "name": "Aleesha Anderson",
+      "role": "Support Officer",
+      "department": "Establishment",
+      "unit": "Front Desk Unit 8",
+      "unit_role": ""
+    },
+    {
+      "name": "Silas Ungar",
+      "role": "Supervisor",
+      "department": "Establishment",
+      "unit": "Genetic Testing Unit 22",
+      "unit_role": ""
+    },
+    {
+      "name": "Laurie Tomlinson",
+      "role": "Client Information Specialist Team Lead",
+      "department": "Establishment",
+      "unit": "Genetic Testing Unit 22",
+      "unit_role": ""
+    },
+    {
+      "name": "Aleia Lawson",
+      "role": "Client Information Specialist",
+      "department": "Establishment",
+      "unit": "Genetic Testing Unit 22",
+      "unit_role": ""
+    },
+    {
+      "name": "Natasha Johnson",
+      "role": "Client Information Specialist",
+      "department": "Establishment",
+      "unit": "Genetic Testing Unit 22",
+      "unit_role": ""
+    },
+    {
+      "name": "Tiffany Johnson",
+      "role": "Client Information Specialist",
+      "department": "Establishment",
+      "unit": "Genetic Testing Unit 22",
+      "unit_role": ""
+    },
+    {
+      "name": "Giselle Torres",
+      "role": "Supervisor",
+      "department": "Establishment",
+      "unit": "Interface Unit 23",
+      "unit_role": ""
+    },
+    {
+      "name": "Quiana Harville",
+      "role": "Client Information Specialist Team Lead",
+      "department": "Establishment",
+      "unit": "Interface Unit 23",
+      "unit_role": ""
+    },
+    {
+      "name": "Enid Williams",
+      "role": "Client Information Specialist Team Lead",
+      "department": "Establishment",
+      "unit": "Interface Unit 23",
+      "unit_role": ""
+    },
+    {
+      "name": "Sierra Carter",
+      "role": "Client Information Specialist",
+      "department": "Establishment",
+      "unit": "Interface Unit 23",
+      "unit_role": ""
+    },
+    {
+      "name": "Chandara Dodson",
+      "role": "Client Information Specialist",
+      "department": "Establishment",
+      "unit": "Interface Unit 23",
+      "unit_role": ""
+    },
+    {
+      "name": "Avonna Handsome",
+      "role": "Client Information Specialist",
+      "department": "Establishment",
+      "unit": "Interface Unit 23",
+      "unit_role": ""
+    },
+    {
+      "name": "Taylor Andrews",
+      "role": "Client Information Specialist",
+      "department": "Establishment",
+      "unit": "Interface Unit 23",
+      "unit_role": ""
+    }
+  ],
+  "units": {
+    "OCSS North": {
+      "supervisor": "Alex Martinez",
+      "team_leads": [
+        "Sarah Johnson"
+      ],
+      "support_officers": [
+        "Michael Chen",
+        "Jessica Brown"
+      ],
+      "assignments": {
+        "Sarah Johnson": [
+          "181000"
+        ],
+        "Michael Chen": [
+          "181001"
+        ],
+        "Jessica Brown": [
+          "181002"
+        ]
+      }
+    },
+    "OCSS South": {
+      "supervisor": "Priya Singh",
+      "team_leads": [
+        "David Martinez"
+      ],
+      "support_officers": [
+        "Amanda Wilson"
+      ],
+      "assignments": {
+        "David Martinez": [
+          "181001"
+        ],
+        "Amanda Wilson": [
+          "181000"
+        ]
+      }
+    },
+    "Establishment Unit 15": {
+      "department": "Establishment",
+      "unit_type": "standard",
+      "supervisor": "Stacy Slick-Williams",
+      "team_leads": [
+        "Anna K. Engler",
+        "Akilah Rasheed-Tinsley"
+      ],
+      "support_officers": [
+        "Anna K. Engler",
+        "Akilah Rasheed-Tinsley",
+        "Joy G. Ogunmola",
+        "Brittany Baran",
+        "Jeffrey A. Swanson",
+        "Cyrita J. Johnson"
+      ],
+      "caseload_series_prefixes": [
+        "1811"
+      ],
+      "caseload_numbers": [
+        "181100",
+        "181101",
+        "181103",
+        "181105",
+        "181106",
+        "181107",
+        "181109",
+        "181110",
+        "181112"
+      ],
+      "assignments": {
+        "Stacy Slick-Williams": [
+          "181100"
+        ],
+        "Anna K. Engler": [
+          "181101"
+        ],
+        "Joy G. Ogunmola": [
+          "181103"
+        ],
+        "Akilah Rasheed-Tinsley": [
+          "181105"
+        ],
+        "Brittany Baran": [
+          "181107"
+        ],
+        "Jeffrey A. Swanson": [
+          "181109"
+        ],
+        "Cyrita J. Johnson": [
+          "181112"
+        ]
+      }
+    },
+    "Establishment Unit 16": {
+      "department": "Establishment",
+      "unit_type": "standard",
+      "supervisor": "Robin L. Patterson",
+      "team_leads": [
+        "April Jeter",
+        "Awilda Martinez"
+      ],
+      "support_officers": [
+        "April Jeter",
+        "Awilda Martinez",
+        "Karen McRowe",
+        "Tamika Joseph-McManus",
+        "Richard Fletcher",
+        "Natalie Spatafore"
+      ],
+      "caseload_series_prefixes": [
+        "1812"
+      ],
+      "caseload_numbers": [
+        "181200",
+        "181201",
+        "181202",
+        "181204",
+        "181205",
+        "181208",
+        "181209",
+        "181213",
+        "181214"
+      ],
+      "assignments": {
+        "Robin L. Patterson": [
+          "181200"
+        ],
+        "April Jeter": [
+          "181204"
+        ],
+        "Karen McRowe": [
+          "181205"
+        ],
+        "Tamika Joseph-McManus": [
+          "181208"
+        ],
+        "Awilda Martinez": [
+          "181209"
+        ],
+        "Richard Fletcher": [
+          "181213"
+        ],
+        "Natalie Spatafore": [
+          "181214"
+        ]
+      }
+    },
+    "Establishment Unit 17": {
+      "department": "Establishment",
+      "unit_type": "standard",
+      "supervisor": "Jeanne Sua",
+      "team_leads": [
+        "Kristine DeSouza",
+        "L. Arlene Gonzalez"
+      ],
+      "support_officers": [
+        "Kristine DeSouza",
+        "L. Arlene Gonzalez",
+        "Patricia Bennett",
+        "Cecelia Durham",
+        "Mayra Berrios",
+        "Hannah Maynard"
+      ],
+      "caseload_series_prefixes": [
+        "1813"
+      ],
+      "caseload_numbers": [
+        "181300",
+        "181301",
+        "181302",
+        "181303",
+        "181304",
+        "181305",
+        "181306",
+        "181307",
+        "181308"
+      ],
+      "assignments": {
+        "Jeanne Sua": [
+          "181300"
+        ],
+        "Kristine DeSouza": [
+          "181301"
+        ],
+        "Patricia Bennett": [
+          "181303"
+        ],
+        "Cecelia Durham": [
+          "181304"
+        ],
+        "Mayra Berrios": [
+          "181306"
+        ],
+        "L. Arlene Gonzalez": [
+          "181307"
+        ],
+        "Hannah Maynard": [
+          "181308"
+        ]
+      }
+    },
+    "New Order Unit 22": {
+      "department": "Establishment",
+      "unit_type": "standard",
+      "supervisor": "James Brown",
+      "team_leads": [
+        "Nadia Ahmetovic"
+      ],
+      "support_officers": [
+        "Nadia Ahmetovic",
+        "Latonya Grays-Martin",
+        "Michelle Fogler",
+        "Tracy Wilson",
+        "William Wedmedyk"
+      ],
+      "caseload_series_prefixes": [
+        "1820"
+      ],
+      "caseload_numbers": [
+        "182001",
+        "182002",
+        "182003",
+        "182004",
+        "182005"
+      ],
+      "assignments": {
+        "Nadia Ahmetovic": [
+          "182001"
+        ],
+        "Latonya Grays-Martin": [
+          "182002"
+        ],
+        "Michelle Fogler": [
+          "182003"
+        ],
+        "Tracy Wilson": [
+          "182004"
+        ],
+        "William Wedmedyk": [
+          "182005"
+        ],
+        "James Brown": []
+      }
+    },
+    "Front Desk Unit 8": {
+      "department": "Establishment",
+      "unit_type": "interface",
+      "supervisor": "James Brown",
+      "team_leads": [
+        "Reginald Davis"
+      ],
+      "support_officers": [
+        "Reginald Davis",
+        "Pamela Alexander",
+        "Danielle Deberry",
+        "Aleesha Anderson"
+      ],
+      "caseload_series_prefixes": [],
+      "caseload_numbers": [],
+      "assignments": {
+        "James Brown": [],
+        "Reginald Davis": [],
+        "Pamela Alexander": [],
+        "Danielle Deberry": [],
+        "Aleesha Anderson": []
+      }
+    },
+    "Genetic Testing Unit 22": {
+      "department": "Establishment",
+      "unit_type": "genetic_testing",
+      "supervisor": "Silas Ungar",
+      "team_leads": [
+        "Laurie Tomlinson"
+      ],
+      "support_officers": [
+        "Laurie Tomlinson",
+        "Aleia Lawson",
+        "Natasha Johnson",
+        "Tiffany Johnson"
+      ],
+      "caseload_series_prefixes": [],
+      "caseload_numbers": [],
+      "assignments": {
+        "Silas Ungar": [],
+        "Laurie Tomlinson": [],
+        "Aleia Lawson": [],
+        "Natasha Johnson": [],
+        "Tiffany Johnson": []
+      }
+    },
+    "Interface Unit 23": {
+      "department": "Establishment",
+      "unit_type": "interface",
+      "supervisor": "Giselle Torres",
+      "team_leads": [
+        "Quiana Harville",
+        "Enid Williams"
+      ],
+      "support_officers": [
+        "Quiana Harville",
+        "Enid Williams",
+        "Sierra Carter",
+        "Chandara Dodson",
+        "Avonna Handsome",
+        "Taylor Andrews"
+      ],
+      "caseload_series_prefixes": [],
+      "caseload_numbers": [],
+      "assignments": {
+        "Giselle Torres": [],
+        "Quiana Harville": [],
+        "Enid Williams": [],
+        "Sierra Carter": [],
+        "Chandara Dodson": [],
+        "Avonna Handsome": [],
+        "Taylor Andrews": []
+      }
+    }
+  },
+  "leadership_reporting": {},
+  "current_user": "",
+  "alert_acks": {},
+  "help_tickets": [],
+  "help_ticket_log": [],
+  "qa_reviews": {},
+  "qa_samples": {},
+  "supervisor_qa_validations": {}
+}
